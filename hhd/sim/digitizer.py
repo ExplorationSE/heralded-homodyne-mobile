@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from scipy import signal as _sig
 
 from ..io.schema import TRIGGER_SOURCES
 from .clock import DigitizerClock
@@ -37,6 +38,21 @@ def mode_vector(shape: str, gamma: float, fs: float, tk: np.ndarray, centre: flo
         s = 1.0 / gamma
         return np.exp(-d ** 2 / (2 * s ** 2)) / (np.pi ** 0.25 * np.sqrt(s * fs))
     raise ValueError(shape)
+
+
+def frontend_filter(cfg: SimConfig):
+    """Analogbandbreite als digitaler Tiefpass 1. Ordnung (−3 dB bei der Bandbreitenoption) [Annahme].
+
+    Rückgabe (b, a) oder None, wenn die Bandbreite über der Nyquist-Frequenz liegt oder das Filter aus ist.
+    Auf die Mode (1/γ = 40 ns, Bandbreite einige MHz) wirkt das Filter praktisch nicht; es färbt nur das
+    Rauschen je Sample.
+    """
+    if cfg.digitizer.frontend_filter == "none":
+        return None
+    wn = cfg.bandwidth / (cfg.fs / 2)
+    if not wn < 1:
+        return None
+    return _sig.butter(1, wn)
 
 
 def mode_halfwidth(shape: str, gamma: float) -> float:
@@ -75,6 +91,9 @@ class ADQ32:
         self.tu_per_sample = int(round((1 / self.fs) / self.tu))
         self.L, self.pre = d.record_length, d.pretrigger
         self.lim = 2 ** (d.adc_bits - 1) - 1
+        self.filt = frontend_filter(cfg)
+        if self.filt is not None:
+            self.filt_zi = _sig.lfilter_zi(*self.filt)
 
     def device_attrs(self) -> dict:
         c, d = self.cfg, self.cfg.digitizer
@@ -84,13 +103,15 @@ class ADQ32:
                     sampling_period_tu=self.tu_per_sample, adc_bits=d.adc_bits, record_length=self.L,
                     horizontal_offset=-self.pre, trig_resolution_s=c.trig_res, sync_resolution_s=c.sync_res,
                     reference_clock="external 10 MHz" if c.clock.shared_10MHz else "internal",
+                    bandwidth_option=d.bandwidth_option, analog_bandwidth_Hz=c.bandwidth,
                     header_reports_trigger_source=d.header_reports_trigger_source, channel="A")
 
     # ------------------------------------------------------------------ Trigger → Records
     def acquire(self, rng: np.random.Generator, t0: float, duration: float, trig: TriggerInput,
                 periodic_rate: float, mode_centre_true: np.ndarray, mode_x: np.ndarray,
                 sync_true: np.ndarray, crosstalk_true: np.ndarray, crosstalk_amp: float,
-                lo_on: bool = True) -> DigitizerRecording:
+                lo_on: bool = True, lo_scale_fn=None) -> DigitizerRecording:
+        """``lo_scale_fn(t_true)``: relative LO-Leistung (Drift); das optische Signal skaliert mit √P_LO."""
         c, d, clk = self.cfg, self.cfg.digitizer, self.clk
         fs, tu, L, pre = self.fs, self.tu, self.L, self.pre
         # TRIG-Kandidaten (Herald, Zufall, Zustand) mit Eingangsjitter und Zeitauflösung
@@ -139,6 +160,11 @@ class ADQ32:
         sig_el = np.sqrt(VAC_VAR / c.clearance)
         xtD = np.sort(clk(crosstalk_true)) if len(crosstalk_true) and crosstalk_amp else np.empty(0)
         kk = np.arange(L)
+        if lo_scale_fn is not None and n:
+            t_rec_true = t0 + (ts_rec * tu - TD_start) / (1 + clk.eps)
+            lo_amp = np.sqrt(np.asarray(lo_scale_fn(t_rec_true), float) * np.ones(n))
+        else:
+            lo_amp = np.ones(n)
         data = np.empty((n, L), np.int16)
         n_in = np.zeros(n, np.int32)
         for j in range(n):
@@ -163,7 +189,9 @@ class ADQ32:
                 for tx in xtD[a:b]:
                     dt = tk - tx - d.crosstalk_delay
                     w = w + crosstalk_amp * np.sqrt(VAC_VAR) * np.where(dt >= 0, np.exp(-np.clip(dt, 0, None) / d.crosstalk_tau), 0.0)
-            y = w + rng.normal(0, sig_el, L)
+            y = lo_amp[j] * w + rng.normal(0, sig_el, L)
+            if self.filt is not None:
+                y, _ = _sig.lfilter(*self.filt, y, zi=self.filt_zi * y[0])
             data[j] = np.clip(np.round(y * d.lsb_per_unit + d.adc_offset), -self.lim - 1, self.lim)
         # Triggerquelle im Header
         if d.header_reports_trigger_source:

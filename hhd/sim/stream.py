@@ -36,6 +36,7 @@ class Chunk:
     marker_timestamp: np.ndarray
     last_in_block: bool
     meta: dict = field(default_factory=dict)
+    run_id: str = ""
 
 
 class SimStream:
@@ -74,7 +75,7 @@ class SimStream:
             yield Chunk(br.cfg.id, br.dataset_type, k, k * self.chunk_s, t1, br.harp_records[h0:h1],
                         dg.data[r0:r1], dg.timestamp[r0:r1], dg.record_start[r0:r1], dg.trigger_source[r0:r1],
                         np.arange(r0, r1, dtype=np.uint32), dg.marker_ts[m0:m1], k == n - 1,
-                        meta=dict(attrs=br.attrs) if k == 0 else {})
+                        meta=dict(attrs=br.attrs) if k == 0 else {}, run_id=br.run_id)
             h0, r0, m0 = h1, r1, m1
 
     def __iter__(self) -> Iterator[Chunk]:
@@ -95,7 +96,9 @@ class StreamSource:
         self.n_chunks = 0
 
     def open(self) -> dict:
-        return dict(kind="sim", device=self._res.device_attrs, blocks=[b.cfg.id for b in self._res.blocks])
+        r = self._res
+        return dict(kind="sim", device=r.device_attrs, session_id=r.session_id, campaign_id=r.campaign_id,
+                    calibration_id=r.calibration_id, blocks=[b.cfg.id for b in r.blocks], runs=[b.run_id for b in r.blocks])
 
     def start(self) -> None:
         self._it = iter(SimStream(self._res, **self._kw))

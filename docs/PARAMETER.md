@@ -4,10 +4,11 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 
 | Parameter | Default | Einheit | Status | Quelle | Bedeutung |
 |---|---|---|---|---|---|
-| `run.name` | hhd_sim |  | Vorschlag |  | Name des Laufs (Dateinamen, Metadaten) |
-| `run.seed` | 20261020 |  | Vorschlag |  | Startwert des Zufallsgenerators; gleicher Seed = bitgleiche Dateien |
-| `run.start_s` | 0.25 | s | Vorschlag |  | wahre Startzeit des ersten Blocks (Digitizer-Zähler läuft ab clock.t_arm_s) |
-| `run.gap_s` | 0.5 | s | Vorschlag |  | Pause zwischen Blöcken (Umbau, z. B. Blocker) |
+| `session.id` | S001 |  | Vorschlag | ED-12 | Sitzungs-ID: eine Sitzung = Folge von Messläufen mit gemeinsamer Kalibrierung |
+| `session.campaign` | K-SIM |  | Vorschlag |  | Kampagnen-ID (mehrere Sitzungen, z. B. Seeds-Kampagne oder Messtage) |
+| `session.seed` | 20261020 |  | Vorschlag |  | Startwert des Zufallsgenerators; gleicher Seed = bitgleiche Dateien |
+| `session.start_s` | 0.25 | s | Vorschlag |  | wahre Startzeit des ersten Laufs (Digitizer-Zähler läuft ab clock.t_arm_s) |
+| `session.gap_s` | 0.5 | s | Vorschlag |  | Pause zwischen Läufen (Umbau, z. B. Blocker, Triggerquelle umschalten) |
 | `source.R_herald` | 1000 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Rate echter Heralds (CW, Poisson) |
 | `source.R_dark` | 20 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Dunkelzählrate des Herald-Detektors (falsche Heralds, Vakuum) |
 | `source.eta_herald` | 0.5 |  | Annahme | Analyse Vergleich | Nachweiswahrscheinlichkeit im Herald-Arm; bestimmt die Rate ungeheraldeter Signalphotonen R_herald·(1/η_h − 1) |
@@ -22,8 +23,8 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `phase.steps` | [0.0, 0.7853981633974483, 1.5707963267948966, 2.356194490169959] | rad | Vorschlag |  | Phasenwerte bei steps |
 | `phase.dwell_s` | 0.25 | s | Vorschlag |  | Verweildauer je Phasenstufe |
 | `phase.marker_bit` | 2 |  | Vorschlag |  | Harp-Marker-Bitmaske für Rampen-/Stufenbeginn (0 = aus) |
-| `harp.model` | HydraHarp 500 M |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | HydraHarp 500 S (4–8 Kanäle) oder M (8–16 Kanäle) |
-| `harp.n_channels` | 8 |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Anzahl Eingangskanäle (S: 4..8, M: 8..16) |
+| `harp.model` | HydraHarp 500 S |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | HydraHarp 500 S (4–8 Kanäle) oder M (8–16 Kanäle); Festlegung: S |
+| `harp.n_channels` | 4 |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Anzahl Eingangskanäle (S: 4..8, M: 8..16); HHD braucht 4 |
 | `harp.resolution` | 1e-12 | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | T2-Auflösung (fest 1 ps) |
 | `harp.jitter_rms` | 2.5e-12 | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Einzelmessungs-Zeitunsicherheit typ. (rms) |
 | `harp.trigger` | ETR |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Eingangstrigger ETR (Totzeit < 680 ps) oder CFD (< 6,8 ns) |
@@ -43,7 +44,9 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `harp.R_spurious` | 0.2 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Störmarker (Glitches) an der Harp |
 | `digitizer.model` | ADQ32 |  | **Spez.** | ED-6 | Digitizer-Modell |
 | `digitizer.form_factor` | PCIe |  | **Spez.** | ADQ32 Datenblatt 20-2378 | Bauform PCIe (ED-14) oder USB |
-| `digitizer.clock_option` | S2G5 |  | **Spez.** | ADQ32 Datenblatt 20-2378 | S2G5 (2,5 GS/s je Kanal, 5 GS/s 1-Kanal) oder S2G0 (2/4 GS/s) |
+| `digitizer.clock_option` | S2G5 |  | **Spez.** | ADQ32 Datenblatt 20-2378 | S2G5 (2,5 GS/s je Kanal, 5 GS/s 1-Kanal) oder S2G0 (2/4 GS/s); Festlegung ED-14: S2G5 |
+| `digitizer.bandwidth_option` | BW1G0 |  | **Spez.** | ADQ32 Datenblatt 20-2378 | Analogbandbreite BW1G0 (1 GHz) oder BW2G5 (2,5 GHz); Festlegung ED-14: BW1G0 |
+| `digitizer.frontend_filter` | first_order |  | Annahme |  | Modell der Analogbandbreite: first_order (Tiefpass 1. Ordnung, −3 dB bei der Bandbreite) oder none |
 | `digitizer.channel_mode` | 2 |  | **Spez.** | ADQ32 Datenblatt 20-2378 | 2-Kanal- oder 1-Kanal-Modus |
 | `digitizer.skip_factor` | 1 |  | **Spez.** | ADQ3 User Guide 21-2539 | Sample Skip (ohne Tiefpass, User Guide 5.2) |
 | `digitizer.record_length` | 5000 | Samples | Vorschlag |  | Recordlänge (2 µs bei 2,5 GS/s; Off-Herald-Fenster) |
@@ -77,15 +80,23 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `markers.on_timing_channel` | True |  | Vorschlag | ED-7 | Marker auf regulärem Timing-Kanal statt Marker-Eingang (ED-7) |
 | `markers.sigma_tc` | 5e-12 | s | Annahme | Vorbericht Synchronisation, Parameter | Streuung, wenn der Marker auf einem Timing-Kanal liegt |
 | `markers.d_MH` | 1.5e-08 | s | Annahme | Vorbericht Synchronisation, Parameter | Laufzeit Markerquelle → Harp |
+| `drift.lo_rel_per_s` | 0 | 1/s | Vorschlag | Gesamtplan v1.4, R15 | lineare relative Drift der LO-Leistung ab Sitzungsbeginn (0 = aus); Vakuumrauschen ∝ √P_LO, elektronisches Rauschen fest |
+| `drift.eta_rel_per_s` | 0 | 1/s | Vorschlag | Gesamtplan v1.4, R15 | lineare relative Drift der Zustandseffizienz η je Lauf (Modenanpassung, Justage) |
+| `drift.monitor` | True |  | Vorschlag |  | LO-Leistungsmonitor (Photodiode) mitschreiben: /blocks/<id>/monitor |
+| `drift.monitor_rate_Hz` | 10 | Hz | Annahme |  | Abtastrate des LO-Monitors |
+| `drift.monitor_noise_rel` | 0.001 |  | Annahme |  | relatives Rauschen des LO-Monitors |
 | `blocks[].id` | heralded |  | Vorschlag |  | eindeutiger Blockname |
-| `blocks[].kind` | heralded |  | Vorschlag |  | heralded \| random \| vacuum \| herald_blocked \| electronic \| state |
-| `blocks[].duration_s` | 5 | s | Vorschlag |  | Messdauer des Blocks |
-| `blocks[].random_rate` | 0 | 1/s | Vorschlag |  | Zufallstrigger (Poisson): eingestreut (heralded) bzw. Blocktrigger (random) |
-| `blocks[].periodic_rate` | 2000 | 1/s | Vorschlag |  | interne periodische Trigger (vacuum, electronic) |
+| `blocks[].kind` | heralded |  | Vorschlag |  | heralded \| random \| free_running \| vacuum \| herald_blocked \| electronic \| state |
+| `blocks[].duration_s` | 5 | s | Vorschlag |  | Messdauer des Laufs |
+| `blocks[].run_id` |  |  | Vorschlag |  | Lauf-ID; leer = automatisch <session.id>-R<nn> |
+| `blocks[].random_rate` | 0 | 1/s | Vorschlag |  | Zufallstrigger (Poisson): Lauftrigger (random) bzw. eingestreut in heralded (Option, ED-12) |
+| `blocks[].periodic_rate` | 2000 | 1/s | Vorschlag |  | interne periodische Trigger (vacuum, electronic, free_running) |
 | `blocks[].state` | {} |  | Vorschlag |  | Testzustand bei kind=state: {type: coherent\|thermal\|fock\|cat\|vacuum\|fock1, ...} |
 | `blocks[].state_rate` | 1000 | 1/s | Vorschlag |  | Rate getriggerter Testzustände (periodisch) |
 | `blocks[].phase` | {} |  | Vorschlag |  | blockeigene Überschreibung von phase.* |
 | `blocks[].crosstalk_amp` | None |  | Vorschlag |  | blockeigene Überschreibung von digitizer.crosstalk_amp |
+| `blocks[].lo_scale` | 1 |  | Vorschlag |  | Faktor auf die LO-Leistung in diesem Lauf (Sprung; zusätzlich zu drift.lo_rel_per_s) |
+| `blocks[].eta_scale` | 1 |  | Vorschlag |  | Faktor auf η in diesem Lauf (Sprung; zusätzlich zu drift.eta_rel_per_s) |
 
 ## Standard-Messablauf (`blocks`)
 
@@ -93,6 +104,7 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 |---|---|---|---|---|
 | kv_start | vacuum | 0.5 | 0 | 4000 |
 | kh | herald_blocked | 1 | 0 | 2000 |
-| heralded | heralded | 5 | 200 | 2000 |
-| random | random | 1 | 2000 | 2000 |
+| heralded_1 | heralded | 2.5 | 0 | 2000 |
+| unheralded | random | 1 | 2000 | 2000 |
+| heralded_2 | heralded | 2.5 | 0 | 2000 |
 | kv_end | vacuum | 0.5 | 0 | 4000 |

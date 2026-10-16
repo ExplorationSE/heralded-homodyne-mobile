@@ -17,7 +17,7 @@ def test_roundtrip_yaml_json(tmp_path):
 
 def test_partial_config_uses_defaults():
     c = SimConfig.from_dict({"source": {"eta": 0.5}})
-    assert c.source.eta == 0.5 and c.source.R_herald == 1000.0 and len(c.blocks) == 5
+    assert c.source.eta == 0.5 and c.source.R_herald == 1000.0 and len(c.blocks) == 6
 
 
 def test_unknown_keys_rejected():

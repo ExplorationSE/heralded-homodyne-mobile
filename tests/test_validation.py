@@ -71,7 +71,7 @@ def test_known_phase_coherent(phase_run):
 
 def test_extension_states(tmp_path):
     cfg = SimConfig()
-    cfg.run.seed = 9
+    cfg.session.seed = 9
     cfg.blocks = [BlockCfg(id="kv", kind="vacuum", duration_s=0.5, periodic_rate=4000),
                   BlockCfg(id="fock2", kind="state", duration_s=1.0, state_rate=2000, state={"type": "fock", "n": 2}),
                   BlockCfg(id="cat", kind="state", duration_s=1.0, state_rate=2000, state={"type": "cat", "alpha": 1.5},
@@ -94,7 +94,7 @@ def test_phase_fit_unit():
 def test_crosstalk_detected_by_kh(tmp_path):
     """Fehlerbild R10: Übersprechen verfälscht K-H deutlich – die Pflichtkontrolle erkennt es."""
     cfg = SimConfig.from_dict({"digitizer": {"crosstalk_amp": 0.3}})
-    cfg.run.seed = 2
+    cfg.session.seed = 2
     cfg.blocks = [BlockCfg(id="kv", kind="vacuum", duration_s=0.5, periodic_rate=4000),
                   BlockCfg(id="kh", kind="herald_blocked", duration_s=1.0)]
     run(cfg, tmp_path)

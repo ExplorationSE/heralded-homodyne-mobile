@@ -5,6 +5,17 @@ erzeugten Wellenformen den Sollzustand tragen: Vakuumnormierung aus den K-V-Blö
 Modenfunktion, Photonenzahlverteilung per EM (phasengemittelt), W(0,0) = Σ(−1)ⁿρₙₙ/π, Bootstrap-Fehler,
 bei bekannter Phase θ ein Fit ⟨x⟩(θ) = A·cos(θ − φ).
 
+Vakuumnormierung (Gegenmaßnahmen gegen Drift zwischen getrennten Läufen, Gesamtplan v1.4):
+
+* ``pooled``       – gemeinsame Kalibrierung aller K-V-Läufe der Sitzung (Standard);
+* ``interpolated`` – Vakuumvarianz zeitlich linear zwischen den K-V-Läufen interpoliert;
+* ``monitor``      – gemeinsame Kalibrierung, je Lauf mit dem LO-Leistungsmonitor skaliert (σ ∝ √P_LO;
+  der elektronische Rauschanteil 1/S wird dabei vernachlässigt).
+
+Der Vergleich ``comparison`` fasst die Läufe mit Herald-Trigger (A) und ohne Herald (B) zusammen und
+weist Driftindikatoren aus: A-B-A-Konsistenz der A-Läufe, Änderung der Vakuumskala zwischen erstem und
+letztem K-V-Lauf, Änderung der LO-Leistung laut Monitor.
+
 Synchronisation aus den Markern (ohne Wahrheit), Kalibrierung und Rekonstruktion für Messdaten folgen in
 AP3–AP7 (``hhd.sync``, ``hhd.calib``, ``hhd.modes``, ``hhd.recon``).
 """
@@ -35,10 +46,13 @@ def wigner00(p: np.ndarray) -> float:
     return float(np.sum(p * (-1.0) ** np.arange(len(p))) / np.pi)
 
 
-class RunReader:
+NORM_MODES = ("pooled", "interpolated", "monitor")
+
+
+class SessionReader:
     def __init__(self, run_dir: str | Path):
         self.dir = Path(run_dir)
-        self.manifest = json.loads((self.dir / "run.json").read_text(encoding="utf-8"))
+        self.manifest = json.loads((self.dir / "session.json").read_text(encoding="utf-8"))
         self.cfg = SimConfig.from_dict(self.manifest["config"])
         self.dig = h5py.File(self.dir / "digitizer.h5", "r")
         self.tru = h5py.File(self.dir / "truth.h5", "r")
@@ -55,7 +69,18 @@ class RunReader:
         return (1 + self.eps) * (np.asarray(t) - self.t_arm) + np.interp(t, self.tg, self.phig)
 
     def blocks(self):
-        return [b["id"] for b in self.manifest["blocks"]]
+        return [b["id"] for b in self.manifest["runs"]]
+
+    def attrs(self, bid):
+        return self.dig[f"blocks/{bid}"].attrs
+
+    def t_mid(self, bid) -> float:
+        a = self.attrs(bid)
+        return float(a["t_start_s"]) + 0.5 * float(a["duration_s"])
+
+    def lo_monitor(self, bid) -> float:
+        g = self.dig[f"blocks/{bid}"]
+        return float(g["monitor/lo_power_rel"][:].mean()) if "monitor" in g else float("nan")
 
     def expected(self, bid):
         return json.loads(self.tru[f"blocks/{bid}"].attrs["expected_json"])
@@ -98,18 +123,47 @@ class RunReader:
             x[j] = g @ (data[j].astype(float) - off)
         return x / s
 
+    def vacuum_runs(self):
+        return [b for b in self.blocks() if self.attrs(b)["dataset_type"] == "vacuum"]
+
     def vacuum_norm(self):
-        vac = [b for b in self.blocks() if self.dig[f"blocks/{b}"].attrs["dataset_type"] == "vacuum"]
+        """gemeinsame Kalibrierung: (Offset, Skala, n) aus allen K-V-Läufen der Sitzung."""
+        vac = self.vacuum_runs()
         if not vac:
-            raise ValueError("kein Vakuumblock (K-V) vorhanden")
+            raise ValueError("kein Vakuumlauf (K-V) vorhanden")
         datas = [self.records(b)[0] for b in vac]
         off = float(np.mean([d.mean() for d in datas]))
         xs = np.concatenate([self.project(b, off=off) for b in vac])
         return off, float(np.sqrt(xs.var() / 0.5)), len(xs)
 
-    def quadratures(self, bid, norm=None):
-        off, s, _ = norm or self.vacuum_norm()
-        return self.project(bid, off=off, s=s)
+    def vacuum_per_run(self, off: float) -> list[dict]:
+        """Vakuumskala je K-V-Lauf (für Interpolation und Driftindikator)."""
+        out = []
+        for b in self.vacuum_runs():
+            x = self.project(b, off=off)
+            out.append(dict(id=b, t=self.t_mid(b), var=float(x.var()), n=len(x), lo_monitor=self.lo_monitor(b)))
+        return out
+
+    def scale_for(self, bid, mode: str, norm, per_run=None) -> float:
+        off, s, _ = norm
+        if mode == "pooled":
+            return s
+        if mode == "interpolated":
+            per_run = per_run if per_run is not None else self.vacuum_per_run(off)
+            t = np.array([v["t"] for v in per_run]); var = np.array([v["var"] for v in per_run])
+            return float(np.sqrt(np.interp(self.t_mid(bid), t, var) / 0.5))
+        if mode == "monitor":
+            per_run = per_run if per_run is not None else self.vacuum_per_run(off)
+            lo_vac = np.average([v["lo_monitor"] for v in per_run], weights=[v["n"] for v in per_run])
+            lo = self.lo_monitor(bid)
+            if not (np.isfinite(lo) and lo > 0 and np.isfinite(lo_vac)):
+                raise ValueError(f"{bid}: kein LO-Monitor für die Normierung")
+            return float(s * np.sqrt(lo / lo_vac))
+        raise ValueError(f"Normierung {mode!r} unbekannt ({', '.join(NORM_MODES)})")
+
+    def quadratures(self, bid, norm=None, mode: str = "pooled", per_run=None):
+        norm = norm or self.vacuum_norm()
+        return self.project(bid, off=norm[0], s=self.scale_for(bid, mode, norm, per_run))
 
     def theta(self, bid):
         """wahre Phase der bewerteten Mode je Record (nur Testzustände)."""
@@ -152,26 +206,54 @@ def phase_fit(x: np.ndarray, theta: np.ndarray) -> dict:
                 residual_var=float(res.var()), n=int(m.sum()))
 
 
-def check_run(run_dir: str | Path, n_boot: int = 100) -> dict:
-    """Bewertet alle Blöcke eines Laufs gegen ihre Sollwerte.
+RunReader = SessionReader      # frühere Bezeichnung
+
+
+def _diff(a: dict, b: dict, key: str) -> dict:
+    """Differenz a − b einer Kenngröße (W00 oder var_x) mit Fehler und z-Wert."""
+    va, vb = a[key], b[key]
+    sa = a["W00_err"] if key == "W00" else a["var_err"]
+    sb = b["W00_err"] if key == "W00" else b["var_err"]
+    d = va - vb
+    s = float(np.hypot(sa, sb))
+    return dict(diff=float(d), err=s, z=float(d / s) if s > 0 else float("nan"))
+
+
+def check_run(run_dir: str | Path, n_boot: int = 100, norm_mode: str = "pooled") -> dict:
+    """Bewertet alle Läufe einer Sitzung gegen ihre Sollwerte und vergleicht A (Herald) mit B (ohne Herald).
 
     Je Block wird die Hauptgruppe bewertet (Herald-, Zustands-, Zufalls- bzw. periodisch getriggerte Records);
     in heralded Blöcken eingestreute Zufallstrigger erscheinen getrennt unter ``<block>/random``.
     W(0,0) aus der phasengemittelten EM-Rekonstruktion wird nur bei gleichverteilter Phase bewertet
     (phase.mode random oder ramp, bzw. phasenunempfindlicher Zustand).
     """
-    rr = RunReader(run_dir)
+    if norm_mode not in NORM_MODES:
+        raise ValueError(f"norm_mode: {', '.join(NORM_MODES)}")
+    rr = SessionReader(run_dir)
     try:
         norm = rr.vacuum_norm()
-        out = dict(vacuum_norm=dict(offset=norm[0], scale=norm[1], n=norm[2]), blocks={})
+        per_run = rr.vacuum_per_run(norm[0])
+        out = dict(session_id=rr.manifest.get("session_id"), campaign_id=rr.manifest.get("campaign_id"),
+                   norm_mode=norm_mode, vacuum_norm=dict(offset=norm[0], scale=norm[1], n=norm[2]), blocks={},
+                   scales={})
+        xs_role: dict[str, list] = {"heralded": [], "unheralded": []}
+        exp_role: dict[str, list] = {"heralded": [], "unheralded": []}
         for bid in rr.blocks():
             exp = rr.expected(bid)
-            attrs = rr.dig[f"blocks/{bid}"].attrs
+            attrs = rr.attrs(bid)
             kind = rr.tru[f"blocks/{bid}/records/kind"][:]
-            x_all = rr.quadratures(bid, norm)
+            if attrs["kind"] == "electronic" and norm_mode != "pooled":
+                scale = norm[1]
+            else:
+                scale = rr.scale_for(bid, norm_mode, norm, per_run)
+            out["scales"][bid] = scale
+            x_all = rr.project(bid, off=norm[0], s=scale)
             th_all = rr.theta(bid)
             main = {"heralded": TRIG_HERALD, "herald_blocked": TRIG_HERALD, "random": TRIG_RANDOM,
                     "state": TRIG_STATE}.get(attrs["kind"], TRIG_PERIODIC)
+            role = attrs["comparison_role"]
+            if role in xs_role:
+                xs_role[role].append(x_all[kind == main]); exp_role[role].append((int((kind == main).sum()), exp))
             groups = [(bid, kind == main, exp)]
             if attrs["kind"] == "heralded" and np.any(kind == TRIG_RANDOM):
                 groups.append((f"{bid}/random", kind == TRIG_RANDOM, dict(W00=1 / np.pi, var_x=0.5)))
@@ -193,7 +275,56 @@ def check_run(run_dir: str | Path, n_boot: int = 100) -> dict:
                     r["phase_fit"] = phase_fit(x, th)
                     r["expected"]["A"] = float(np.sqrt(2 * e["eta_total"]) * abs(a)) if e["state"]["type"] == "coherent" else 0.0
                     r["expected"]["phi"] = float(np.angle(a))
+                r["run_id"] = attrs["run_id"] if name == bid else ""
                 out["blocks"][name] = r
+        out["comparison"] = _comparison(rr, out, xs_role, exp_role, per_run, n_boot)
         return out
     finally:
         rr.close()
+
+
+def _comparison(rr: SessionReader, out: dict, xs_role: dict, exp_role: dict, per_run: list, n_boot: int) -> dict:
+    """Vergleich getrennter Läufe (ED-12) und Driftindikatoren."""
+    comp: dict = {}
+    for role in ("heralded", "unheralded"):
+        if not xs_role[role]:
+            continue
+        x = np.concatenate(xs_role[role])
+        r = summarize(x, n_boot=n_boot)
+        n_tot = sum(n for n, _ in exp_role[role])
+        e = {k: float(sum(n * ex[k] for n, ex in exp_role[role]) / n_tot)
+             for k in ("W00", "var_x") if all(k in ex for _, ex in exp_role[role])}
+        r["expected"] = e
+        if "W00" in e and r["W00_err"] > 0:
+            r["W00_pull"] = (r["W00"] - e["W00"]) / r["W00_err"]
+        r["runs"] = [b for b in rr.blocks() if rr.attrs(b)["comparison_role"] == role]
+        comp[role] = r
+    if "heralded" in comp and "unheralded" in comp:
+        comp["heralded_minus_unheralded"] = dict(W00=_diff(comp["heralded"], comp["unheralded"], "W00"),
+                                                 var_x=_diff(comp["heralded"], comp["unheralded"], "var_x"))
+    # A-B-A: erster gegen letzten Lauf mit Herald-Trigger
+    hr = [b for b in rr.blocks() if rr.attrs(b)["comparison_role"] == "heralded" and b in out["blocks"]
+          and "W00" in out["blocks"][b]]
+    drift: dict = {}
+    if len(hr) >= 2:
+        a, b = out["blocks"][hr[0]], out["blocks"][hr[-1]]
+        drift["aba"] = dict(first=hr[0], last=hr[-1], W00=_diff(b, a, "W00"), var_x=_diff(b, a, "var_x"))
+    if len(per_run) >= 2:
+        v0, v1 = per_run[0], per_run[-1]
+        rel = v1["var"] / v0["var"] - 1
+        err = float(np.sqrt(2 / v0["n"] + 2 / v1["n"]))
+        drift["vacuum"] = dict(first=v0["id"], last=v1["id"], var_rel_change=float(rel), err=err, z=float(rel / err))
+    lo = [(b, rr.lo_monitor(b)) for b in rr.blocks() if np.isfinite(rr.lo_monitor(b)) and rr.lo_monitor(b) > 0]
+    if len(lo) >= 2:
+        drift["lo_monitor"] = dict(first=lo[0][0], last=lo[-1][0], rel_change=float(lo[-1][1] / lo[0][1] - 1),
+                                   per_run={b: v for b, v in lo})
+    flags = []
+    if "aba" in drift and max(abs(drift["aba"]["W00"]["z"]), abs(drift["aba"]["var_x"]["z"])) > 3:
+        flags.append("A-B-A: erster und letzter Herald-Lauf weichen > 3σ ab (Drift zwischen Läufen?)")
+    if "vacuum" in drift and abs(drift["vacuum"]["z"]) > 3:
+        flags.append("K-V: Vakuumvarianz ändert sich > 3σ (LO-Leistung/Verstärkung driftet)")
+    if "lo_monitor" in drift and abs(drift["lo_monitor"]["rel_change"]) > 0.01:
+        flags.append("LO-Monitor: Leistung ändert sich um mehr als 1 %")
+    drift["flags"] = flags
+    comp["drift"] = drift
+    return comp

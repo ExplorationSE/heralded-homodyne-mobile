@@ -1,7 +1,8 @@
 # Standardkonfiguration des Simulators (alle Parameter, Defaults aus hhd/sim/config.py).
 # Bedeutung, Einheit, Status und Quelle jedes Parameters: docs/PARAMETER.md
-run:
-  name: hhd_sim
+session:
+  id: S001
+  campaign: K-SIM
   seed: 20261020
   start_s: 0.25
   gap_s: 0.5
@@ -26,8 +27,8 @@ phase:
   dwell_s: 0.25
   marker_bit: 2
 harp:
-  model: HydraHarp 500 M
-  n_channels: 8
+  model: HydraHarp 500 S
+  n_channels: 4
   resolution: 1.0e-12
   jitter_rms: 2.5e-12
   trigger: ETR
@@ -49,6 +50,8 @@ digitizer:
   model: ADQ32
   form_factor: PCIe
   clock_option: S2G5
+  bandwidth_option: BW1G0
+  frontend_filter: first_order
   channel_mode: 2
   skip_factor: 1
   record_length: 5000
@@ -84,49 +87,82 @@ markers:
   on_timing_channel: true
   sigma_tc: 5.0e-12
   d_MH: 1.5e-08
+drift:
+  lo_rel_per_s: 0.0
+  eta_rel_per_s: 0.0
+  monitor: true
+  monitor_rate_Hz: 10.0
+  monitor_noise_rel: 0.001
 blocks:
 - id: kv_start
   kind: vacuum
   duration_s: 0.5
+  run_id: ''
   random_rate: 0.0
   periodic_rate: 4000.0
   state: {}
   state_rate: 1000.0
   phase: {}
   crosstalk_amp: null
+  lo_scale: 1.0
+  eta_scale: 1.0
 - id: kh
   kind: herald_blocked
   duration_s: 1.0
+  run_id: ''
   random_rate: 0.0
   periodic_rate: 2000.0
   state: {}
   state_rate: 1000.0
   phase: {}
   crosstalk_amp: null
-- id: heralded
+  lo_scale: 1.0
+  eta_scale: 1.0
+- id: heralded_1
   kind: heralded
-  duration_s: 5.0
-  random_rate: 200.0
+  duration_s: 2.5
+  run_id: ''
+  random_rate: 0.0
   periodic_rate: 2000.0
   state: {}
   state_rate: 1000.0
   phase: {}
   crosstalk_amp: null
-- id: random
+  lo_scale: 1.0
+  eta_scale: 1.0
+- id: unheralded
   kind: random
   duration_s: 1.0
+  run_id: ''
   random_rate: 2000.0
   periodic_rate: 2000.0
   state: {}
   state_rate: 1000.0
   phase: {}
   crosstalk_amp: null
+  lo_scale: 1.0
+  eta_scale: 1.0
+- id: heralded_2
+  kind: heralded
+  duration_s: 2.5
+  run_id: ''
+  random_rate: 0.0
+  periodic_rate: 2000.0
+  state: {}
+  state_rate: 1000.0
+  phase: {}
+  crosstalk_amp: null
+  lo_scale: 1.0
+  eta_scale: 1.0
 - id: kv_end
   kind: vacuum
   duration_s: 0.5
+  run_id: ''
   random_rate: 0.0
   periodic_rate: 4000.0
   state: {}
   state_rate: 1000.0
   phase: {}
   crosstalk_amp: null
+  lo_scale: 1.0
+  eta_scale: 1.0

@@ -40,11 +40,21 @@ class ConfigError(ValueError):
 
 # ============================================================================ Gruppen
 @dataclass
-class RunCfg:
-    name: str = P("hhd_sim", doc="Name des Laufs (Dateinamen, Metadaten)", status="Vorschlag")
+class SessionCfg:
+    id: str = P("S001", doc="Sitzungs-ID: eine Sitzung = Folge von Messläufen mit gemeinsamer Kalibrierung", status="Vorschlag", source="ED-12")
+    campaign: str = P("K-SIM", doc="Kampagnen-ID (mehrere Sitzungen, z. B. Seeds-Kampagne oder Messtage)", status="Vorschlag")
     seed: int = P(20261020, doc="Startwert des Zufallsgenerators; gleicher Seed = bitgleiche Dateien", status="Vorschlag")
-    start_s: float = P(0.25, "s", doc="wahre Startzeit des ersten Blocks (Digitizer-Zähler läuft ab clock.t_arm_s)", status="Vorschlag")
-    gap_s: float = P(0.5, "s", doc="Pause zwischen Blöcken (Umbau, z. B. Blocker)", status="Vorschlag")
+    start_s: float = P(0.25, "s", doc="wahre Startzeit des ersten Laufs (Digitizer-Zähler läuft ab clock.t_arm_s)", status="Vorschlag")
+    gap_s: float = P(0.5, "s", doc="Pause zwischen Läufen (Umbau, z. B. Blocker, Triggerquelle umschalten)", status="Vorschlag")
+
+
+@dataclass
+class DriftCfg:
+    lo_rel_per_s: float = P(0.0, "1/s", doc="lineare relative Drift der LO-Leistung ab Sitzungsbeginn (0 = aus); Vakuumrauschen ∝ √P_LO, elektronisches Rauschen fest", status="Vorschlag", source="Gesamtplan v1.4, R15")
+    eta_rel_per_s: float = P(0.0, "1/s", doc="lineare relative Drift der Zustandseffizienz η je Lauf (Modenanpassung, Justage)", status="Vorschlag", source="Gesamtplan v1.4, R15")
+    monitor: bool = P(True, doc="LO-Leistungsmonitor (Photodiode) mitschreiben: /blocks/<id>/monitor", status="Vorschlag")
+    monitor_rate_Hz: float = P(10.0, "Hz", doc="Abtastrate des LO-Monitors", status="Annahme")
+    monitor_noise_rel: float = P(1e-3, "", doc="relatives Rauschen des LO-Monitors", status="Annahme")
 
 
 @dataclass
@@ -71,8 +81,8 @@ class PhaseCfg:
 
 @dataclass
 class HarpCfg:
-    model: str = P("HydraHarp 500 M", doc="HydraHarp 500 S (4–8 Kanäle) oder M (8–16 Kanäle)", status="Spez.", source=HH500_MANUAL)
-    n_channels: int = P(8, "", doc="Anzahl Eingangskanäle (S: 4..8, M: 8..16)", status="Spez.", source=HH500_MANUAL)
+    model: str = P("HydraHarp 500 S", doc="HydraHarp 500 S (4–8 Kanäle) oder M (8–16 Kanäle); Festlegung: S", status="Spez.", source=HH500_MANUAL)
+    n_channels: int = P(4, "", doc="Anzahl Eingangskanäle (S: 4..8, M: 8..16); HHD braucht 4", status="Spez.", source=HH500_MANUAL)
     resolution: float = P(1e-12, "s", doc="T2-Auflösung (fest 1 ps)", status="Spez.", source=HH500_MANUAL)
     jitter_rms: float = P(2.5e-12, "s", doc="Einzelmessungs-Zeitunsicherheit typ. (rms)", status="Spez.", source=HH500_MANUAL)
     trigger: str = P("ETR", doc="Eingangstrigger ETR (Totzeit < 680 ps) oder CFD (< 6,8 ns)", status="Spez.", source=HH500_MANUAL)
@@ -96,7 +106,9 @@ class HarpCfg:
 class DigitizerCfg:
     model: str = P("ADQ32", doc="Digitizer-Modell", status="Spez.", source="ED-6")
     form_factor: str = P("PCIe", doc="Bauform PCIe (ED-14) oder USB", status="Spez.", source=ADQ32_DS)
-    clock_option: str = P("S2G5", doc="S2G5 (2,5 GS/s je Kanal, 5 GS/s 1-Kanal) oder S2G0 (2/4 GS/s)", status="Spez.", source=ADQ32_DS)
+    clock_option: str = P("S2G5", doc="S2G5 (2,5 GS/s je Kanal, 5 GS/s 1-Kanal) oder S2G0 (2/4 GS/s); Festlegung ED-14: S2G5", status="Spez.", source=ADQ32_DS)
+    bandwidth_option: str = P("BW1G0", doc="Analogbandbreite BW1G0 (1 GHz) oder BW2G5 (2,5 GHz); Festlegung ED-14: BW1G0", status="Spez.", source=ADQ32_DS)
+    frontend_filter: str = P("first_order", doc="Modell der Analogbandbreite: first_order (Tiefpass 1. Ordnung, −3 dB bei der Bandbreite) oder none", status="Annahme")
     channel_mode: int = P(2, "", doc="2-Kanal- oder 1-Kanal-Modus", status="Spez.", source=ADQ32_DS)
     skip_factor: int = P(1, "", doc="Sample Skip (ohne Tiefpass, User Guide 5.2)", status="Spez.", source=ADQ3_UG)
     record_length: int = P(5000, "Samples", doc="Recordlänge (2 µs bei 2,5 GS/s; Off-Herald-Fenster)", status="Vorschlag")
@@ -143,36 +155,49 @@ class MarkerCfg:
 @dataclass
 class BlockCfg:
     id: str = P("heralded", doc="eindeutiger Blockname", status="Vorschlag")
-    kind: str = P("heralded", doc="heralded | random | vacuum | herald_blocked | electronic | state", status="Vorschlag")
-    duration_s: float = P(5.0, "s", doc="Messdauer des Blocks", status="Vorschlag")
-    random_rate: float = P(0.0, "1/s", doc="Zufallstrigger (Poisson): eingestreut (heralded) bzw. Blocktrigger (random)", status="Vorschlag")
-    periodic_rate: float = P(2000.0, "1/s", doc="interne periodische Trigger (vacuum, electronic)", status="Vorschlag")
+    kind: str = P("heralded", doc="heralded | random | free_running | vacuum | herald_blocked | electronic | state", status="Vorschlag")
+    duration_s: float = P(5.0, "s", doc="Messdauer des Laufs", status="Vorschlag")
+    run_id: str = P("", doc="Lauf-ID; leer = automatisch <session.id>-R<nn>", status="Vorschlag")
+    random_rate: float = P(0.0, "1/s", doc="Zufallstrigger (Poisson): Lauftrigger (random) bzw. eingestreut in heralded (Option, ED-12)", status="Vorschlag")
+    periodic_rate: float = P(2000.0, "1/s", doc="interne periodische Trigger (vacuum, electronic, free_running)", status="Vorschlag")
     state: dict = P({}, doc="Testzustand bei kind=state: {type: coherent|thermal|fock|cat|vacuum|fock1, ...}", status="Vorschlag")
     state_rate: float = P(1000.0, "1/s", doc="Rate getriggerter Testzustände (periodisch)", status="Vorschlag")
     phase: dict = P({}, doc="blockeigene Überschreibung von phase.*", status="Vorschlag")
     crosstalk_amp: float | None = P(None, doc="blockeigene Überschreibung von digitizer.crosstalk_amp", status="Vorschlag")
+    lo_scale: float = P(1.0, "", doc="Faktor auf die LO-Leistung in diesem Lauf (Sprung; zusätzlich zu drift.lo_rel_per_s)", status="Vorschlag")
+    eta_scale: float = P(1.0, "", doc="Faktor auf η in diesem Lauf (Sprung; zusätzlich zu drift.eta_rel_per_s)", status="Vorschlag")
 
 
 def default_blocks() -> list[dict]:
-    """Standard-Messablauf laut Gesamtplan (AP18) und Vergleichsanalyse: K-V, K-H, heralded (+ Zufall), Zufall, K-V."""
+    """Standard-Messablauf ED-12 (Gesamtplan v1.4, AP18): getrennte Läufe, verschachtelt A-B-A.
+
+    K-V → K-H → A (Herald-Trigger) → B (ohne Herald, Zufallstrigger) → A → K-V. Alle Läufe einer Sitzung teilen
+    eine Kalibrierung (calibration_id). Off-Herald-Fenster und eingestreute Zufallstrigger bleiben Option.
+    """
     return [
         dict(id="kv_start", kind="vacuum", duration_s=0.5, periodic_rate=4000.0),
         dict(id="kh", kind="herald_blocked", duration_s=1.0),
-        dict(id="heralded", kind="heralded", duration_s=5.0, random_rate=200.0),
-        dict(id="random", kind="random", duration_s=1.0, random_rate=2000.0),
+        dict(id="heralded_1", kind="heralded", duration_s=2.5),
+        dict(id="unheralded", kind="random", duration_s=1.0, random_rate=2000.0),
+        dict(id="heralded_2", kind="heralded", duration_s=2.5),
         dict(id="kv_end", kind="vacuum", duration_s=0.5, periodic_rate=4000.0),
     ]
 
 
+BLOCK_KINDS = ("heralded", "random", "free_running", "vacuum", "herald_blocked", "electronic", "state")
+BANDWIDTH = {"BW1G0": 1.0e9, "BW2G5": 2.5e9}
+
+
 @dataclass
 class SimConfig:
-    run: RunCfg = field(default_factory=RunCfg)
+    session: SessionCfg = field(default_factory=SessionCfg)
     source: SourceCfg = field(default_factory=SourceCfg)
     phase: PhaseCfg = field(default_factory=PhaseCfg)
     harp: HarpCfg = field(default_factory=HarpCfg)
     digitizer: DigitizerCfg = field(default_factory=DigitizerCfg)
     clock: ClockCfg = field(default_factory=ClockCfg)
     markers: MarkerCfg = field(default_factory=MarkerCfg)
+    drift: DriftCfg = field(default_factory=DriftCfg)
     blocks: list[BlockCfg] = field(default_factory=lambda: [BlockCfg(**b) for b in default_blocks()])
 
     # ---------------------------------------------------------------- abgeleitete Größen (ADQ32)
@@ -204,6 +229,17 @@ class SimConfig:
     @property
     def sync_res(self) -> float:
         return self.digitizer.sync_res_ref * self.timing_scale
+
+    @property
+    def bandwidth(self) -> float:
+        return BANDWIDTH.get(self.digitizer.bandwidth_option, float("nan"))
+
+    @property
+    def calibration_id(self) -> str:
+        return f"{self.session.campaign}-{self.session.id}-cal"
+
+    def run_ids(self) -> list[str]:
+        return [b.run_id or f"{self.session.id}-R{i + 1:02d}" for i, b in enumerate(self.blocks)]
 
     @property
     def harp_dead(self) -> float:
@@ -263,6 +299,10 @@ class SimConfig:
             e.append("digitizer.record_length: 2 .. 2^32−1")
         if d.pretrigger >= d.record_length:
             e.append("digitizer.pretrigger < record_length")
+        if d.bandwidth_option not in BANDWIDTH:
+            e.append("digitizer.bandwidth_option: BW1G0 oder BW2G5")
+        if d.frontend_filter not in ("first_order", "none"):
+            e.append("digitizer.frontend_filter: first_order oder none")
         if d.adc_bits != 12:
             e.append("digitizer.adc_bits: ADQ32 hat 12 bit")
         if abs(self.clock.eps) > 3e-6 and not self.clock.shared_10MHz:
@@ -278,8 +318,21 @@ class SimConfig:
         ids = [b.id for b in self.blocks]
         if len(set(ids)) != len(ids):
             e.append("blocks: id doppelt")
+        rids = self.run_ids()
+        if len(set(rids)) != len(rids):
+            e.append("blocks: run_id doppelt")
+        if not self.session.id or not self.session.campaign:
+            e.append("session.id und session.campaign dürfen nicht leer sein")
+        dr = self.drift
+        T_tot = sum(b.duration_s + self.session.gap_s for b in self.blocks)
+        if 1 + min(0.0, dr.lo_rel_per_s) * T_tot <= 0.05 or 1 + min(0.0, dr.eta_rel_per_s) * T_tot <= 0.05:
+            e.append("drift: negative Drift macht LO-Leistung bzw. η in der Sitzung ≤ 5 %")
+        if dr.monitor_rate_Hz <= 0 or dr.monitor_noise_rel < 0:
+            e.append("drift.monitor_rate_Hz > 0, monitor_noise_rel ≥ 0")
         for b in self.blocks:
-            if b.kind not in ("heralded", "random", "vacuum", "herald_blocked", "electronic", "state"):
+            if b.lo_scale <= 0 or b.eta_scale <= 0:
+                e.append(f"blocks[{b.id}]: lo_scale, eta_scale > 0")
+            if b.kind not in BLOCK_KINDS:
                 e.append(f"blocks[{b.id}].kind unbekannt: {b.kind}")
             if b.duration_s <= 0:
                 e.append(f"blocks[{b.id}].duration_s > 0")
@@ -367,7 +420,7 @@ def _build(klass, data: dict | None, where: str):
 def parameter_rows(cfg: SimConfig | None = None) -> list[dict]:
     cfg = cfg or SimConfig()
     rows = []
-    for gname in ("run", "source", "phase", "harp", "digitizer", "clock", "markers"):
+    for gname in ("session", "source", "phase", "harp", "digitizer", "clock", "markers", "drift"):
         grp = getattr(cfg, gname)
         for f in fields(grp):
             md = f.metadata

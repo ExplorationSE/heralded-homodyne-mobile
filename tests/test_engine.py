@@ -16,11 +16,11 @@ def _blk(res, bid):
 
 def test_files_and_schema(std_run):
     res, d = std_run
-    for name in ("run.json", "digitizer.h5", "truth.h5", "harp_heralded.ptu", "harp_kv_start.ptu"):
+    for name in ("session.json", "digitizer.h5", "truth.h5", "harp_heralded.ptu", "harp_kv_start.ptu"):
         assert (d / name).exists()
     assert validate_run(d) == []
-    man = json.loads((d / "run.json").read_text(encoding="utf-8"))
-    assert [b["dataset_type"] for b in man["blocks"]] == ["vacuum", "herald_blocked", "heralded", "random_trigger", "vacuum"]
+    man = json.loads((d / "session.json").read_text(encoding="utf-8"))
+    assert [b["dataset_type"] for b in man["runs"]] == ["vacuum", "herald_blocked", "heralded", "random_trigger", "vacuum"]
     with h5py.File(d / "digitizer.h5") as f:
         ids = {f[f"blocks/{b}"].attrs["calibration_id"] for b in f["blocks"]}
         assert len(ids) == 1                                    # gemeinsame Kalibrierung aller Vergleichsdatensätze
@@ -37,7 +37,7 @@ def test_deterministic_and_seed_dependent(tmp_path):
     a, b = run(cfg, tmp_path / "a"), run(cfg, tmp_path / "b")
     assert (tmp_path / "a/harp_h.ptu").read_bytes() == (tmp_path / "b/harp_h.ptu").read_bytes()
     assert np.array_equal(_blk(a, "h").digitizer.data, _blk(b, "h").digitizer.data)
-    cfg.run.seed += 1
+    cfg.session.seed += 1
     c = simulate(cfg)
     assert not np.array_equal(_blk(a, "h").harp_records, _blk(c, "h").harp_records)
 

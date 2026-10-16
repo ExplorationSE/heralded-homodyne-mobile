@@ -1,5 +1,5 @@
 # Fehlerbild R10: Übersprechen des Herald-Pulses auf den Analogkanal. Die Kontrolle K-H (Signal blockiert)
 # zeigt es als Abweichung vom Vakuum, bevor es eine Einzelphoton-Effizienz vortäuscht.
-run:
-  name: crosstalk
+session:
+  id: crosstalk
 digitizer: {crosstalk_amp: 0.3}

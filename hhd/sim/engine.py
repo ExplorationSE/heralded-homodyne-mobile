@@ -1,15 +1,21 @@
-"""Simulation eines Messlaufs aus mehreren Blöcken (Messablauf laut Gesamtplan AP18).
+"""Simulation einer Messsitzung aus mehreren getrennten Messläufen (Messablauf laut Gesamtplan v1.4, AP18).
 
-Ein Lauf erzeugt je Block eine PTU-Datei der HydraHarp 500 (Strom 1), eine gemeinsame Digitizer-Datei im
-HDF5-Schema v1 (Strom 2), eine getrennte Wahrheitsdatei und ein Manifest ``run.json``.
+Struktur (ED-12): **Kampagne** → **Sitzung** (gemeinsame Kalibrierung ``calibration_id``) → **Läufe**
+(Blöcke in ``blocks``; je Lauf eine Lauf-ID, eine eigene PTU-Datei der HydraHarp 500 und eine Gruppe in der
+Digitizer-Datei). Eine Sitzung schreibt die PTU-Dateien (Strom 1), eine Digitizer-Datei im HDF5-Schema v1.1
+(Strom 2), eine getrennte Wahrheitsdatei und das Manifest ``session.json``.
 
-Blockarten (``BlockCfg.kind``) und Physik:
+Standard ist die Folge K-V → K-H → A (Herald-Trigger) → B (ohne Herald) → A → K-V; optional simuliert
+``drift`` eine Drift von LO-Leistung und Effizienz über die Sitzung (Prüfung der Gegenmaßnahmen).
+
+Laufarten (``BlockCfg.kind``) und Physik:
 
 =================  ================  ======================  ===========================================
 kind               dataset_type      Trigger am ADQ32        Signalmoden
 =================  ================  ======================  ===========================================
 heralded           heralded          Herald (+ Zufall, OR)   alle SPDC-Paare (geheraldet + ungeheraldet)
 random             random_trigger    Zufall                  alle SPDC-Paare (unbedingter Zustand)
+free_running       free_running      periodisch (intern)     alle SPDC-Paare (unbedingter Zustand)
 herald_blocked     herald_blocked    Herald                  keine (Signal blockiert, K-H)
 vacuum             vacuum            periodisch (intern)     keine (Signal blockiert, K-V)
 electronic         electronic        periodisch (intern)     keine, LO aus (nur elektronisches Rauschen)
@@ -38,9 +44,12 @@ from .harp import HydraHarp500
 from .phase import PhaseModel
 from .states import make_state
 
-KIND_TO_DATASET = dict(heralded="heralded", random="random_trigger", herald_blocked="herald_blocked",
-                       vacuum="vacuum", electronic="electronic", state="prepared_state")
+KIND_TO_DATASET = dict(heralded="heralded", random="random_trigger", free_running="free_running",
+                       herald_blocked="herald_blocked", vacuum="vacuum", electronic="electronic", state="prepared_state")
+KIND_TO_ROLE = dict(heralded="heralded", random="unheralded", free_running="unheralded", herald_blocked="control",
+                    vacuum="control", electronic="control", state="test_state")
 MODE_HERALDED, MODE_UNHERALDED, MODE_STATE = 0, 1, 2
+MANIFEST = "session.json"
 
 
 @dataclass
@@ -50,6 +59,7 @@ class BlockResult:
     t0: float
     duration: float
     dataset_type: str
+    run_id: str
     attrs: dict
     harp_records: np.ndarray            # T2-Records (uint32)
     harp_record_time_ps: np.ndarray
@@ -57,6 +67,7 @@ class BlockResult:
     truth: dict
     expected: dict
     warnings: list = field(default_factory=list)
+    monitor: dict | None = None             # LO-Leistungsmonitor (t_s, lo_power_rel)
 
 
 @dataclass
@@ -66,6 +77,8 @@ class RunResult:
     device_attrs: dict
     clock: DigitizerClock
     calibration_id: str
+    session_id: str = ""
+    campaign_id: str = ""
     out_dir: Path | None = None
     files: dict = field(default_factory=dict)
 
@@ -75,8 +88,20 @@ def _poisson_times(rng, rate, t0, T):
     return np.sort(rng.uniform(t0, t0 + T, n))
 
 
+def lo_scale_fn(cfg: SimConfig, b: BlockCfg):
+    """relative LO-Leistung als Funktion der wahren Zeit (lineare Drift ab Sitzungsbeginn × Laufsprung)."""
+    t_s, a = cfg.session.start_s, cfg.drift.lo_rel_per_s
+    return lambda t: b.lo_scale * (1.0 + a * (np.asarray(t, float) - t_s))
+
+
+def eta_of_run(cfg: SimConfig, b: BlockCfg, t_mid: float) -> float:
+    """Zustandseffizienz im Lauf (Drift zur Laufmitte × Laufsprung), begrenzt auf (0, 1]."""
+    eta = cfg.source.eta * b.eta_scale * (1.0 + cfg.drift.eta_rel_per_s * (t_mid - cfg.session.start_s))
+    return float(np.clip(eta, 1e-6, 1.0))
+
+
 def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: DigitizerClock, adq: ADQ32,
-                   harp: HydraHarp500, ss: np.random.SeedSequence, calibration_id: str) -> BlockResult:
+                   harp: HydraHarp500, ss: np.random.SeedSequence, calibration_id: str, run_id: str = "") -> BlockResult:
     rs = [np.random.default_rng(s) for s in ss.spawn(8)]
     r_src, r_state, r_phase, r_harp, r_dig, r_mark, r_trig, r_misc = rs
     src, h, d, mk = cfg.source, cfg.harp, cfg.digitizer, cfg.markers
@@ -85,6 +110,10 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     pcfg = cfg.phase_for(b)
     phase = PhaseModel(pcfg, t0, T)
     signal_blocked = kind in ("herald_blocked", "vacuum", "electronic")
+    lo_fn = lo_scale_fn(cfg, b)
+    t_mid = t0 + T / 2
+    lo_mid = float(lo_fn(t_mid))
+    eta_run = eta_of_run(cfg, b, t_mid)
     lo_on = kind != "electronic"
     spdc_on = kind != "state"
     warnings: list[str] = []
@@ -108,7 +137,7 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     mode_t, mode_x, mode_th, mode_kind, mode_src = [], [], [], [], []
     if spdc_on and not signal_blocked:
         th = phase.theta(t_pair + d.d_S, r_phase)
-        x = heralded_state.measure(r_state, th, src.eta)
+        x = heralded_state.measure(r_state, th, eta_run)
         mode_t.append(t_pair + d.d_S); mode_x.append(x); mode_th.append(th)
         mode_kind.append(np.where(herald_of_pair, MODE_HERALDED, MODE_UNHERALDED))
         mode_src.append(np.arange(len(t_pair)))
@@ -118,7 +147,7 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         test_state = make_state(b.state)
         t_state = t0 + (np.arange(int(np.floor(T * b.state_rate))) + 0.5) / b.state_rate
         th = phase.theta(t_state + d.d_S, r_phase)
-        x = test_state.measure(r_state, th, src.eta)
+        x = test_state.measure(r_state, th, eta_run)
         mode_t.append(t_state + d.d_S); mode_x.append(x); mode_th.append(th)
         mode_kind.append(np.full(len(t_state), MODE_STATE)); mode_src.append(np.arange(len(t_state)))
     cat = (lambda L, dt: np.concatenate(L) if L else np.empty(0, dt))
@@ -159,10 +188,19 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     if len(t_state):
         trig_t.append(t_state + d.d_RT); trig_k.append(np.full(len(t_state), TRIG_STATE)); trig_i.append(np.arange(len(t_state)))
     trig = TriggerInput(cat(trig_t, float), cat(trig_k, np.int8), cat(trig_i, np.int64))
-    periodic = b.periodic_rate if kind in ("vacuum", "electronic") else 0.0
+    periodic = b.periodic_rate if kind in ("vacuum", "electronic", "free_running") else 0.0
     xt_amp = d.crosstalk_amp if b.crosstalk_amp is None else b.crosstalk_amp
     dig = adq.acquire(r_dig, t0, T, trig, periodic, mode_t, mode_x, t_m + d.d_MD,
-                      t_det + d.d_T, xt_amp, lo_on=lo_on)
+                      t_det + d.d_T, xt_amp, lo_on=lo_on, lo_scale_fn=lo_fn)
+    # LO-Leistungsmonitor (Photodiode), relative Leistung
+    if cfg.drift.monitor:
+        t_mon = t0 + np.arange(0.0, T, 1.0 / cfg.drift.monitor_rate_Hz)
+        p_mon = lo_fn(t_mon) * (1.0 + r_misc.normal(0, cfg.drift.monitor_noise_rel, len(t_mon)))
+        if not lo_on:
+            p_mon = p_mon * 0.0
+        monitor = dict(t_s=t_mon - t0, lo_power_rel=p_mon)
+    else:
+        monitor = None
 
     # ---------------------------------------------------------------- Wahrheit und Sollwerte
     rec_of_herald = -np.ones(len(t_h), np.int64)
@@ -183,58 +221,66 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         markers=dict(t_true=t_m, harp_ps=(hr.per_input_ps.get(h.marker_timing_channel) if mk.on_timing_channel
                                           else hr.per_marker_ps.get(h.marker_bit)), recorded_by_digitizer=dig.marker_recorded),
         phase_ref=dict(t_true=t_ref),
+        drift=dict(lo_scale_mid=np.array([lo_mid]), eta_run=np.array([eta_run])),
         records=dict(kind=dig.rec_kind, source_index=dig.rec_index, trigger_true=dig.rec_trigger_true,
                      n_modes=dig.n_modes_in_record),
     )
     # Abbildung Harp-Zeit (s, relativ zum Block) → Digitizer-Zeit (s): t_D = (1+ε)(t_H + t0 − t_arm) + φ
     mapping = dict(slope=1 + eps, offset_s=(1 + eps) * (t0 - clk.t_arm), random_walk=bool(clk.D > 0))
-    eta_el = 1.0 / (1.0 + 1.0 / cfg.clearance)     # elektronisches Rauschen ≙ Verlust nach Vakuumnormierung
-    expected: dict[str, Any] = dict(eta_electronic=eta_el, mapping=mapping)
+    # elektronisches Rauschen ≙ Verlust nach Vakuumnormierung; bei LO-Drift mit der Clearance S·P_LO des Laufs
+    # (Sollwerte gelten für eine Normierung mit der Vakuumskala dieses Laufs)
+    eta_el = 1.0 / (1.0 + 1.0 / (cfg.clearance * lo_mid))
+    expected: dict[str, Any] = dict(eta_electronic=eta_el, mapping=mapping, lo_scale=lo_mid, eta_state=eta_run)
     if kind == "heralded":
         xi = src.R_herald / (src.R_herald + src.R_dark)
-        e = heralded_state.expected(src.eta * eta_el)
-        expected.update(xi=xi, eta_eff=src.eta * eta_el * xi,
+        e = heralded_state.expected(eta_run * eta_el)
+        expected.update(xi=xi, eta_eff=eta_run * eta_el * xi,
                         W00=xi * e["W00"] + (1 - xi) / np.pi, var_x=xi * e["var_x"] + (1 - xi) * 0.5,
                         note="ohne Beitrag ungeheraldeter/sekundärer Moden und Überlappverluste")
     elif kind in ("vacuum", "herald_blocked"):
         expected.update(W00=1 / np.pi, var_x=0.5)
     elif kind == "electronic":
         expected.update(var_ratio_to_vacuum=(1 / cfg.clearance) / (1 + 1 / cfg.clearance))
-    elif kind == "random":
+    elif kind in ("random", "free_running"):
         R_pair = src.R_herald / src.eta_herald
         g = src.gamma
-        n_eff = R_pair * src.eta * eta_el * (2.5 / g if src.mode_shape == "double_exponential" else np.sqrt(np.pi) / g)
+        n_eff = R_pair * eta_run * eta_el * (2.5 / g if src.mode_shape == "double_exponential" else np.sqrt(np.pi) / g)
         expected.update(W00=(1 / np.pi) * (1 - 2 * n_eff), var_x=0.5 + n_eff, n_eff=n_eff,
                         note="unbedingter Zustand ≈ Vakuum (CW-SPDC, kleine mittlere Photonenzahl je Mode)")
     elif kind == "state":
-        e = test_state.expected(src.eta * eta_el, theta=float(pcfg.theta0))
+        e = test_state.expected(eta_run * eta_el, theta=float(pcfg.theta0))
         expected.update(state=test_state.describe(), W00=e["W00"], p_n=e["p_n"], mean_x_at_theta0=e["mean_x"],
-                        var_x_at_theta0=e["var_x"], eta_total=src.eta * eta_el, phase_sensitive=test_state.phase_sensitive)
+                        var_x_at_theta0=e["var_x"], eta_total=eta_run * eta_el, phase_sensitive=test_state.phase_sensitive)
     attrs = dict(dataset_type=KIND_TO_DATASET[kind], kind=kind, sequence_index=index, calibration_id=calibration_id,
+                 run_id=run_id, session_id=cfg.session.id, campaign_id=cfg.session.campaign,
+                 comparison_role=KIND_TO_ROLE[kind], t_start_s=t0 - cfg.session.start_s,
                  signal_blocked=signal_blocked, lo_on=lo_on, duration_s=T, ptu_file=f"harp_{b.id}.ptu",
                  random_rate=b.random_rate, periodic_rate=periodic, crosstalk_amp=xt_amp,
                  state=json.dumps(test_state.describe()) if test_state else "", **phase.metadata())
-    return BlockResult(b, index, t0, T, KIND_TO_DATASET[kind], attrs, recs, rec_t, dig, truth, expected, warnings)
+    br = BlockResult(b, index, t0, T, KIND_TO_DATASET[kind], run_id, attrs, recs, rec_t, dig, truth, expected, warnings)
+    br.monitor = monitor
+    return br
 
 
 def simulate(cfg: SimConfig) -> RunResult:
     """Simuliert alle Blöcke im Speicher (Grundlage für Datei- und Datenstrom-Modus)."""
     warnings = cfg.validate()
-    root = np.random.SeedSequence(cfg.run.seed)
+    se = cfg.session
+    root = np.random.SeedSequence(se.seed)
     ss_clock, ss_blocks = root.spawn(2)
-    t_end = cfg.run.start_s + sum(b.duration_s + cfg.run.gap_s for b in cfg.blocks) + 1.0
+    t_end = se.start_s + sum(b.duration_s + se.gap_s for b in cfg.blocks) + 1.0
     clk = DigitizerClock(cfg.clock, t_end, np.random.default_rng(ss_clock))
     adq = ADQ32(cfg, clk)
     harp = HydraHarp500(cfg)
-    cal_id = f"{cfg.run.name}-cal-{cfg.run.seed}"
+    cal_id = cfg.calibration_id
     blocks = []
-    t0 = cfg.run.start_s
-    for i, (b, ss) in enumerate(zip(cfg.blocks, ss_blocks.spawn(len(cfg.blocks)))):
-        br = simulate_block(cfg, b, i, t0, clk, adq, harp, ss, cal_id)
+    t0 = se.start_s
+    for i, (b, ss, rid) in enumerate(zip(cfg.blocks, ss_blocks.spawn(len(cfg.blocks)), cfg.run_ids())):
+        br = simulate_block(cfg, b, i, t0, clk, adq, harp, ss, cal_id, rid)
         br.warnings = warnings + br.warnings
         blocks.append(br)
-        t0 += b.duration_s + cfg.run.gap_s
-    return RunResult(cfg, blocks, adq.device_attrs(), clk, cal_id)
+        t0 += b.duration_s + se.gap_s
+    return RunResult(cfg, blocks, adq.device_attrs(), clk, cal_id, se.id, se.campaign)
 
 
 def _sha256(p: Path) -> str:
@@ -246,7 +292,7 @@ def _sha256(p: Path) -> str:
 
 
 def write_run(res: RunResult, out_dir: str | Path) -> dict:
-    """Schreibt PTU-Dateien, ``digitizer.h5``, ``truth.h5`` und ``run.json``."""
+    """Schreibt PTU-Dateien, ``digitizer.h5``, ``truth.h5`` und ``session.json``."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     cfg = res.cfg
@@ -260,6 +306,11 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
         P.write_ptu(out / name, br.harp_records, comment=f"SIMULATED ExSE Harp ADQ32 HHD Mobil – Block {br.cfg.id} ({br.dataset_type})",
                     hw_type=f"{hh.model} (SIMULATED)", acquisition_time_ms=int(round(br.duration * 1000)),
                     extra_tags={"UsrHHD_BlockId": (P.TY_ANSI, br.cfg.id),
+                                "UsrHHD_RunId": (P.TY_ANSI, br.run_id),
+                                "UsrHHD_RunIndex": (P.TY_ANSI, str(br.index)),
+                                "UsrHHD_SessionId": (P.TY_ANSI, res.session_id),
+                                "UsrHHD_CampaignId": (P.TY_ANSI, res.campaign_id),
+                                "UsrHHD_ComparisonRole": (P.TY_ANSI, br.attrs["comparison_role"]),
                                 "UsrHHD_DatasetType": (P.TY_ANSI, br.dataset_type),
                                 "UsrHHD_ChannelRoles": (P.TY_ANSI, json.dumps(chan_roles)),
                                 "UsrHHD_MarkerBits": (P.TY_ANSI, json.dumps({"sync": 0 if cfg.markers.on_timing_channel else hh.marker_bit,
@@ -267,13 +318,16 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
                                 "UsrHHD_CalibrationId": (P.TY_ANSI, res.calibration_id)})
         files[name] = "harp"
     root_attrs = dict(simulated=True, software=f"hhd {__version__}", created=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                      run_name=cfg.run.name)
+                      session_id=res.session_id, campaign_id=res.campaign_id, calibration_id=res.calibration_id)
     with S.open_new(out / "digitizer.h5", root_attrs, res.device_attrs) as f:
         for br in res.blocks:
             dg = br.digitizer
-            S.write_block(f, br.cfg.id, br.attrs, dg.data, dg.timestamp, dg.record_start, dg.trigger_source, dg.marker_ts)
+            S.write_block(f, br.cfg.id, br.attrs, dg.data, dg.timestamp, dg.record_start, dg.trigger_source, dg.marker_ts,
+                          monitor=br.monitor)
         cal = f.create_group("calibration")
         cal.attrs["calibration_id"] = res.calibration_id
+        cal.attrs["mode"] = "shared"                       # eine Kalibrierung für alle Läufe der Sitzung (ED-12)
+        cal.attrs["runs"] = json.dumps([b.run_id for b in res.blocks])
         cal.attrs["vacuum_blocks"] = json.dumps([b.cfg.id for b in res.blocks if b.dataset_type == "vacuum"])
         cal.attrs["electronic_blocks"] = json.dumps([b.cfg.id for b in res.blocks if b.dataset_type == "electronic"])
     files["digitizer.h5"] = "digitizer"
@@ -285,22 +339,25 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
         ck.create_dataset("t_grid", data=res.clock.tg); ck.create_dataset("phi", data=res.clock.phig)
         for br in res.blocks:
             g = f.create_group(f"blocks/{br.cfg.id}")
-            g.attrs.update(t0_true_s=br.t0, duration_s=br.duration, dataset_type=br.dataset_type,
+            g.attrs.update(t0_true_s=br.t0, duration_s=br.duration, dataset_type=br.dataset_type, run_id=br.run_id,
                            expected_json=json.dumps(br.expected), warnings_json=json.dumps(br.warnings))
             for grp, dd in br.truth.items():
                 gg = g.create_group(grp)
                 for k, v in dd.items():
                     gg.create_dataset(k, data=np.asarray(v) if v is not None else np.empty(0))
     files["truth.h5"] = "truth"
-    manifest = dict(format="hhd-run", schema_version=S.SCHEMA_VERSION, software=f"hhd {__version__}",
-                    simulated=True, run_name=cfg.run.name, seed=cfg.run.seed, calibration_id=res.calibration_id,
-                    blocks=[dict(id=b.cfg.id, kind=b.cfg.kind, dataset_type=b.dataset_type, duration_s=b.duration,
-                                 ptu_file=b.attrs["ptu_file"], n_records=int(len(b.digitizer.timestamp)),
-                                 n_harp_records=int(len(b.harp_records)), expected=b.expected, warnings=b.warnings)
-                            for b in res.blocks],
+    manifest = dict(format="hhd-session", schema_version=S.SCHEMA_VERSION, software=f"hhd {__version__}",
+                    simulated=True, session_id=res.session_id, campaign_id=res.campaign_id, seed=cfg.session.seed,
+                    calibration=dict(calibration_id=res.calibration_id, mode="shared",
+                                     vacuum_runs=[b.run_id for b in res.blocks if b.dataset_type == "vacuum"]),
+                    runs=[dict(run_id=b.run_id, id=b.cfg.id, index=b.index, kind=b.cfg.kind, dataset_type=b.dataset_type,
+                               comparison_role=b.attrs["comparison_role"], t_start_s=b.attrs["t_start_s"],
+                               duration_s=b.duration, ptu_file=b.attrs["ptu_file"], n_records=int(len(b.digitizer.timestamp)),
+                               n_harp_records=int(len(b.harp_records)), expected=b.expected, warnings=b.warnings)
+                          for b in res.blocks],
                     files={k: dict(role=v, sha256=_sha256(out / k)) for k, v in files.items()},
                     config=cfg.to_dict())
-    (out / "run.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False, default=float), encoding="utf-8")
+    (out / MANIFEST).write_text(json.dumps(manifest, indent=1, ensure_ascii=False, default=float), encoding="utf-8")
     res.out_dir = out
     res.files = files
     return manifest
@@ -310,3 +367,28 @@ def run(cfg: SimConfig, out_dir: str | Path) -> RunResult:
     res = simulate(cfg)
     write_run(res, out_dir)
     return res
+
+
+def run_campaign(cfg: SimConfig, out_dir: str | Path, n_sessions: int = 2) -> dict:
+    """Kampagne: ``n_sessions`` Sitzungen gleicher Konfiguration mit Seeds seed, seed+1, …
+
+    Jede Sitzung liegt in ``<out>/<session_id>/`` und hat ihre eigene Kalibrierung; ``campaign.json`` listet die
+    Sitzungen mit Prüfsumme ihres Manifests (z. B. Seeds-Kampagne für Pull-Tests oder mehrere Messtage).
+    """
+    import copy
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    sessions = []
+    for k in range(n_sessions):
+        c = copy.deepcopy(cfg)
+        c.session.seed = cfg.session.seed + k
+        c.session.id = f"{cfg.session.id}-{k + 1:02d}"
+        d = out / c.session.id
+        res = run(c, d)
+        sessions.append(dict(session_id=c.session.id, dir=c.session.id, seed=c.session.seed,
+                             calibration_id=res.calibration_id, runs=[b.run_id for b in res.blocks],
+                             manifest_sha256=_sha256(d / MANIFEST)))
+    man = dict(format="hhd-campaign", schema_version=S.SCHEMA_VERSION, software=f"hhd {__version__}", simulated=True,
+               campaign_id=cfg.session.campaign, sessions=sessions)
+    (out / "campaign.json").write_text(json.dumps(man, indent=1, ensure_ascii=False), encoding="utf-8")
+    return man

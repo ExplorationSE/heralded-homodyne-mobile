@@ -16,7 +16,7 @@ def test_cli_end_to_end(tmp_path, capsys):
     txt = capsys.readouterr().out
     assert "Vakuumnormierung" in txt and "heralded" in txt
     # Manipulation wird erkannt
-    p = out / "harp_heralded.ptu"
+    p = out / "harp_heralded_1.ptu"
     b = bytearray(p.read_bytes()); b[-1] ^= 0xFF; p.write_bytes(bytes(b))
     assert main(["validate", str(out)]) == 1
 

@@ -11,9 +11,9 @@ from hhd.sim.engine import run  # noqa: E402
 
 
 def small_standard(seed: int = 11) -> SimConfig:
-    """Standard-Messablauf, verkürzt (ca. 3000 heralded Records)."""
+    """Option ED-12: ein heralded Lauf mit eingestreuten Zufallstriggern (Off-Herald-Vergleich), verkürzt."""
     cfg = SimConfig()
-    cfg.run.seed = seed
+    cfg.session.seed = seed
     cfg.blocks = [BlockCfg(id="kv_start", kind="vacuum", duration_s=0.5, periodic_rate=4000),
                   BlockCfg(id="kh", kind="herald_blocked", duration_s=0.5),
                   BlockCfg(id="heralded", kind="heralded", duration_s=3.0, random_rate=200),
@@ -33,7 +33,7 @@ def std_run(tmp_path_factory):
 def phase_run(tmp_path_factory):
     d = tmp_path_factory.mktemp("phase")
     cfg = SimConfig.load(ROOT / "config" / "phase_coherent.yaml")
-    cfg.run.seed = 5
+    cfg.session.seed = 5
     res = run(cfg, d)
     return res, d
 
@@ -42,7 +42,7 @@ def phase_run(tmp_path_factory):
 def free_run(tmp_path_factory):
     d = tmp_path_factory.mktemp("free")
     cfg = SimConfig.load(ROOT / "config" / "free_clock.yaml")
-    cfg.run.seed = 3
+    cfg.session.seed = 3
     cfg.blocks = [BlockCfg(id="kv", kind="vacuum", duration_s=0.3, periodic_rate=2000),
                   BlockCfg(id="heralded", kind="heralded", duration_s=2.0)]
     res = run(cfg, d)

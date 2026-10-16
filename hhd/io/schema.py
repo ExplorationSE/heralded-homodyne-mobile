@@ -1,4 +1,4 @@
-"""HDF5-Schema v1 für Digitizer-Daten (Strom 2) und Wahrheitsdateien des Simulators.
+"""HDF5-Schema v1.1 für Digitizer-Daten (Strom 2) und Wahrheitsdateien des Simulators.
 
 Das Schema ist ein **[Vorschlag]** (Gesamtplan, Kap. 6 „Datenformate“), angelehnt an die Record-Header des
 ADQ3 User Guide 21-2539, Kap. 9.3: ``timestamp`` und ``record_start`` als ganze Zahlen in ``time_unit``,
@@ -6,21 +6,27 @@ Zeit des ersten Samples ``t_x[0] = timestamp + record_start`` **[Spez.]**.
 
 Aufbau ``digitizer.h5``::
 
-    /                      attrs: format="hhd-digitizer", schema_version="1.0", simulated, software, created, run_name
+    /                      attrs: format="hhd-digitizer", schema_version="1.1", simulated, software, created,
+                                  session_id, campaign_id, calibration_id
     /device                attrs: model, form_factor, clock_option, channel_mode, f_adc_Hz, skip_factor,
                                   sampling_rate_Hz, time_unit_s, sampling_period_tu, adc_bits, record_length,
                                   horizontal_offset, trig_resolution_s, sync_resolution_s, reference_clock,
-                                  header_reports_trigger_source
-    /blocks/<block_id>     attrs: dataset_type, kind, sequence_index, calibration_id, signal_blocked, lo_on,
-                                  phase_mode, phase_theta0_rad, phase_ramp_Hz, phase_steps_rad, phase_dwell_s,
-                                  ptu_file, duration_s
+                                  header_reports_trigger_source, bandwidth_option, analog_bandwidth_Hz
+    /blocks/<block_id>     ein Messlauf; attrs: run_id, session_id, campaign_id, comparison_role
+                                  (heralded | unheralded | control | test_state), t_start_s (seit Sitzungsbeginn),
+                                  dataset_type, kind, sequence_index, calibration_id (= Sitzung), signal_blocked,
+                                  lo_on, phase_mode, phase_theta0_rad, phase_ramp_Hz, phase_steps_rad,
+                                  phase_dwell_s, ptu_file, duration_s
         records/data            int16 (n, L)   ADC-Werte in LSB
         records/timestamp       int64 (n)      Trigger-Zeitpunkt in time_unit (Zähler seit Start)
         records/record_start    int64 (n)      erstes Sample relativ zu timestamp (≤ 0 bei Pretrigger)
         records/record_number   uint32 (n)
         records/trigger_source  uint8 (n)      TRIGGER_SOURCES; 255 = vom Header nicht gemeldet
         markers/timestamp       int64 (m)      SYNC-Ereignisse in time_unit
-    /calibration           attrs: calibration_id, vacuum_blocks (JSON-Liste), electronic_blocks
+        monitor/t_s, monitor/lo_power_rel      optional: LO-Leistungsmonitor (relativ)
+    /calibration           attrs: calibration_id, mode ("shared"), runs, vacuum_blocks (JSON-Liste), electronic_blocks
+
+v1.0 → v1.1 (additiv): Sitzungs-/Lauf-IDs, dataset_type ``free_running``, Gruppe ``monitor``.
 """
 from __future__ import annotations
 
@@ -31,13 +37,14 @@ from typing import Any
 import h5py
 import numpy as np
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"         # 1.1: Sitzung/Lauf-IDs, free_running, LO-Monitor (Gesamtplan v1.4, ED-12)
 FORMAT_DIGITIZER = "hhd-digitizer"
 FORMAT_TRUTH = "hhd-truth"
 
 DATASET_TYPES = (
     "heralded",          # herald-getriggerte Records
-    "random_trigger",    # Zufallstrigger (eigener Block oder eingestreut)
+    "random_trigger",    # Zufallstrigger (eigener Lauf oder eingestreut)
+    "free_running",      # freilaufender (periodischer) Trigger, Signal offen: Lauf ohne Herald
     "vacuum",            # K-V: Signal blockiert, LO an
     "herald_blocked",    # K-H: Signal blockiert, Herald triggert
     "electronic",        # LO aus: nur elektronisches Rauschen
@@ -49,8 +56,9 @@ TRIGGER_SOURCES = {"TRIG": 0, "SYNC": 1, "GPIO": 2, "PERIODIC": 3, "SOFTWARE": 4
 REQ_DEVICE_ATTRS = ("model", "form_factor", "clock_option", "channel_mode", "f_adc_Hz", "skip_factor",
                     "sampling_rate_Hz", "time_unit_s", "sampling_period_tu", "adc_bits", "record_length",
                     "horizontal_offset")
+REQ_ROOT_ATTRS = ("session_id", "campaign_id", "calibration_id")
 REQ_BLOCK_ATTRS = ("dataset_type", "kind", "sequence_index", "calibration_id", "signal_blocked", "lo_on",
-                   "phase_mode")
+                   "phase_mode", "run_id", "session_id", "comparison_role", "t_start_s")
 REQ_RECORD_SETS = {"data": np.int16, "timestamp": np.int64, "record_start": np.int64,
                    "record_number": np.uint32, "trigger_source": np.uint8}
 
@@ -65,7 +73,8 @@ def _attrs(obj, d: dict[str, Any]) -> None:
 
 
 def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.ndarray, timestamp: np.ndarray,
-                record_start: np.ndarray, trigger_source: np.ndarray, marker_ts: np.ndarray) -> None:
+                record_start: np.ndarray, trigger_source: np.ndarray, marker_ts: np.ndarray,
+                monitor: dict | None = None) -> None:
     g = f.require_group("blocks").create_group(block_id)
     _attrs(g, attrs)
     r = g.create_group("records")
@@ -83,6 +92,10 @@ def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.nda
     m = g.create_group("markers")
     m.create_dataset("timestamp", data=np.asarray(marker_ts, np.int64))
     m["timestamp"].attrs["units"] = "time_unit"
+    if monitor is not None:                                  # LO-Leistungsmonitor (optional)
+        mo = g.create_group("monitor")
+        mo.create_dataset("t_s", data=np.asarray(monitor["t_s"], float)).attrs["units"] = "s seit Laufbeginn"
+        mo.create_dataset("lo_power_rel", data=np.asarray(monitor["lo_power_rel"], float)).attrs["units"] = "relativ"
 
 
 def open_new(path: str | Path, root_attrs: dict[str, Any], device_attrs: dict[str, Any]) -> h5py.File:
@@ -100,6 +113,9 @@ def validate_digitizer_file(path: str | Path) -> list[str]:
             err.append(f"/: format != {FORMAT_DIGITIZER!r}")
         if f.attrs.get("schema_version") != SCHEMA_VERSION:
             err.append(f"/: schema_version != {SCHEMA_VERSION!r}")
+        for a in REQ_ROOT_ATTRS:
+            if a not in f.attrs:
+                err.append(f"/: Attribut {a} fehlt")
         if "device" not in f:
             return err + ["/device fehlt"]
         dev = f["device"].attrs
@@ -135,6 +151,11 @@ def validate_digitizer_file(path: str | Path) -> list[str]:
                 err.append(f"/blocks/{bid}/records/timestamp nicht streng monoton")
             if "timestamp" not in g["markers"]:
                 err.append(f"/blocks/{bid}/markers/timestamp fehlt")
+            if g.attrs.get("calibration_id") != f.attrs.get("calibration_id"):
+                err.append(f"/blocks/{bid}: calibration_id weicht von der Sitzung ab")
+        rids = [g.attrs.get("run_id") for g in f.get("blocks", {}).values()]
+        if len(set(rids)) != len(rids):
+            err.append("/blocks: run_id doppelt")
     return err
 
 
