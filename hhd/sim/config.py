@@ -396,7 +396,8 @@ def parameter_markdown(cfg: SimConfig | None = None) -> str:
            "| Parameter | Default | Einheit | Status | Quelle | Bedeutung |", "|---|---|---|---|---|---|"]
     for r in parameter_rows(cfg):
         st = f"**{r['status']}**" if r["status"] == "Spez." else r["status"]
-        out.append(f"| `{r['name']}` | {_fmt(r['value'])} | {r['unit']} | {st} | {r['source']} | {r['doc']} |")
+        cell = lambda v: str(v).replace("|", "\\|")
+        out.append(f"| `{r['name']}` | {cell(_fmt(r['value']))} | {r['unit']} | {st} | {r['source']} | {cell(r['doc'])} |")
     out += ["", "## Standard-Messablauf (`blocks`)", "", "| id | kind | duration_s | random_rate | periodic_rate |",
             "|---|---|---|---|---|"]
     for b in (cfg or SimConfig()).blocks:

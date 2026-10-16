@@ -13,7 +13,7 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `source.eta_herald` | 0.5 |  | Annahme | Analyse Vergleich | Nachweiswahrscheinlichkeit im Herald-Arm; bestimmt die Rate ungeheraldeter Signalphotonen R_herald·(1/η_h − 1) |
 | `source.eta` | 0.7 |  | Annahme | Vorbericht Synchronisation, Parameter | Zustandseffizienz (Optik·Photodiode·Modenanpassung) vor elektronischem Rauschen |
 | `source.heralded_state` | fock1 |  | Vorschlag |  | Zustand der geheraldeten Mode (fock1; fock2 nur als Test) |
-| `source.mode_shape` | double_exponential |  | Vorschlag |  | Temporale Mode: double_exponential f(t)=√γ·e^(−γ|t|) (CW-SPDC) oder gauss |
+| `source.mode_shape` | double_exponential |  | Vorschlag |  | Temporale Mode: double_exponential f(t)=√γ·e^(−γ\|t\|) (CW-SPDC) oder gauss |
 | `source.gamma` | 2.5e+07 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Abklingrate der Mode (1/γ = 40 ns); bei gauss: 1/σ |
 | `source.sigma_spd` | 5e-11 | s | Annahme | Vorbericht Synchronisation, Parameter | Jitter des Herald-Detektors (SNSPD), gemeinsam für Harp und TRIG |
 | `phase.mode` | random |  | Vorschlag |  | random (phasengemittelt), fixed, ramp (Sägezahn), steps |
@@ -78,11 +78,11 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `markers.sigma_tc` | 5e-12 | s | Annahme | Vorbericht Synchronisation, Parameter | Streuung, wenn der Marker auf einem Timing-Kanal liegt |
 | `markers.d_MH` | 1.5e-08 | s | Annahme | Vorbericht Synchronisation, Parameter | Laufzeit Markerquelle → Harp |
 | `blocks[].id` | heralded |  | Vorschlag |  | eindeutiger Blockname |
-| `blocks[].kind` | heralded |  | Vorschlag |  | heralded | random | vacuum | herald_blocked | electronic | state |
+| `blocks[].kind` | heralded |  | Vorschlag |  | heralded \| random \| vacuum \| herald_blocked \| electronic \| state |
 | `blocks[].duration_s` | 5 | s | Vorschlag |  | Messdauer des Blocks |
 | `blocks[].random_rate` | 0 | 1/s | Vorschlag |  | Zufallstrigger (Poisson): eingestreut (heralded) bzw. Blocktrigger (random) |
 | `blocks[].periodic_rate` | 2000 | 1/s | Vorschlag |  | interne periodische Trigger (vacuum, electronic) |
-| `blocks[].state` | {} |  | Vorschlag |  | Testzustand bei kind=state: {type: coherent|thermal|fock|cat|vacuum|fock1, ...} |
+| `blocks[].state` | {} |  | Vorschlag |  | Testzustand bei kind=state: {type: coherent\|thermal\|fock\|cat\|vacuum\|fock1, ...} |
 | `blocks[].state_rate` | 1000 | 1/s | Vorschlag |  | Rate getriggerter Testzustände (periodisch) |
 | `blocks[].phase` | {} |  | Vorschlag |  | blockeigene Überschreibung von phase.* |
 | `blocks[].crosstalk_amp` | None |  | Vorschlag |  | blockeigene Überschreibung von digitizer.crosstalk_amp |
