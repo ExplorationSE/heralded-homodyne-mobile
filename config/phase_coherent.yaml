@@ -1,0 +1,19 @@
+# ED-11: bekannte Phase θ. Getriggerter kohärenter Testzustand (|α| = 1, φ = 0,5 rad) mit Phasenrampe
+# (Sägezahn 10 Hz, Rampenbeginn als Harp-Marker Bit 2) und mit Phasenstufen. Nicht angegebene Parameter: Default.
+run:
+  name: phase_coherent
+blocks:
+  - {id: kv_start, kind: vacuum, duration_s: 0.5, periodic_rate: 4000}
+  - id: coh_ramp
+    kind: state
+    duration_s: 2.0
+    state_rate: 2000
+    state: {type: coherent, alpha: 1.0, phi: 0.5}
+    phase: {mode: ramp, ramp_Hz: 10.0, theta0: 0.0}
+  - id: coh_steps
+    kind: state
+    duration_s: 1.0
+    state_rate: 2000
+    state: {type: coherent, alpha: 1.0, phi: 0.5}
+    phase: {mode: steps, dwell_s: 0.25}
+  - {id: kv_end, kind: vacuum, duration_s: 0.5, periodic_rate: 4000}

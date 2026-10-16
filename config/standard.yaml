@@ -1,0 +1,132 @@
+# Standardkonfiguration des Simulators (alle Parameter, Defaults aus hhd/sim/config.py).
+# Bedeutung, Einheit, Status und Quelle jedes Parameters: docs/PARAMETER.md
+run:
+  name: hhd_sim
+  seed: 20261020
+  start_s: 0.25
+  gap_s: 0.5
+source:
+  R_herald: 1000.0
+  R_dark: 20.0
+  eta_herald: 0.5
+  eta: 0.7
+  heralded_state: fock1
+  mode_shape: double_exponential
+  gamma: 25000000.0
+  sigma_spd: 5.0e-11
+phase:
+  mode: random
+  theta0: 0.0
+  ramp_Hz: 10.0
+  steps:
+  - 0.0
+  - 0.7853981633974483
+  - 1.5707963267948966
+  - 2.356194490169959
+  dwell_s: 0.25
+  marker_bit: 2
+harp:
+  model: HydraHarp 500 M
+  n_channels: 8
+  resolution: 1.0e-12
+  jitter_rms: 2.5e-12
+  trigger: ETR
+  tdead: 0.0
+  herald_channel: 1
+  random_tag_channel: 2
+  state_tag_channel: 3
+  marker_timing_channel: 4
+  channel_offsets: {}
+  d_H: 8.53e-08
+  d_RH: 1.0e-08
+  marker_bit: 1
+  marker_error_rms: 3.0e-08
+  marker_offset: 2.0e-08
+  marker_error_max: 1.0e-07
+  marker_holdoff: 0.0
+  R_spurious: 0.2
+digitizer:
+  model: ADQ32
+  form_factor: PCIe
+  clock_option: S2G5
+  channel_mode: 2
+  skip_factor: 1
+  record_length: 5000
+  pretrigger: 2000
+  rearm: 2.0e-08
+  trig_res_ref: 5.0e-11
+  sync_res_ref: 3.2e-09
+  trig_max_rate: 10000000.0
+  time_unit_div: 8
+  adc_bits: 12
+  lsb_per_unit: 80.0
+  adc_offset: 3.0
+  clearance_dB: 15.0
+  d_T: 4.27e-08
+  d_S: 1.2e-07
+  d_RT: 1.2e-08
+  d_MD: 2.3e-08
+  p_miss_marker: 0.001
+  trig_jitter: 2.0e-11
+  header_reports_trigger_source: false
+  crosstalk_amp: 0.0
+  crosstalk_tau: 1.5e-08
+  crosstalk_delay: 7.73e-08
+clock:
+  eps: 2.0e-06
+  t_arm_s: 0.137
+  rw_D: 0.0
+  shared_10MHz: true
+  grid_dt: 0.001
+markers:
+  f_marker: 1000.0
+  p_omit: 0.1
+  on_timing_channel: true
+  sigma_tc: 5.0e-12
+  d_MH: 1.5e-08
+blocks:
+- id: kv_start
+  kind: vacuum
+  duration_s: 0.5
+  random_rate: 0.0
+  periodic_rate: 4000.0
+  state: {}
+  state_rate: 1000.0
+  phase: {}
+  crosstalk_amp: null
+- id: kh
+  kind: herald_blocked
+  duration_s: 1.0
+  random_rate: 0.0
+  periodic_rate: 2000.0
+  state: {}
+  state_rate: 1000.0
+  phase: {}
+  crosstalk_amp: null
+- id: heralded
+  kind: heralded
+  duration_s: 5.0
+  random_rate: 200.0
+  periodic_rate: 2000.0
+  state: {}
+  state_rate: 1000.0
+  phase: {}
+  crosstalk_amp: null
+- id: random
+  kind: random
+  duration_s: 1.0
+  random_rate: 2000.0
+  periodic_rate: 2000.0
+  state: {}
+  state_rate: 1000.0
+  phase: {}
+  crosstalk_amp: null
+- id: kv_end
+  kind: vacuum
+  duration_s: 0.5
+  random_rate: 0.0
+  periodic_rate: 4000.0
+  state: {}
+  state_rate: 1000.0
+  phase: {}
+  crosstalk_amp: null

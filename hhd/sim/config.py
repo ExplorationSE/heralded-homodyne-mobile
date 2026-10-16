@@ -119,7 +119,7 @@ class DigitizerCfg:
     header_reports_trigger_source: bool = P(False, doc="meldet der Record-Header den auslösenden Eingang? (unbekannt → false; Kennung über Harp)", status="Annahme")
     crosstalk_amp: float = P(0.0, "Vakuum-σ", doc="Amplitude eines Trigger-Übersprechens auf den Analogkanal (Fehlerbild R10)", status="Vorschlag")
     crosstalk_tau: float = P(15e-9, "s", doc="Abklingzeit des Übersprechens", status="Annahme")
-    crosstalk_delay: float = P(5e-9, "s", doc="Verzögerung des Übersprechens nach dem Trigger", status="Annahme")
+    crosstalk_delay: float = P(77.3e-9, "s", doc="Verzögerung des Übersprechens nach dem TRIG-Puls (Default d_S − d_T: am Modenort, ungünstigster Fall)", status="Annahme")
 
 
 @dataclass

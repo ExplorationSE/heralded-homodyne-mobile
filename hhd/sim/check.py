@@ -153,27 +153,47 @@ def phase_fit(x: np.ndarray, theta: np.ndarray) -> dict:
 
 
 def check_run(run_dir: str | Path, n_boot: int = 100) -> dict:
-    """Bewertet alle Blöcke eines Laufs gegen ihre Sollwerte."""
+    """Bewertet alle Blöcke eines Laufs gegen ihre Sollwerte.
+
+    Je Block wird die Hauptgruppe bewertet (Herald-, Zustands-, Zufalls- bzw. periodisch getriggerte Records);
+    in heralded Blöcken eingestreute Zufallstrigger erscheinen getrennt unter ``<block>/random``.
+    W(0,0) aus der phasengemittelten EM-Rekonstruktion wird nur bei gleichverteilter Phase bewertet
+    (phase.mode random oder ramp, bzw. phasenunempfindlicher Zustand).
+    """
     rr = RunReader(run_dir)
     try:
         norm = rr.vacuum_norm()
         out = dict(vacuum_norm=dict(offset=norm[0], scale=norm[1], n=norm[2]), blocks={})
         for bid in rr.blocks():
             exp = rr.expected(bid)
-            x = rr.quadratures(bid, norm)
-            if len(x) < 20:
-                out["blocks"][bid] = dict(n=len(x), note="zu wenige Records")
-                continue
-            r = summarize(x, n_boot=n_boot)
-            r["expected"] = {k: exp[k] for k in ("W00", "var_x", "eta_eff", "var_ratio_to_vacuum") if k in exp}
-            if "W00" in exp and r["W00_err"] > 0:
-                r["W00_pull"] = (r["W00"] - exp["W00"]) / r["W00_err"]
-            th = rr.theta(bid)
-            if np.isfinite(th).sum() > 20 and exp.get("phase_sensitive"):
-                r["phase_fit"] = phase_fit(x, th)
-                r["expected"]["A"] = float(np.sqrt(2 * exp["eta_total"]) * abs(complex(exp["state"].get("alpha_re", 0), exp["state"].get("alpha_im", 0))))
-                r["expected"]["phi"] = float(np.angle(complex(exp["state"].get("alpha_re", 0), exp["state"].get("alpha_im", 0))))
-            out["blocks"][bid] = r
+            attrs = rr.dig[f"blocks/{bid}"].attrs
+            kind = rr.tru[f"blocks/{bid}/records/kind"][:]
+            x_all = rr.quadratures(bid, norm)
+            th_all = rr.theta(bid)
+            main = {"heralded": TRIG_HERALD, "herald_blocked": TRIG_HERALD, "random": TRIG_RANDOM,
+                    "state": TRIG_STATE}.get(attrs["kind"], TRIG_PERIODIC)
+            groups = [(bid, kind == main, exp)]
+            if attrs["kind"] == "heralded" and np.any(kind == TRIG_RANDOM):
+                groups.append((f"{bid}/random", kind == TRIG_RANDOM, dict(W00=1 / np.pi, var_x=0.5)))
+            uniform = attrs["phase_mode"] in ("random", "ramp") or not exp.get("phase_sensitive", False)
+            for name, m, e in groups:
+                x, th = x_all[m], th_all[m]
+                if len(x) < 20:
+                    out["blocks"][name] = dict(n=int(len(x)), note="zu wenige Records")
+                    continue
+                r = summarize(x, n_boot=n_boot)
+                r["expected"] = {k: e[k] for k in ("W00", "var_x", "eta_eff", "var_ratio_to_vacuum") if k in e}
+                if not uniform:
+                    r["expected"].pop("W00", None)
+                    r["note"] = "Phase nicht gleichverteilt: W(0,0) aus phasengemittelter EM nicht bewertet"
+                if "W00" in r["expected"] and r["W00_err"] > 0:
+                    r["W00_pull"] = (r["W00"] - e["W00"]) / r["W00_err"]
+                if np.isfinite(th).sum() > 20 and e.get("phase_sensitive"):
+                    a = complex(e["state"].get("alpha_re", 0), e["state"].get("alpha_im", 0))
+                    r["phase_fit"] = phase_fit(x, th)
+                    r["expected"]["A"] = float(np.sqrt(2 * e["eta_total"]) * abs(a)) if e["state"]["type"] == "coherent" else 0.0
+                    r["expected"]["phi"] = float(np.angle(a))
+                out["blocks"][name] = r
         return out
     finally:
         rr.close()

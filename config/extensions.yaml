@@ -1,0 +1,9 @@
+# Erweiterungspunkte (experimentell): Fock |2⟩, gerade Katze (α = 1,5) mit Phasenrampe, thermischer Zustand.
+run:
+  name: extensions
+blocks:
+  - {id: kv, kind: vacuum, duration_s: 0.5, periodic_rate: 4000}
+  - {id: fock2, kind: state, duration_s: 1.0, state_rate: 2000, state: {type: fock, n: 2}}
+  - {id: cat_even, kind: state, duration_s: 1.0, state_rate: 2000, state: {type: cat, alpha: 1.5, parity: 1},
+     phase: {mode: ramp, ramp_Hz: 20.0}}
+  - {id: thermal, kind: state, duration_s: 1.0, state_rate: 2000, state: {type: thermal, nbar: 0.5}}
