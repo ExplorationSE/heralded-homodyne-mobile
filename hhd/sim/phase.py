@@ -4,7 +4,7 @@
 
 * ``random`` – θ gleichverteilt (phasengemittelte Messung, Standard für das heralded Einzelphoton);
 * ``fixed``  – θ = θ0 (stabilisierte Phase);
-* ``ramp``   – Sägezahn θ(t) = θ0 + 2π·frac((t − t0)·f_ramp) (Piezo-Rampe), Beginn jeder Periode als Harp-Marker;
+* ``ramp``   – Sägezahn θ(t) = θ0 + 2π·frac((t − t_ref), t_ref = Blockbeginn + 1 µs·f_ramp) (Piezo-Rampe), Beginn jeder Periode als Harp-Marker;
 * ``steps``  – Folge fester Werte mit Verweildauer, Beginn jeder Stufe als Harp-Marker.
 
 Die Software kennt θ im Messbetrieb nur aus Metadaten bzw. Markern (Gesamtplan F9); der Simulator legt die
@@ -18,8 +18,12 @@ from .config import PhaseCfg
 
 
 class PhaseModel:
+    REF_LEAD = 1e-6
+
     def __init__(self, cfg: PhaseCfg, t0: float, duration: float):
         self.cfg, self.t0, self.T = cfg, t0, duration
+        # Erste Referenz 1 µs nach Blockbeginn, damit sie trotz Marker-Zeitfehler (±100 ns) sicher in der PTU-Datei liegt.
+        self.t_ref = t0 + self.REF_LEAD
 
     def theta(self, t: np.ndarray, rng: np.random.Generator) -> np.ndarray:
         t = np.asarray(t, dtype=float)
@@ -29,9 +33,9 @@ class PhaseModel:
         if c.mode == "fixed":
             return np.full(t.shape, float(c.theta0))
         if c.mode == "ramp":
-            return np.mod(c.theta0 + 2 * np.pi * np.mod((t - self.t0) * c.ramp_Hz, 1.0), 2 * np.pi)
+            return np.mod(c.theta0 + 2 * np.pi * np.mod((t - self.t_ref) * c.ramp_Hz, 1.0), 2 * np.pi)
         if c.mode == "steps":
-            k = np.floor((t - self.t0) / c.dwell_s).astype(int) % len(c.steps)
+            k = np.floor((t - self.t_ref) / c.dwell_s).astype(int) % len(c.steps)
             return np.mod(np.asarray(c.steps, float)[k] + c.theta0, 2 * np.pi)
         raise ValueError(c.mode)
 
@@ -39,9 +43,9 @@ class PhaseModel:
         """Wahre Zeiten der Phasenreferenz-Marker (Beginn jeder Rampe bzw. Stufe)."""
         c = self.cfg
         if c.mode == "ramp" and c.ramp_Hz > 0:
-            return self.t0 + np.arange(0, self.T, 1.0 / c.ramp_Hz)
+            return self.t_ref + np.arange(0, self.T - self.REF_LEAD, 1.0 / c.ramp_Hz)
         if c.mode == "steps":
-            return self.t0 + np.arange(0, self.T, c.dwell_s)
+            return self.t_ref + np.arange(0, self.T - self.REF_LEAD, c.dwell_s)
         return np.empty(0)
 
     def metadata(self) -> dict:
