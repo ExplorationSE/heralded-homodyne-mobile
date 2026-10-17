@@ -53,6 +53,11 @@ class SyncParams:
     warn_copy_fraction: float = 0.99
     # Speicher: Harp-Ereignisse/Köpfe nach jedem Lauf freigeben (lange Sitzungen; zweiter Durchgang liest neu)
     release_runs: bool = True
+    # sehr lange Einzelläufe in Segmenten (hhd.sync.chunked): auto (ab chunked_min_s) | always | never
+    chunked: str = "auto"
+    chunked_min_s: float = 600.0
+    segment_s: float = 30.0
+    overlap_s: float = 1.0
 
 
 def _herald_triggered(run: RunData) -> bool:
@@ -133,19 +138,16 @@ def sync_clock(run: RunData, p: SyncParams) -> RunSync:
     return rs
 
 
-def _refine(rs: RunSync, p: SyncParams, tH: np.ndarray, trig: np.ndarray) -> None:
-    """Verfeinerung der Abbildung mit Herald/Trigger-Paaren (Architektur A, Vorbericht 2 §4)."""
-    a = rs.assignment
+def refine_clock(cm: ClockMap, a: A.Assignment, tH: np.ndarray, trig: np.ndarray, p: SyncParams) -> dict:
+    """Verfeinerung der Abbildung ``cm`` (in-place) mit Herald/Trigger-Paaren (Architektur A, Vorbericht 2 §4).
+    Rückgabe: Bericht (``applied`` False bei zu wenigen Paaren)."""
     m = a.seg_herald >= 0
     if m.sum() < 20:
-        rs.refine = dict(applied=False, reason="zu wenige Paare")
-        return
+        return dict(applied=False, reason="zu wenige Paare")
     x = trig[m]
-    r = tH[a.seg_herald[m]] - rs.cmap.H(x)          # Harp-Herald − abgebildeter Trigger
+    r = tH[a.seg_herald[m]] - cm.H(x)               # Harp-Herald − abgebildeter Trigger
     lin = K.robust_linear(x, r, clip=5.0, floor=1e-12)
     med = float(np.median(r[lin["used"]]))
-    cm = rs.cmap
-    rs.marker_map = ClockMap.from_dict(cm.to_dict())
     old_sigma_a0 = float(np.sqrt(cm.cov[0, 0]))
     sigma_r_before = float(np.std(r[lin["used"]] - med))
     # Steigung: inverse-varianzgewichtete Kombination Marker ⊕ Paare (Paare enthalten die Steigungsabweichung
@@ -165,10 +167,16 @@ def _refine(rs: RunSync, p: SyncParams, tH: np.ndarray, trig: np.ndarray) -> Non
             cm.pieces.append(piece)
             res = res - piece(x)
     used = lin["used"]
-    rs.refine = dict(applied=True, n_pairs=int(m.sum()), n_used=int(used.sum()), offset_removed_s=med,
-                     slope_correction=db, slope_weight=w, sigma_before_s=sigma_r_before,
-                     sigma_after_s=float(np.std(res[used])), piecewise=piece is not None,
-                     W_s=piece.W if piece is not None else None, sigma_a0_markers_s=old_sigma_a0)
+    return dict(applied=True, n_pairs=int(m.sum()), n_used=int(used.sum()), offset_removed_s=med,
+                slope_correction=db, slope_weight=w, sigma_before_s=sigma_r_before,
+                sigma_after_s=float(np.std(res[used])), piecewise=piece is not None,
+                W_s=piece.W if piece is not None else None, sigma_a0_markers_s=old_sigma_a0)
+
+
+def _refine(rs: RunSync, p: SyncParams, tH: np.ndarray, trig: np.ndarray) -> None:
+    if (rs.assignment.seg_herald >= 0).sum() >= 20:
+        rs.marker_map = ClockMap.from_dict(rs.cmap.to_dict())
+    rs.refine = refine_clock(rs.cmap, rs.assignment, tH, trig, p)
 
 
 def _copy_check(rs: RunSync, trig: np.ndarray, p: SyncParams) -> None:
@@ -260,7 +268,7 @@ def _vacuum_blocks(sess: SessionData, p: SyncParams) -> tuple[list, str]:
     return out, "K-V"
 
 
-def calibrate_delay(sess: SessionData, syncs: dict[str, RunSync], p: SyncParams) -> dict:
+def calibrate_delay(sess: SessionData, syncs: dict, p: SyncParams, reservoir=None) -> dict:
     t0 = time.perf_counter()
     fs = float(sess.device["sampling_rate_Hz"])
     kern = Dl.mode_kernel(p.mode_shape, p.gamma, fs)
@@ -269,7 +277,7 @@ def calibrate_delay(sess: SessionData, syncs: dict[str, RunSync], p: SyncParams)
         # Ersatz: frühe Pretrigger-Samples der heraldierten Records (vor der Mode)
         src = "Pretrigger"
         for rs in syncs.values():
-            if rs.run.dataset_type == "heralded" and rs.run.n_records:
+            if rs.run.dataset_type == "heralded" and rs.run.n_records and not getattr(rs, "chunked", False):
                 pre = int(-float(sess.device.get("horizontal_offset", 0)))
                 cut = max(pre - int(6 / p.gamma * fs), len(kern) + 64)
                 blocks.append(rs.run.read_records(np.arange(min(rs.run.n_records, 1000)), cols=slice(0, cut)))
@@ -279,18 +287,30 @@ def calibrate_delay(sess: SessionData, syncs: dict[str, RunSync], p: SyncParams)
         return dict(available=False, reason="keine Normierungsdaten")
     cand = []
     for rs in syncs.values():
+        if rs.run.dataset_type != "heralded":
+            continue
+        if getattr(rs, "chunked", False):                # Stichprobe aus Durchgang 1 (Reservoir)
+            ix, p0 = reservoir.sources(rs.key) if reservoir is not None else (np.empty(0, np.int64), np.empty(0))
+            cand.append((rs, ix, p0))
+            continue
         a = rs.assignment
-        if rs.run.dataset_type != "heralded" or a is None:
+        if a is None:
             continue
         ok = (a.seg_class == A.SEG_MATCHED) & (a.seg_n_secondary == 0) & ~a.seg_overlap_prev
-        cand.append((rs, np.flatnonzero(ok)))
-    n_tot = sum(len(ix) for _, ix in cand)
+        cand.append((rs, np.flatnonzero(ok), None))
+    n_tot = sum(len(ix) for _, ix, _ in cand)
     if n_tot < 50:
         return dict(available=False, reason=f"zu wenige saubere Records ({n_tot})", norm=asdict(norm))
     frac = min(1.0, p.delay_max_records / n_tot)
     rng = np.random.default_rng(p.seed)
     sources = []
-    for rs, ix in cand:
+    for rs, ix, p0 in cand:
+        if p0 is not None:                               # segmentiert: Position aus Durchgang 1
+            if frac < 1:
+                sel = np.sort(rng.choice(len(ix), int(round(len(ix) * frac)), replace=False))
+                ix, p0 = ix[sel], p0[sel]
+            sources.append((rs.run.read_records, ix, p0))
+            continue
         if frac < 1:
             ix = np.sort(rng.choice(ix, int(round(len(ix) * frac)), replace=False))
         trig, first, _ = rs.windows()
@@ -300,10 +320,14 @@ def calibrate_delay(sess: SessionData, syncs: dict[str, RunSync], p: SyncParams)
                        fine_half=p.fine_half_s, fine_step=p.fine_step_s, n_boot=p.n_boot, seed=p.seed)
     dT = res["delta"]; sT = res["sigma_boot"]
     per_run = {}
-    for rs, _ in cand:
-        a = rs.assignment
-        se_dHT = a.sigma_HT / np.sqrt(max(np.sum(a.seg_class == A.SEG_MATCHED), 1))
-        rs.delta = dict(delta_s=dT + a.dHT, sigma_s=float(np.hypot(sT, se_dHT)), delta_T_s=dT, dHT_s=a.dHT)
+    for rs, _, _ in cand:
+        if getattr(rs, "chunked", False):
+            dHT, sHT, nm = rs.dHT, rs.sigma_HT, rs.n_matched_p1
+        else:
+            a = rs.assignment
+            dHT, sHT, nm = a.dHT, a.sigma_HT, int(np.sum(a.seg_class == A.SEG_MATCHED))
+        se_dHT = sHT / np.sqrt(max(nm, 1))
+        rs.delta = dict(delta_s=dT + dHT, sigma_s=float(np.hypot(sT, se_dHT)), delta_T_s=dT, dHT_s=dHT)
         per_run[rs.key] = rs.delta
     out = dict(available=True, delta_T_s=dT, sigma_delta_T_s=sT, sigma_fit_s=res["sigma_fit"], A=res["A"],
                c=res["c"], contrast=res["contrast"], sigma_A=res["sigma_A"], n_records=res["n_records"],
@@ -326,8 +350,15 @@ def sync_session(path: str | Path | SessionData, params: SyncParams | None = Non
     p = params or SyncParams()
     t_all = time.perf_counter()
     sess = path if isinstance(path, SessionData) else load_session(path)
-    syncs: dict[str, RunSync] = {}
+    syncs: dict = {}
+    from .chunked import ChunkParams, ChunkedRunSync, Reservoir
+    reservoir = Reservoir(p.delay_max_records, p.seed)
     for run in sess.runs:
+        if use_chunked(run, p):
+            cs = ChunkedRunSync(run, p, ChunkParams(segment_s=p.segment_s, overlap_s=p.overlap_s))
+            cs.pass1(reservoir)
+            syncs[cs.key] = cs
+            continue
         rs = sync_clock(run, p)
         sync_assign(rs, p)
         syncs[rs.key] = rs
@@ -335,15 +366,36 @@ def sync_session(path: str | Path | SessionData, params: SyncParams | None = Non
             run.release()
     delta = dict(available=False, reason="abgeschaltet")
     if p.calibrate_delay:
-        delta = calibrate_delay(sess, syncs, p)
+        delta = calibrate_delay(sess, syncs, p, reservoir)
     # endgültige Klassifikation mit Modenort (sekundär) bzw. Heralds je Fenster für Lauf B / K-V
+    dmean = delta["delta_mean_s"] if delta.get("available") else None
     if delta.get("available"):
-        dmean = delta["delta_mean_s"]
         for rs in syncs.values():
+            if getattr(rs, "chunked", False):
+                continue
             off = rs.delta.get("delta_s", dmean) if _herald_triggered(rs.run) else dmean
             sync_assign(rs, p, mode_offset=off)
             if p.release_runs:
                 rs.run.release()
+    o = Path(out) if out else sess.path / "sync"
+    if write:
+        o.mkdir(parents=True, exist_ok=True)
+        f = h5py.File(o / "sync.h5", "w")
+    else:                                                  # nur im Speicher (Rückgabe, kein Schreiben)
+        import uuid
+        f = h5py.File(f"sync-{uuid.uuid4().hex}.h5", "w", driver="core", backing_store=False)
+    try:
+        _write_h5_header(f, sess)
+        for k, rs in syncs.items():
+            if getattr(rs, "chunked", False):
+                off = None
+                if dmean is not None:
+                    off = rs.delta.get("delta_s", dmean) if _herald_triggered(rs.run) else dmean
+                rs.pass2(f.create_group(f"runs/{k}"), off)
+            else:
+                _write_run_group(f, k, rs)
+    finally:
+        f.close()
     elapsed = time.perf_counter() - t_all
     n_ev = sum(rs.n_events for rs in syncs.values())
     rep = dict(schema=SYNC_SCHEMA, software=f"hhd {__version__}", backend="python", session=str(sess.path),
@@ -353,11 +405,21 @@ def sync_session(path: str | Path | SessionData, params: SyncParams | None = Non
                performance=dict(elapsed_s=elapsed, n_events=n_ev, events_per_s=n_ev / elapsed if elapsed else 0.0))
     rep["quality"] = quality_summary(rep)
     if write:
-        o = Path(out) if out else sess.path / "sync"
-        write_sync(o, rep, syncs)
+        _write_json(o, rep)
         rep["output"] = str(o)
     rep["_syncs"] = syncs
     return rep
+
+
+def use_chunked(run: RunData, p: SyncParams) -> bool:
+    """Segmentierte Synchronisation für diesen Lauf? (``chunked`` = auto: ab ``chunked_min_s`` Laufdauer)."""
+    if p.chunked == "always":
+        return True
+    if p.chunked == "never":
+        return False
+    if p.chunked != "auto":
+        raise ValueError(f"SyncParams.chunked: auto | always | never (nicht {p.chunked!r})")
+    return float(run.duration_s or 0.0) >= p.chunked_min_s
 
 
 def quality_summary(rep: dict) -> dict:
@@ -393,10 +455,46 @@ def _json_default(o):
     raise TypeError(type(o))
 
 
-def write_sync(out: Path, rep: dict, syncs: dict[str, RunSync]) -> None:
-    out.mkdir(parents=True, exist_ok=True)
+def _write_json(out: Path, rep: dict) -> None:
     js = {k: v for k, v in rep.items() if not k.startswith("_")}
     (out / "sync.json").write_text(json.dumps(js, indent=1, ensure_ascii=False, default=_json_default))
+
+
+def _write_h5_header(f: h5py.File, sess) -> None:
+    f.attrs["schema"] = SYNC_SCHEMA
+    f.attrs["software"] = f"hhd {__version__}"
+    f.attrs["session_id"] = sess.session_id
+    f.attrs["seg_classes"] = json.dumps(A.SEG_NAMES, ensure_ascii=False)
+    f.attrs["herald_classes"] = json.dumps(A.HER_NAMES, ensure_ascii=False)
+    f.attrs["reasons"] = json.dumps(A.REASON_NAMES, ensure_ascii=False)
+
+
+def _write_run_group(f: h5py.File, k: str, rs: RunSync) -> None:
+    g = f.create_group(f"runs/{k}")
+    g.attrs["run_id"] = rs.run.run_id
+    g.attrs["clockmap"] = json.dumps(rs.cmap.to_dict())
+    trig, _, _ = rs.windows()
+    g["record_time_H_s"] = rs.cmap.H(trig)                        # Zeitachse in Harp-Zeit des Laufs
+    g["record_time_session_s"] = rs.cmap.H(trig) + rs.run.t_start_s
+    tH, TD, res, used = rs.tm
+    mg = g.create_group("markers")
+    mg["tH_s"] = tH; mg["TD_s"] = TD; mg["residual_s"] = res; mg["used"] = used
+    a = rs.assignment
+    if a is not None:
+        for name in ("seg_class", "seg_herald", "seg_n_secondary", "seg_overlap_prev", "herald_class",
+                     "herald_reason", "herald_segment"):
+            g[name] = getattr(a, name)
+        g["herald_D_s"] = a.hD
+    elif "_n_in_record" in rs.free:
+        g["seg_class"] = rs.free["_seg_class"]
+        g["seg_n_heralds"] = rs.free["_n_in_record"].astype(np.int32)
+
+
+def write_sync(out: Path, rep: dict, syncs: dict[str, RunSync]) -> None:
+    """Bericht und Datensätze (nur Batch-Läufe) schreiben."""
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    _write_json(out, rep)
     with h5py.File(out / "sync.h5", "w") as f:
         f.attrs["schema"] = SYNC_SCHEMA
         f.attrs["software"] = rep["software"]
@@ -405,24 +503,7 @@ def write_sync(out: Path, rep: dict, syncs: dict[str, RunSync]) -> None:
         f.attrs["herald_classes"] = json.dumps(A.HER_NAMES, ensure_ascii=False)
         f.attrs["reasons"] = json.dumps(A.REASON_NAMES, ensure_ascii=False)
         for k, rs in syncs.items():
-            g = f.create_group(f"runs/{k}")
-            g.attrs["run_id"] = rs.run.run_id
-            g.attrs["clockmap"] = json.dumps(rs.cmap.to_dict())
-            trig, _, _ = rs.windows()
-            g["record_time_H_s"] = rs.cmap.H(trig)                        # Zeitachse in Harp-Zeit des Laufs
-            g["record_time_session_s"] = rs.cmap.H(trig) + rs.run.t_start_s
-            tH, TD, res, used = rs.tm
-            mg = g.create_group("markers")
-            mg["tH_s"] = tH; mg["TD_s"] = TD; mg["residual_s"] = res; mg["used"] = used
-            a = rs.assignment
-            if a is not None:
-                for name in ("seg_class", "seg_herald", "seg_n_secondary", "seg_overlap_prev", "herald_class",
-                             "herald_reason", "herald_segment"):
-                    g[name] = getattr(a, name)
-                g["herald_D_s"] = a.hD
-            elif "_n_in_record" in rs.free:
-                g["seg_class"] = rs.free["_seg_class"]
-                g["seg_n_heralds"] = rs.free["_n_in_record"].astype(np.int32)
+            _write_run_group(f, k, rs)
 
 
 def sync_campaign(path: str | Path, params: SyncParams | None = None, out: str | Path | None = None) -> dict:
