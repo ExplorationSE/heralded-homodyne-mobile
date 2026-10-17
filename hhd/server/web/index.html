@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0f172a">
+<title>HHD Mobil – Homodyn-Herald-Detektion</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><img src="/icon.svg" alt=""><div><b>HHD Mobil</b><small id="sub">HydraHarp 500 + ADQ32</small></div></div>
+  <span id="simbadge" class="badge warn hidden">SIMULIERT</span>
+  <span id="conn" class="dot bad" title="Verbindung"></span>
+</header>
+
+<div id="lockbar" class="lockbar">
+  <span id="locktext">Nur Ansicht</span>
+  <button id="lockbtn" class="small">Steuerung übernehmen</button>
+</div>
+
+<main>
+<!-- ================= Messung ================= -->
+<section id="v-mess" class="view active">
+  <div class="card">
+    <div class="row between"><h2>Sitzung</h2><span id="state" class="pill">–</span></div>
+    <div class="row wrap">
+      <label>Laufplan <select id="plan"></select></label>
+      <label>Tempo <input id="speed" type="number" min="0.05" max="50" step="0.5" value="1"></label>
+      <label class="chk"><input id="autoana" type="checkbox" checked> automatisch auswerten</label>
+    </div>
+    <div class="row">
+      <button id="start" class="ok" data-ctl>Sitzung starten</button>
+      <button id="stop" class="bad" data-ctl>Stopp</button>
+    </div>
+    <div id="sessinfo" class="mut"></div>
+    <div id="planbar" class="planbar"></div>
+    <div class="progress"><div id="prog"></div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="row between"><h2>Quadraturhistogramm</h2><span id="histlbl" class="mut"></span></div>
+      <canvas id="c-hist" height="220"></canvas>
+      <div class="legend"><span class="lg acc"></span>aktueller Lauf <span class="lg mut2"></span>Vakuum (Var ½)</div>
+    </div>
+    <div class="card">
+      <div class="row between"><h2>Varianz je Lauf</h2><span id="norminfo" class="mut"></span></div>
+      <canvas id="c-var" height="220"></canvas>
+      <div class="legend"><span class="lg kv"></span>K-V <span class="lg el"></span>Dunkel <span class="lg kh"></span>K-H <span class="lg a"></span>A <span class="lg b"></span>B</div>
+    </div>
+    <div class="card">
+      <h2>LO-Monitor</h2>
+      <canvas id="c-lo" height="160"></canvas>
+      <div class="legend">relative LO-Leistung (Kanal B), Band ±1 %</div>
+    </div>
+    <div class="card">
+      <h2>Raten und Synchronisation</h2>
+      <div class="kpis">
+        <div><small>Herald</small><b id="k-her">–</b><small>/s</small></div>
+        <div><small>Records</small><b id="k-rec">–</b><small>/s</small></div>
+        <div><small>Var (Lauf)</small><b id="k-var">–</b><small id="k-varerr"></small></div>
+        <div><small>Sync</small><b id="k-sync">–</b><small id="k-match"></small></div>
+      </div>
+      <canvas id="c-rate" height="110"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row between"><h2>Warnungen</h2><button id="clrwarn" class="small ghost" data-ctl>löschen</button></div>
+    <ul id="warns" class="warns"><li class="mut">keine</li></ul>
+  </div>
+</section>
+
+<!-- ================= Ergebnisse ================= -->
+<section id="v-erg" class="view">
+  <div class="card">
+    <div class="row between"><h2>Sitzungen</h2><button id="refresh" class="small ghost">aktualisieren</button></div>
+    <div id="sesslist" class="sesslist"></div>
+    <div id="jobs" class="mut"></div>
+  </div>
+  <div id="resbox" class="hidden">
+    <div class="card">
+      <div class="row between"><h2 id="restitle">Ergebnis</h2><button id="reana" class="small" data-ctl>neu auswerten</button></div>
+      <table class="tbl" id="restbl"></table>
+      <div id="reswarn" class="mut"></div>
+    </div>
+    <div class="grid">
+      <div class="card"><h2>Wigner-Funktion A (herald-bedingt)</h2><canvas id="c-wig" height="260"></canvas>
+        <div class="legend">phasengemittelt, W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)</div></div>
+      <div class="card"><h2>W(r) radial</h2><canvas id="c-wr" height="260"></canvas>
+        <div class="legend"><span class="lg a"></span>A <span class="lg b"></span>B <span class="lg mut2"></span>Vakuum</div></div>
+      <div class="card"><h2>Photonenstatistik p<sub>n</sub></h2><canvas id="c-pn" height="220"></canvas>
+        <div class="legend"><span class="lg a"></span>A <span class="lg b"></span>B</div></div>
+      <div class="card"><h2>Vergleich A/B: Quadraturen</h2><canvas id="c-ab" height="220"></canvas>
+        <div class="legend" id="ablbl"></div></div>
+    </div>
+    <div class="card"><h2>Effizienzbudget</h2><table class="tbl" id="budget"></table></div>
+    <div class="card"><div class="row between"><h2>Bericht</h2><button id="togrep" class="small ghost">anzeigen</button></div>
+      <div id="report" class="report hidden"></div></div>
+  </div>
+</section>
+
+<!-- ================= Geräte ================= -->
+<section id="v-dev" class="view">
+  <div class="card note">
+    <b>ED-8b:</b> Start/Stopp, Messablauf und Anzeige sind mit Steuersperre von überall bedienbar.
+    <span class="tag crit">kritisch</span> Parameter nur am Mess-PC oder mit ausdrücklicher Bestätigung;
+    <span class="tag loc">nur Mess-PC</span> (Triggerausgänge) nie aus der Ferne. <span id="whereami"></span>
+  </div>
+  <div id="devcards" class="grid"></div>
+</section>
+
+<!-- ================= Protokoll ================= -->
+<section id="v-log" class="view">
+  <div class="card">
+    <div class="row between"><h2>Befehlsprotokoll</h2><button id="logref" class="small ghost">aktualisieren</button></div>
+    <div class="tblwrap" id="logtbl"></div>
+  </div>
+  <div class="card mut" id="about"></div>
+</section>
+</main>
+
+<div id="confirm" class="modal hidden">
+  <div class="mbox">
+    <h2>Kritischen Parameter ändern?</h2>
+    <p id="confirmtext"></p>
+    <p class="mut">Änderung aus der Ferne (ED-8b). Bitte nur mit Absprache mit dem Labor.</p>
+    <div class="row"><button id="cno" class="ghost">Abbrechen</button><button id="cyes" class="bad">Ja, ändern</button></div>
+  </div>
+</div>
+<div id="toast" class="toast hidden"></div>
+
+<nav class="tabs">
+  <button data-v="v-mess" class="active"><span>◉</span>Messung</button>
+  <button data-v="v-erg"><span>▦</span>Ergebnisse</button>
+  <button data-v="v-dev"><span>⚙</span>Geräte</button>
+  <button data-v="v-log"><span>☰</span>Protokoll</button>
+</nav>
+<script src="/app.js"></script>
+</body>
+</html>

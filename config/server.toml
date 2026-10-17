@@ -1,0 +1,23 @@
+# HHD-Mess-Server (python -m hhd.server --config config/server.toml)
+[server]
+host = "0.0.0.0"          # LAN; nur lokal/Tunnel: "127.0.0.1"
+port = 8766               # GX nutzt 8765
+token = ""                # Zugangscode; leer = ohne Anmeldung (nur im geschützten LAN!). Für den Tunnel Pflicht.
+data_dir = "hhd_data"     # Sitzungen (je Sitzung ein Verzeichnis wie hhd.io.session)
+log_dir = "logs"          # Befehlsprotokoll logs/commands.jsonl
+lock_timeout_s = 300.0
+status_hz = 2.0
+
+[devices]
+device_mode = "sim"       # live (SDK, derzeit Platzhalter) | sim | replay
+sim_config = "config/standard.yaml"
+replay_dir = ""           # bei replay: Sitzungsverzeichnis
+chunk_s = 0.1
+speed = 1.0               # Echtzeitfaktor (sim/replay)
+realtime = true
+time_scale = 0.0          # 0 = Laufdauern wie Konfiguration
+delta_T_ns = 76.1         # nominelle Verzögerung Trigger → Modenzentrum (Live-Vorschau)
+
+[analysis]
+auto_analyze = true
+n_boot = 100

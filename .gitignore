@@ -8,3 +8,5 @@ dist/
 out/
 data/*
 !data/.gitkeep
+logs/
+hhd_data/
