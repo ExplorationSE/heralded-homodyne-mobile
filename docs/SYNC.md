@@ -101,6 +101,13 @@ Records werden final, wenn ihr Trigger vor dem jüngsten gepaarten Marker liegt;
 nachgeführt, bei Sprüngen neu geschätzt, lokal zwischen Nachbarn interpoliert. Heralds hinter dem ältesten
 offenen Trigger werden verworfen. Stückweise Korrektur und Δ bleiben dem Batch-Lauf vorbehalten.
 
+### 3.7 Lange Sitzungen (0.11)
+
+`sync_session` gibt die Harp-Ereignisse und Digitizer-Köpfe jedes Laufs nach der Zuordnung wieder frei
+(`SyncParams.release_runs = True`, `RunData.release()`); sie werden bei Bedarf neu aus der Datei gelesen
+(`load_session(lazy=True)`). Der Spitzenspeicher hängt damit von der längsten Laufdauer ab, nicht von der
+Sitzungsdauer (×16-Sitzung, 280 244 Records: RSS 279 → 270 MB; Zuordnung, Uhrabbildung und Δ unverändert).
+
 ## 4 Ausgabe `sync/sync.h5`
 
 `/runs/<block>/`: `seg_class` (int8, Codes in Attribut `seg_classes`), `seg_herald`, `seg_n_secondary`,

@@ -325,3 +325,75 @@ Fehler f_el·√(2/N_el + 2/N_KV) (`Calibration.eta_el_err`), der ins Effizienzb
 `eta_rest`) eingeht. Simulator: `kind: electronic`; Laufplanstatistik `sigma_var_el_rel`. 200 Sitzungen:
 η_el = 0,96929 ± 0,00153 (Streuung), wahr 0,96935, mittlerer Fehler 0,00141, Pull −0,01 ± 0,08 (Mittel),
 Breite 1,11. η_Zustand (η_eff/(ξ·η_el)) Pull +0,16 ± 0,07, Breite 1,01.
+
+## 12 Version 0.11: lange Sitzungen (Datenstrom-Auswertung, Drift über Wiedergabe)
+
+**Datenstrom-Auswertung** `hhd.analysis.streaming.analyze_session_streaming` (`hhd compare --streaming`,
+Server ab `streaming_records` Records). Der Speicher hängt nur von der Blockgröße ab, nicht von der Sitzungsdauer.
+
+1. **Durchgang 1:** Die Digitizer-Köpfe und Wellenformen werden blockweise gelesen (`--chunk`, Standard 1024
+   Records). Daraus entstehen:
+   - die Rohquadraturen (Template-Projektion wie im Speicher);
+   - Abdeckung und Klassen;
+   - die LO-Monitorwerte.
+
+   Diese Daten gehen in `analysis/quadratures.h5` (`runs/<block>/…`), dazu je Lauf verschobene Potenzsummen bis zur
+   4. Potenz und LO-Summen.
+2. **Kalibrierung aus den Summen** (`calibrate_from_moments`):
+   - Vakuum- und Elektronikvarianz, Dunkelwert, P_LO-Referenz und Normierung wie `calibrate`;
+   - Drift A-B (`drift_ab_from_per`);
+   - Übersprechen K-H aus vorberechneten n/Mittel/Varianz.
+3. **Durchgang 2:** Die Quadraturen werden normiert (`x`) und in Histogramme `QHist` einsortiert:
+   - Bins 1/120, Bereich ±8;
+   - je Gruppe und Lauf;
+   - mit exakten Potenzsummen bis x⁸.
+
+   Var(x), W(0,0) aus Momenten und deren Fehler sind deshalb **exakt gleich** zur Auswertung im Speicher.
+4. **Rekonstruktion** aus den Histogrammen:
+   - MaxLik auf groben Bins von 0,05 (wie `estimator = "binned"`);
+   - η-Fit, W(0,0);
+   - Poisson-Bootstrap je Bin und Lauf;
+   - die Vakuumnormierung wird je Ziehung aus den K-V-Momenten neu gezogen.
+
+   KS-Test und χ² A/B kommen aus den Histogramm-CDFs. Nulltests laufen über die Lauf-Hälften. Konfidenzintervalle
+   sind normal/Perzentil; es gibt keine PCA, und die Mode ist parametrisch.
+
+**Drift über Wiedergabe** `hhd.analysis.replaydrift.drift_over_replay` (`hhd drift <sitzung>`):
+- `ReplayBackend` ohne Echtzeit liefert Fenster von 1 s an `DriftMonitor` (LO aus Kanal B, Vakuumvarianz, η).
+- Δ_T kommt aus `sync/sync.json`.
+- Die Projektion läuft in Teilblöcken von 512 Records.
+
+**Prüfung** (`tests/test_longrun.py`):
+- zwei Sitzungen mit dem Standard-Laufplan aus dem Datenstrom-Simulator (×1, ×2);
+- die Wiedergabe ist vollständig (PTU bitgleich), und die tracemalloc-Spitze ist bei doppelter Länge gleich;
+- die Spitze der Datenstrom-Auswertung bleibt gleich und unter 60 MB (Blockgröße 256);
+- Kalibrierung, Var(x), W00_moments, Δ Var und χ² stimmen mit der Auswertung im Speicher auf 1e-9 überein;
+- W00, η, ⟨n⟩ (Bin-MaxLik) weichen um weniger als 0,25σ ab, die Bootstrap-Fehler um weniger als den Faktor 2;
+- die Drift über Wiedergabe erkennt LO +2 % und η −35 %; ohne Drift gibt es keinen Alarm.
+
+**Messung** (`tools/longrun_memory.py`, jede Stufe in eigenem Prozess, tracemalloc inklusive Importe, n_boot 100,
+L = 1000):
+
+| Sitzung | Stufe | Zeit | tracemalloc | RSS |
+|---|---|---|---|---|
+| ×4 (74 110 Records, 96 MB) | Wiedergabe | 3,0 s | 17,4 MB | 69 MB |
+| | Auswertung im Speicher | 11,3 s | 209 MB | 315 MB |
+| | Datenstrom-Auswertung | 8,8 s | 130 MB | 234 MB |
+| | Drift über Wiedergabe | 4,9 s | 111 MB | 209 MB |
+| ×16 (280 244 Records, 360 MB) | Wiedergabe | 10,5 s | 19,1 MB | 72 MB |
+| | Auswertung im Speicher | 22,4 s | 225 MB | 335 MB |
+| | Datenstrom-Auswertung | 21,6 s | 130 MB | 239 MB |
+| | Drift über Wiedergabe | 11,0 s | 112 MB | 213 MB |
+
+Ergebnisse ×16, A, im Speicher gegen Datenstrom:
+- Var(x) 1,10803 gegen 1,10803;
+- W(0,0) −0,07153 ± 0,00246 gegen −0,07160 ± 0,00224;
+- η 0,61256 ± 0,00382 gegen 0,61255 ± 0,00353.
+
+Die alte Wiedergabe (0.10) hatte 15,8 MB bzw. 24,9 MB, wuchs also mit der Länge, und verlor Records vor dem ersten
+Marker.
+
+**Grenzen:**
+- Die Synchronisation bleibt ein Batch je Lauf. Nach der Zuordnung werden die Laufdaten freigegeben
+  (`SyncParams.release_runs`). Der Speicher wächst also mit der Laufdauer, nicht mit der Sitzungsdauer.
+- Für sehr lange Einzelläufe gibt es `hhd.sync.stream.StreamingSynchronizer` (ohne stückweise Korrektur und ohne Δ).

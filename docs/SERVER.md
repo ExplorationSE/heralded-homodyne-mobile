@@ -129,6 +129,16 @@ entfernt.
 * `tools/app_screenshots.py <url> <ordner>`: headless Chromium (Playwright), mobil (390×844, als entfernter
   Client) und Desktop (Mess-PC).
 
+## 7a Lange Sitzungen (0.11)
+
+* **Wiedergabe** (`ReplayBackend`): PTU (`hhd.io.chunked.iter_ptu_windows`), Digitizer-Köpfe und Marker werden in
+  Zeitfenstern von `chunk_s` gelesen, Wellenformen je Fenster als zusammenhängender Ausschnitt. Der Speicher hängt
+  nicht von der Laufdauer ab (×16-Sitzung: tracemalloc 19 MB, RSS 72 MB). Alle Records werden wiedergegeben, auch
+  die vor dem ersten Marker; die PTU-Records sind bitgleich.
+* **Auswertungsaufträge:** ab `streaming_records` Records (Standard 200 000, `[analysis]` in `server.toml`,
+  0 = nie) läuft die Datenstrom-Auswertung (`docs/ANALYSE.md` Abschnitt 12), sonst die Auswertung im Speicher.
+* `hhd drift <sitzung>`: Drift (LO, Vakuumvarianz, η) über eine Wiedergabe.
+
 ## 8 Grenzen
 
 * Echte Geräte: Treiber nach Handbuch, nur gegen Mock-Bibliotheken getestet; offene Punkte in

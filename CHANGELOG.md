@@ -1,5 +1,25 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.11.0.dev0 – 17.10.2026 (unveröffentlicht)
+
+Auftrag: Wiedergabe und Auswertung langer Sitzungen mit beschränktem Speicher (`docs/ANALYSE.md` Abschnitt 12).
+
+- **Lesen in Zeitfenstern** `hhd/io/chunked.py`: PTU, Digitizer-Köpfe, Marker (mit Übertrag zwischen Blöcken).
+- **Lazy Laufdaten:** `load_session(lazy=True)`, Köpfe als Eigenschaften, `RunData.release()`, `iter_headers`;
+  `sync_session` gibt Läufe nach der Zuordnung frei (`SyncParams.release_runs`).
+- **Wiedergabe** (`ReplayBackend`) als Folge von Zeitfenstern: konstanter Speicher, vollständig (vorher fehlten
+  Records vor dem ersten Marker), PTU bitgleich.
+- **Datenstrom-Auswertung** `hhd/analysis/streaming.py` (`hhd compare --streaming [--chunk N]`):
+  - zwei Durchgänge über `quadratures.h5`;
+  - Kalibrierung aus Potenzsummen;
+  - Histogramme `QHist` mit exakten Momenten;
+  - Bin-MaxLik, Poisson-Bootstrap, KS/χ², Nulltests.
+- **Server:** `streaming_records` (Standard 200 000) wählt die Datenstrom-Auswertung für Aufträge.
+- **Drift über Wiedergabe** `hhd/analysis/replaydrift.py`, `hhd drift`. `DriftMonitor` projiziert in Teilblöcken
+  (vorher Spitze ~780 MB bei 1-s-Fenstern).
+- Refaktor: `drift_ab_from_per`, `crosstalk_check(kh_stats=…)`.
+- **Tests** `tests/test_longrun.py` (5); Messwerkzeug `tools/longrun_memory.py`.
+
 ## 0.10.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Auftrag („Los.“): echte Treiber für HydraHarp 500 und ADQ32 hinter dem Live-Platzhalter, speichersparender

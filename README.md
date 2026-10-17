@@ -72,6 +72,9 @@ LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Defau
 | `hhd/io/recorder.py`, `stream_writer.py`, `modes.py` | Aufzeichnung im Datenstrom (PTU, `digitizer.h5`, `session.json`), Betriebsarten je Gerät |
 | `hhd/sim/streaming.py` | speichersparender Datenstrom-Simulator (Zeitscheiben, lazy Drift, dezimierte Wahrheit) |
 | `hhd/analysis/driftmon.py` | Drift-Überwachung im Datenstrom (LO, Vakuumvarianz, η) mit konstantem Speicher |
+| `hhd/analysis/streaming.py` | Datenstrom-Auswertung langer Sitzungen (Histogramme, Momente, Bin-MaxLik, Poisson-Bootstrap) |
+| `hhd/analysis/replaydrift.py` | Drift über eine Wiedergabe (`hhd drift`) |
+| `hhd/io/chunked.py` | Lesen in Zeitfenstern (PTU, Digitizer-Köpfe, Marker) für Wiedergabe und lange Läufe |
 | `hhd/server/` | Mess-Server (FastAPI): Geräteabstraktion live/sim/replay, Messablauf, Live-Vorschau/-Synchronisation, Auswertungsaufträge, Steuersperre, Befehlsprotokoll, Zugangscode, ED-8b; Web-App unter `hhd/server/web/` |
 | `docs/SERVER.md` | Mess-Server und Web-App: Start, Bedienung, Rechte, Schnittstelle |
 | `docs/HARDWARE.md` | echte Geräte: Bibliotheken installieren, Abbildung der Messung, Betriebsarten, Konfiguration, Inbetriebnahme-Prüfliste |
@@ -159,6 +162,8 @@ hhd bench data/S001              # Durchsatz (Ereignisse/s)
 ```bash
 hhd calibrate data/S001          # Quadraturen, Vakuum-/Elektronik-/LO-Kalibrierung, Drift, Übersprechen, PCA
 hhd compare data/S001            # Rekonstruktion + Vergleich A/B → data/S001/analysis/result.json, report.md
+hhd compare data/S001 --streaming   # dasselbe als Datenstrom (beschränkter Speicher, lange Sitzungen)
+hhd drift data/S001              # Drift (LO, Vakuumvarianz, η) über eine Wiedergabe
 hhd report data/S001             # Bericht ausgeben
 hhd validate-analysis data/S001  # nur Simulation: Pulls gegen truth.h5
 python tools/campaign_analysis.py data/K1 --n-boot 200 --procs 4 > studie.json   # Pulls/Bias/Abdeckung je KI-Methode
