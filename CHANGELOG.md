@@ -1,5 +1,29 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.7.0.dev0 – 17.10.2026 (unveröffentlicht)
+
+Auftrag von Herrn Eilers („Weitermachen“): Normierung/Kalibrierung, Modenextraktion, Rekonstruktion, Vergleich A/B
+auf Basis von `sync.h5` (Beschreibung `docs/ANALYSE.md`).
+
+- **Modenextraktion** `hhd/modes/`: Modenzentren aus Herald + Δ bzw. Trigger + Δ_T, Vorlagenbank mit
+  Unterabtastlage und Bandbreitenmodell, Abdeckung, ADC-Nullpunkt aus K-V; **PCA** der bedingten Kovarianz
+  (C_A − C_KV) mit Überlapp, Rauschanteil, τ-/Versatzfit; Option Mode aus PCA (`pca`, `pca_raw`).
+- **Kalibrierung** `hhd/calib/`: Vakuumnormierung (gepoolt, interpoliert, LO-Monitor je Lauf/Record),
+  elektronisches Rauschen aus Dunkellauf oder Clearance-Parameter, Kanal-B-Dunkelwert, Driftindikatoren (K-V,
+  LO-Monitor), K-H-Übersprechprüfung (Modenquadratur und Wellenform).
+- **Rekonstruktion** `hhd/recon/`: MaxLik (RρR), EM, Histogramm-MaxLik, Momentenschätzer, Verlustmatrix,
+  Wigner-Funktion (radial, Gitter), Photonenstatistik, Fidelity, η-Fit; θ-Schnittstelle (`phase.py`).
+- **Kette** `hhd/analysis/`: `analyze_session` → `analysis/result.json` (Schema `hhd-result/1.0`),
+  `quadratures.h5`, `report.md`; gemeinsamer Bootstrap mit neu gezogener Vakuumkalibrierung (**OP-1 gelöst**),
+  Bootstrap-Biaskorrektur und Momenten-Gegenprobe für W(0,0) (**OP-2 Ursache: Positivitätsrand des
+  ML-Schätzers, ~1/N**), Vergleich A/B (Histogramme, KS, Differenzen, Wigner-Differenz, η aus Var_A − Var_B),
+  Drift A/B (A-B-A, A-Hälften), Effizienzbudget.
+- **CLI** `hhd calibrate|reconstruct|compare|report|validate-analysis`.
+- **Validierung** `hhd/sim/analysis_validate.py` (nur dort Wahrheit), Studien `tools/campaign_analysis.py`,
+  `tools/op1_vacuum_bootstrap.py`, `tools/op2_w00_bias.py`; Ergebnisse in `docs/studien/`.
+- **Tests** `tests/test_analysis.py` (Schätzer, Vorlagen, Drift, Kette, Normierungen, PCA, Dunkellauf, Clearance,
+  Übersprechen, keine Wahrheit, CLI).
+
 ## 0.6.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Auftrag von Herrn Eilers: Import und Synchronisation (Gesamtplan v1.7, Synchronisationsbericht).

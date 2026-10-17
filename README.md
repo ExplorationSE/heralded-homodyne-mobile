@@ -6,9 +6,11 @@ von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasenge
 Phase θ als Option
 (ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExSE Harp GX Mobil.
 
-**Stand 0.6.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`) sowie **Import**
-(`hhd.io.session`) und **Synchronisation/Zuordnung** (`hhd.sync`, Kommando `hhd`; Beschreibung in
-`docs/SYNC.md`). Analyse (Normierung, Moden, Rekonstruktion), Server und App folgen (siehe Gesamtplan v1.7).
+**Stand 0.7.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
+(`hhd.io.session`), **Synchronisation/Zuordnung** (`hhd.sync`; `docs/SYNC.md`) sowie die **Auswertung**:
+Normierung/Kalibrierung, Modenextraktion (parametrisch und PCA), phasengemittelte Rekonstruktion mit Bootstrap
+und Vergleich A/B (`hhd.calib`, `hhd.modes`, `hhd.recon`, `hhd.analysis`; `docs/ANALYSE.md`). Server und App
+folgen (siehe Gesamtplan v1.7).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
 K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als
@@ -135,6 +137,16 @@ hhd stream data/S001             # chunkweiser Synchronisierer gegen Batch
 hhd bench data/S001              # Durchsatz (Ereignisse/s)
 ```
 (ohne Installation: `python -m hhd …`)
+
+**Auswertung** (ohne Wahrheit; `docs/ANALYSE.md`):
+
+```bash
+hhd calibrate data/S001          # Quadraturen, Vakuum-/Elektronik-/LO-Kalibrierung, Drift, Übersprechen, PCA
+hhd compare data/S001            # Rekonstruktion + Vergleich A/B → data/S001/analysis/result.json, report.md
+hhd report data/S001             # Bericht ausgeben
+hhd validate-analysis data/S001  # nur Simulation: Pulls gegen truth.h5
+python tools/campaign_analysis.py data/K1 200 4 > studie.json   # Pulls/Bias/Abdeckung über eine Kampagne
+```
 
 ## 4 Tests
 
