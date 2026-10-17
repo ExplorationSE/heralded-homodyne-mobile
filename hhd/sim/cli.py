@@ -112,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--rate-KV", dest="rate_KV", type=float, default=10000.0)
     p.add_argument("--rate-B", dest="rate_B", type=float, default=2000.0)
     p.add_argument("--T-KH", dest="T_KH", type=float, default=60.0)
+    p.add_argument("--T-dark", dest="T_dark", type=float, default=10.0, help="Dunkellauf (LO aus) in s, 0 = keiner")
+    p.add_argument("--rate-dark", dest="rate_dark", type=float, default=10000.0)
     p.add_argument("--allan", help="CSV (Zeit s, relative Vakuumskala bzw. LO-Leistung) → Allan-Analyse und Anpassungsregel")
     p.add_argument("--target", type=float, default=0.005, help="Ziel σ(η) gesamt")
     p.add_argument("--norm", choices=("pooled", "interpolated", "monitor"), default="interpolated")
@@ -189,13 +191,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Empfehlung: {r['hint']}")
             else:
                 spec = PlanSpec(T_A=a.T_A, T_B=a.T_B, n_cycles=a.cycles, kv_every=a.kv_every, T_KV=a.T_KV,
-                                rate_KV=a.rate_KV, rate_B=a.rate_B, T_KH=a.T_KH)
+                                rate_KV=a.rate_KV, rate_B=a.rate_B, T_KH=a.T_KH, T_dark=a.T_dark,
+                                rate_dark=a.rate_dark)
             bl = make_plan(spec)
             st = statistics(bl, R_herald=a.rate)
             print(f"Laufplan: {len(bl)} Läufe, {st['t_total_s'] / 60:.1f} min, Daten {st['data_GB']:.1f} GB "
                   f"(max. {st['peak_rate_MBps']:.0f} MB/s)")
             print(f"  Segmente A {st['N']['heralded']:.0f}, B {st['N']['free_running']:.0f}, K-V {st['N']['vacuum']:.0f}, "
-                  f"K-H {st['N']['herald_blocked']:.0f}")
+                  f"K-H {st['N']['herald_blocked']:.0f}, Dunkel {st['N'].get('electronic', 0):.0f}")
             print(f"  σ(η) {st['sigma_eta']:.4f} (A {st['sigma_eta_stat_A']:.4f}, Vakuum {st['sigma_eta_vac']:.4f}), "
                   f"σ(W00) {st['sigma_W00']:.4f}, K-H: Zusatzvarianz ≥ {100 * st['kh_excess_3sigma_rel']:.2f} % nachweisbar (3σ)")
             print("  " + " → ".join(f"{b['id']}({b['duration_s']:g}s)" for b in bl))

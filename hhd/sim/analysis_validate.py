@@ -54,9 +54,15 @@ def validate_analysis(session_dir, result: dict) -> dict:
             if t is None:
                 continue
             o[q] = dict(value=g[q], err=g.get(f"{q}_err"), true=t, diff=g[q] - t, pull=_pull(g[q], t, g.get(f"{q}_err")))
-            bs = g.get(f"{q}_boot")
-            if bs:
+            if g.get(f"{q}_ci68"):
+                o[q].update(in68=_in(g[f"{q}_ci68"], t), in95=_in(g[f"{q}_ci95"], t), ci_method=g.get(f"{q}_ci_method"))
+            elif g.get(f"{q}_boot"):
+                bs = g[f"{q}_boot"]
                 o[q].update(in68=_in(bs["ci68"], t), in95=_in(bs["ci95"], t))
+            ca = g.get("ci_all", {}).get(q)
+            if ca:
+                o[q]["cover"] = {m: dict(in68=_in(v["68"], t), in95=_in(v["95"], t),
+                                         w68=v["68"][1] - v["68"][0]) for m, v in ca.items()}
         if "W00_bc" in g and T.get("W00") is not None:
             o["W00_bc"] = dict(value=g["W00_bc"], err=g.get("W00_err"), true=T["W00"], diff=g["W00_bc"] - T["W00"],
                                pull=_pull(g["W00_bc"], T["W00"], g.get("W00_err")))
@@ -115,5 +121,14 @@ def summarize_pulls(vals: list[dict], keys=("A.var_x", "A.W00", "A.W00_bc", "A.W
         c95 = [r["in95"] for r in rows if r.get("in95") is not None]
         if c68:
             s["coverage68"] = float(np.mean(c68)); s["coverage95"] = float(np.mean(c95))
+            s["coverage68_err"] = float(np.sqrt(0.68 * 0.32 / len(c68))); s["coverage95_err"] = float(np.sqrt(0.05 * 0.95 / len(c95)))
+        meths = sorted({m for r in rows for m in r.get("cover", {})})
+        if meths:
+            s["coverage_by_method"] = {
+                m: dict(n=len([r for r in rows if m in r.get("cover", {})]),
+                        c68=float(np.mean([r["cover"][m]["in68"] for r in rows if m in r.get("cover", {})])),
+                        c95=float(np.mean([r["cover"][m]["in95"] for r in rows if m in r.get("cover", {})])),
+                        mean_w68=float(np.mean([r["cover"][m]["w68"] for r in rows if m in r.get("cover", {})])))
+                for m in meths}
         out[key] = s
     return out

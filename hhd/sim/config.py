@@ -256,16 +256,17 @@ class BlockCfg:
 
 
 # Laufplan M1 (Vorschlag „Vorschläge M1“, übernommen als Default in Gesamtplan v1.6), Echtzeit bei 1 kHz Herald:
-# K-V 20 s @ 10 kHz (Anfang, nach jedem 3. Zyklus, Ende), K-H 60 s, 6 × (A 60 s, B 30 s @ 2 kHz) + A.
+# K-V 20 s @ 10 kHz (Anfang, nach jedem 3. Zyklus, Ende), Dunkellauf 10 s @ 10 kHz (LO aus; 0.8.0: η_el im
+# Effizienzbudget), K-H 60 s, 6 × (A 60 s, B 30 s @ 2 kHz) + A.
 M1_PLAN = dict(T_A=60.0, T_B=30.0, n_cycles=6, T_KV=20.0, kv_every=3, T_KH=60.0, kh_end=False, rate_B=2000.0,
-               rate_KV=10000.0)
+               rate_KV=10000.0, T_dark=10.0, rate_dark=10000.0)
 SIM_TIME_SCALE = 1 / 90     # Standardsitzung im Zeitraffer (≈ 8 s statt 12 min); Echtzeit: config/laufplan_m1.yaml
 
 
 def default_blocks(time_scale: float = SIM_TIME_SCALE) -> list[dict]:
     """Standard-Messablauf = Laufplan M1 (ED-12, Gesamtplan v1.6) mit allen Dauern × ``time_scale``.
 
-    K-V → K-H → A → B → … (K-V nach jedem 3. Zyklus) → A → K-V; B freilaufend (2 kHz), K-V periodisch (10 kHz).
+    K-V → Dunkel → K-H → A → B → … (K-V nach jedem 3. Zyklus) → A → K-V; B freilaufend (2 kHz), K-V periodisch (10 kHz).
     Die Echtzeitfassung steht in ``config/laufplan_m1.yaml`` (``hhd-sim plan``); Lauf B mit Zufallstrigger
     (config/random_b.yaml), Off-Herald-Fenster und eingestreute Zufallstrigger bleiben Optionen.
     """

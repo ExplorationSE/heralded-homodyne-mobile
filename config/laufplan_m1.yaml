@@ -1,12 +1,16 @@
 # Laufplan (hhd-sim plan) für Herald-Rate 1000/s – Vorschlag M1, Startwerte vor AP14
-# PlanSpec: {"T_A": 60.0, "T_B": 30.0, "n_cycles": 6, "T_KV": 20.0, "kv_every": 3, "T_KH": 60.0, "kh_end": false, "rate_B": 2000.0, "rate_KV": 10000.0}
-# 12.1 min, 15.0 GB, σ(η) 0.0028, σ(W00) 0.0010
+# PlanSpec: {"T_A": 60.0, "T_B": 30.0, "n_cycles": 6, "T_KV": 20.0, "kv_every": 3, "T_KH": 60.0, "kh_end": false, "rate_B": 2000.0, "rate_KV": 10000.0, "T_dark": 10.0, "rate_dark": 10000.0, "dark_end": false}
+# 12.3 min, 16.4 GB, σ(η) 0.0027, σ(W00) 0.0010
 source:
   R_herald: 1000.0
 blocks:
 - id: kv_00
   kind: vacuum
   duration_s: 20.0
+  periodic_rate: 10000.0
+- id: dark_00
+  kind: electronic
+  duration_s: 10.0
   periodic_rate: 10000.0
 - id: kh_start
   kind: herald_blocked

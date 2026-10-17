@@ -58,14 +58,15 @@ def test_defaults_follow_decisions():
     assert c.harp.model == "HydraHarp 500 S" and c.harp.n_channels == 4
     assert c.digitizer.form_factor == "PCIe" and c.digitizer.clock_option == "S2G5" and c.fs == 2.5e9
     assert c.digitizer.bandwidth_option == "BW1G0" and c.bandwidth == 1e9
-    # Default-Laufplan M1 (Gesamtplan v1.6) im Zeitraffer: K-V, K-H, 6 × (A, B) mit K-V nach Zyklus 3, A, K-V
+    # Default-Laufplan M1 (Gesamtplan v1.6) im Zeitraffer: K-V, Dunkel (0.8.0), K-H, 6 × (A, B) mit K-V nach Zyklus 3, A, K-V
     kinds = [b.kind for b in c.blocks]
-    assert kinds[:4] == ["vacuum", "herald_blocked", "heralded", "free_running"] and kinds[-2:] == ["heralded", "vacuum"]
+    assert kinds[:5] == ["vacuum", "electronic", "herald_blocked", "heralded", "free_running"]
+    assert kinds[-2:] == ["heralded", "vacuum"] and kinds.count("electronic") == 1
     assert kinds.count("heralded") == 7 and kinds.count("free_running") == 6 and kinds.count("vacuum") == 3
     assert [b.id for b in c.blocks if b.kind == "vacuum"] == ["kv_00", "kv_03", "kv_end"]
     assert c.block("a_01").duration_s == pytest.approx(60 / 90) and c.block("kv_00").periodic_rate == 10000
     assert all(b.random_rate == 0 for b in c.blocks if b.kind == "heralded")    # kein Einstreuen (Option)
-    assert c.run_ids() == [f"S001-R{i:02d}" for i in range(1, 18)]
+    assert c.run_ids() == [f"S001-R{i:02d}" for i in range(1, 19)]
     # Echtzeitfassung = config/laufplan_m1.yaml (gleiche Folge, Dauern × 90)
     m1 = SimConfig.load(Path(__file__).resolve().parents[1] / "config" / "laufplan_m1.yaml")
     assert [b.id for b in m1.blocks] == [b.id for b in c.blocks]

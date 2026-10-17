@@ -42,6 +42,8 @@ class AnalysisParams:
     n_boot: int = 200
     boot_vacuum: bool = True                # OP-1: Vakuumnormierung im Bootstrap neu ziehen
     bias_correct: bool = True               # OP-2: Bootstrap-Biaskorrektur für W(0,0)
+    ci_method: str = "auto"                 # Konfidenzintervall: auto (je Größe, siehe CI_DEFAULT) oder eine Methode
+    jackknife_groups: int = 20              # Gruppen-Jackknife für die BCa-Beschleunigung (0 = aus)
     seed: int = 1
     dark_count_rate: float = 100.0          # Herald-Dunkelzählrate (1/s) für ξ im Effizienzbudget
     drift_z: float = 3.0
@@ -129,7 +131,8 @@ class Normalizer:
 def bootstrap_groups(norm: Normalizer, keys, point: dict, ap: AnalysisParams, rng) -> dict:
     """Gemeinsamer Bootstrap: je Ziehung dieselbe Vakuumkalibrierung für alle Gruppen, Records je Gruppe neu gezogen."""
     base = {k: norm.x(k) for k in keys}
-    res = {k: {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var", "mean_n", "p1")} for k in keys}
+    res = {k: {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var", "mean_n", "p1",
+                               "var_x_se", "W00_moments_se", "eta_fit_se")} for k in keys}
     res["diff"] = {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit")}
     for _ in range(ap.n_boot):
         if ap.boot_vacuum:
@@ -146,11 +149,32 @@ def bootstrap_groups(norm: Normalizer, keys, point: dict, ap: AnalysisParams, rn
             for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var"):
                 res[k][q].append(g[q])
             res[k]["mean_n"].append(float(np.dot(np.arange(len(g["_p"])), g["_p"])))
+            res[k]["var_x_se"].append(g["var_err"]); res[k]["W00_moments_se"].append(g["W00_moments_err"])
+            res[k]["eta_fit_se"].append(g["eta_fit_err_fisher"])
             res[k]["p1"].append(g["p_n"][1])
         if "A" in st and "B" in st:
             for q in res["diff"]:
                 res["diff"][q].append(st["A"][q] - st["B"][q])
     return res
+
+
+CI_QUANT = ("var_x", "W00", "W00_moments", "eta_fit", "eta_var")
+SE_KEY = {"var_x": ("var_x_se", "var_err"), "eta_var": ("var_x_se", "var_err"),
+          "W00_moments": ("W00_moments_se", "W00_moments_err"), "eta_fit": ("eta_fit_se", "eta_fit_err_fisher")}
+# Standardmethode je Größe (Kampagnenstudie 0.8.0, docs/ANALYSE.md Abschnitt 4)
+CI_DEFAULT = {"var_x": "studentized", "eta_var": "studentized", "eta_fit": "studentized",
+              "W00": "bca", "W00_moments": "studentized"}
+
+
+def jackknife_values(norm: Normalizer, key: str, point: dict, ap: AnalysisParams, rng) -> dict:
+    from ..recon.intervals import jackknife_groups
+    x = norm.x(key)
+    out = {q: [] for q in CI_QUANT}
+    for m in jackknife_groups(len(x), ap.jackknife_groups, rng):
+        g = group_stats(x[m], ap.nmax, _est(ap, int(m.sum())), p0=point["_p"], full=False, tol=max(ap.tol, 1e-7))
+        for q in CI_QUANT:
+            out[q].append(g[q])
+    return out
 
 
 def _summ(v, point):
@@ -184,6 +208,27 @@ def compare_ab(xA, xB, gA, gB, boot, ap: AnalysisParams) -> dict:
     # Effizienz aus dem Vergleich: Var_A − Var_B = η_eff (Einzelphoton, B als Referenz statt ½)
     out["eta_from_comparison"] = dict(value=out["diff_var_x"]["value"], err=out["diff_var_x"]["err"],
                                       model="Var_A − Var_B (verlustbehaftetes |1⟩, B ≈ Vakuum + n_B)")
+    return out
+
+
+def null_tests(norm: "Normalizer") -> dict:
+    """OP-5: A-A und B-B (Läufe abwechselnd in zwei Hälften) als Nullhypothese neben A-B (KS-p-Wert, Var-Differenz)."""
+    from scipy import stats as S
+    from ..recon.stats import var_with_err
+    out = {}
+    for key in ("A", "B"):
+        G = norm.groups.get(key, [])
+        if len(G) < 2:
+            continue
+        xs = []
+        for b, m in G:
+            rq = norm.quads[b]
+            xs.append(norm.cal.normalize(rq.q[m], rq.t_session[m], b, rq.lo_b[m]))
+        h1 = np.concatenate(xs[0::2]); h2 = np.concatenate(xs[1::2])
+        v1, e1 = var_with_err(h1); v2, e2 = var_with_err(h2)
+        out[key + key] = dict(runs_1=[b for b, _ in G[0::2]], runs_2=[b for b, _ in G[1::2]], n1=len(h1), n2=len(h2),
+                              ks_p=float(S.ks_2samp(h1, h2).pvalue), var_diff=v1 - v2,
+                              var_z=float((v1 - v2) / np.hypot(e1, e2)))
     return out
 
 
@@ -267,7 +312,9 @@ def efficiency_budget(session, sd, cal: Calibration, res_groups: dict, pca: dict
         if comp:
             out["eta_eff_comparison"] = comp["eta_from_comparison"]
         den = xi * (cal.eta_el if cal.var_el is not None else 1.0)
-        out["eta_rest"] = dict(value=ef / den, err=efe / den,
+        rel_el = (cal.eta_el_err or 0.0) / cal.eta_el if cal.var_el is not None else 0.0
+        out["eta_el_err"] = cal.eta_el_err
+        out["eta_rest"] = dict(value=ef / den, err=float(np.hypot(efe / den, ef / den * rel_el)),
                                note="η_eff/(ξ·η_el): optische Verluste, Detektor-QE, Modenanpassung"
                                     + ("" if cal.var_el is not None else " (η_el unbekannt, nicht abgezogen)"))
     return out
@@ -340,6 +387,22 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
                     pv = g[q] if q not in ("mean_n", "p1") else (g["mean_n"] if q == "mean_n" else g["p_n"][1])
                     s = _summ(boot[k][q], pv)
                     gg[f"{q}_err"] = s["err"]; gg[f"{q}_boot"] = s
+                from ..recon.intervals import intervals
+                jk = jackknife_values(norm, k, g, ap, rng) if ap.jackknife_groups >= 3 else {}
+                cis = {}
+                for q in CI_QUANT:
+                    sk = SE_KEY.get(q)
+                    ci = intervals(g[q], boot[k][q], boot[k][sk[0]] if sk else None, g[sk[1]] if sk else None,
+                                   jk.get(q))
+                    if not ci:
+                        continue
+                    cis[q] = {m: v for m, v in ci.items() if not m.startswith("_")}
+                    meth = CI_DEFAULT.get(q, "percentile") if ap.ci_method == "auto" else ap.ci_method
+                    meth = meth if meth in cis[q] else "percentile"
+                    gg[f"{q}_ci68"], gg[f"{q}_ci95"] = cis[q][meth]["68"], cis[q][meth]["95"]
+                    gg[f"{q}_ci_method"] = meth
+                    gg[f"{q}_ci_params"] = ci["_params"]
+                gg["ci_all"] = cis
                 if ap.bias_correct:
                     gg["W00_bc"] = g["W00"] - gg["W00_boot"]["bias_boot"]
             res_groups[k] = gg
@@ -349,6 +412,7 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
         if "compare" in stages and "A" in point and "B" in point:
             t = time.time()
             comp = compare_ab(norm.x("A"), norm.x("B"), point["A"], point["B"], boot, ap)
+            comp["null_tests"] = null_tests(norm)
             result["comparison"] = comp
             timing["compare"] = time.time() - t
         result["efficiency_budget"] = efficiency_budget(session, sd, cal, res_groups, pca, comp, ap)

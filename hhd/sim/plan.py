@@ -2,7 +2,7 @@
 
 Ein Laufplan ist eine Folge von Läufen (``blocks``)::
 
-    K-V₀ → K-H → [A₁ → B₁ (→ K-Vᵢ alle ``kv_every`` Zyklen)] … → A_{n+1} → K-V_end (→ K-H_end)
+    K-V₀ (→ Dunkel) → K-H → [A₁ → B₁ (→ K-Vᵢ alle ``kv_every`` Zyklen)] … → A_{n+1} → K-V_end (→ K-H_end)
 
 mit ``n_cycles`` A-B-Zyklen und einem abschließenden A-Lauf (A-B-A-Verschachtelung). Die Funktionen hier
 liefern
@@ -40,6 +40,9 @@ class PlanSpec:
     kh_end: bool = False         # zweiter K-H-Lauf am Ende
     rate_B: float = 2000.0       # 1/s interne periodische Trigger in B
     rate_KV: float = 4000.0      # 1/s interne periodische Trigger in K-V
+    T_dark: float = 0.0          # s Dunkellauf (LO aus, elektronisches Rauschen, Kanal-B-Dunkelwert) nach K-V₀; 0 = keiner
+    rate_dark: float = 10000.0   # 1/s interne periodische Trigger im Dunkellauf
+    dark_end: bool = False       # zweiter Dunkellauf am Ende (Drift des elektronischen Rauschens)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -52,6 +55,9 @@ def make_plan(spec: PlanSpec | dict | None = None, **kw) -> list[dict]:
         raise ValueError("Laufplan: n_cycles ≥ 1, Dauern > 0")
     kv = lambda i: dict(id=f"kv_{i:02d}", kind="vacuum", duration_s=s.T_KV, periodic_rate=s.rate_KV)
     b = [kv(0)]
+    dark = lambda i: dict(id=i, kind="electronic", duration_s=s.T_dark, periodic_rate=s.rate_dark)
+    if s.T_dark > 0:
+        b.append(dark("dark_00"))
     if s.T_KH > 0:
         b.append(dict(id="kh_start", kind="herald_blocked", duration_s=s.T_KH))
     for i in range(1, s.n_cycles + 1):
@@ -63,6 +69,8 @@ def make_plan(spec: PlanSpec | dict | None = None, **kw) -> list[dict]:
     b.append(dict(kv(99), id="kv_end"))
     if s.kh_end and s.T_KH > 0:
         b.append(dict(id="kh_end", kind="herald_blocked", duration_s=s.T_KH))
+    if s.dark_end and s.T_dark > 0:
+        b.append(dark("dark_end"))
     return b
 
 
@@ -146,6 +154,9 @@ def statistics(blocks: list[dict], R_herald: float = 1000.0, R_dark: float = 100
                    sigma_var_rel_A=float(np.sqrt((m4 - m2 ** 2) / NA) / m2))
     if NB and NV:
         out["sigma_nB"] = float(VAC * np.sqrt(2 / NB + 2 / NV))
+    NE = N.get("electronic", 0.0)
+    if NE:
+        out["sigma_var_el_rel"] = float(np.sqrt(2 / NE))                  # relative Unsicherheit σ_el² (→ η_el)
     if NH:
         out["kh_excess_3sigma_rel"] = float(3 * np.sqrt(2 / NH))       # nachweisbare Zusatzvarianz (relativ)
     return out
@@ -298,7 +309,8 @@ def adapt_plan(noise: dict, R_herald: float = 1000.0, sigma_eta_target: float = 
     rate_KV_eff = accepted_rate(rate_KV, record_length=record_length)
     T_KV = max(5.0, float(np.ceil(N_V / n_kv / rate_KV_eff)))
     spec = PlanSpec(T_A=round(T_A, 1), T_B=round(T_B, 1), n_cycles=n_cycles, T_KV=T_KV, kv_every=kv_every,
-                    T_KH=T_KH, rate_B=float(rate_B if rate_B is not None else min(R_herald, rate_KV)), rate_KV=rate_KV)
+                    T_KH=T_KH, rate_B=float(rate_B if rate_B is not None else min(R_herald, rate_KV)), rate_KV=rate_KV,
+                    T_dark=10.0)
     bl = make_plan(spec)
     st = statistics(bl, R_herald=R_herald, eta=eta, record_length=record_length,
                     pretrigger=min(2000, record_length * 2 // 5) // 8 * 8, c_W=c_W)

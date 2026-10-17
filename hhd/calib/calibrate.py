@@ -58,6 +58,7 @@ class Calibration:
     warnings: list = field(default_factory=list)
     vac_q: np.ndarray | None = None                       # Rohquadraturen K-V (für gemeinsamen Bootstrap)
     vac_t: np.ndarray | None = None
+    n_el: int = 0                                         # Records des Dunkellaufs (0 = Parameter/unbekannt)
 
     @property
     def f_el(self) -> float:
@@ -66,6 +67,13 @@ class Calibration:
     @property
     def clearance(self) -> float:
         return float((self.var_kv - self.var_el) / self.var_el) if self.var_el else float("nan")
+
+    @property
+    def eta_el_err(self) -> float | None:
+        """Statistischer Fehler von η_el (nur aus Dunkellauf): f_el·√(2/N_el + 2/N_KV)."""
+        if self.var_el is None or not self.n_el:
+            return None
+        return float(self.f_el * np.sqrt(2 / self.n_el + 2 / self.n_kv))
 
     @property
     def eta_el(self) -> float:
@@ -103,7 +111,7 @@ class Calibration:
     def to_dict(self) -> dict:
         d = {k: v for k, v in asdict(self).items() if k not in ("vac_q", "vac_t")}
         d.update(clearance=self.clearance if self.var_el else None, clearance_dB=float(10 * np.log10(self.clearance)) if self.var_el else None,
-                 eta_el=self.eta_el if self.var_el is not None else None, f_el=self.f_el, scale_lsb=float(np.sqrt(self.var_kv / VAC)))
+                 eta_el=self.eta_el if self.var_el is not None else None, eta_el_err=self.eta_el_err, f_el=self.f_el, scale_lsb=float(np.sqrt(self.var_kv / VAC)))
         return d
 
 
@@ -123,9 +131,11 @@ def calibrate(session, quads: dict, params: CalibParams | None = None) -> tuple[
     var_kv = float(np.mean((vq - q0) ** 2))
     # elektronisches Rauschen
     el = [b for b, rq in quads.items() if rq.dataset_type == "electronic"]
+    n_el = 0
     if el:
         qe = np.concatenate([quads[b].q for b in el])
         var_el, el_src = float(np.var(qe)), "Dunkellauf (LO aus): " + ", ".join(el)
+        n_el = int(len(qe))
     elif p.clearance_dB is not None:
         S = 10 ** (p.clearance_dB / 10)
         var_el, el_src = var_kv / (1 + S), f"Parameter clearance_dB = {p.clearance_dB}"
@@ -159,7 +169,7 @@ def calibrate(session, quads: dict, params: CalibParams | None = None) -> tuple[
                             n=int(len(rq.q)), lo_rel=lo_rel.get(b)))
     kv_runs.sort(key=lambda d: d["t"])
     cal = Calibration(p.norm, q0, var_kv, int(len(vq)), kv_runs, var_el, el_src, dark_b, db_src, p_ref, lo_rel,
-                      warnings=warn, vac_q=vq - q0, vac_t=vt)
+                      warnings=warn, vac_q=vq - q0, vac_t=vt, n_el=n_el)
     for b, r in runs.items():
         if b in quads and quads[b].dataset_type != "electronic":
             cal.scales[b] = float(np.mean(np.atleast_1d(cal.var_vac_at(r.t_start_s + r.duration_s / 2, b,

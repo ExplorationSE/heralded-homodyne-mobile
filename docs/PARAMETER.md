@@ -139,6 +139,7 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | id | kind | duration_s | random_rate | periodic_rate |
 |---|---|---|---|---|
 | kv_00 | vacuum | 0.222222 | 0 | 10000 |
+| dark_00 | electronic | 0.111111 | 0 | 10000 |
 | kh_start | herald_blocked | 0.666667 | 0 | 2000 |
 | a_01 | heralded | 0.666667 | 0 | 2000 |
 | b_01 | free_running | 0.333333 | 0 | 2000 |

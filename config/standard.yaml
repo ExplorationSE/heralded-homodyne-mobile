@@ -1,5 +1,5 @@
 # Standardkonfiguration des Simulators (alle Parameter, Defaults aus hhd/sim/config.py).
-# Messablauf ED-12: getrennte Läufe, Default = M1-Laufplan (config/laufplan_m1.yaml) im Zeitraffer 1/90.
+# Messablauf ED-12: getrennte Läufe, Default = M1-Laufplan (config/laufplan_m1.yaml, 18 Läufe inkl. Dunkellauf) im Zeitraffer 1/90.
 # Optik (Entscheidung 17.10.2026): 1550 nm, Herald-Detektor SNSPD (Preset), Homodyn InGaAs, LO-Monitor PDA05CF2 + 10 dB.
 # Geräte: HydraHarp 500 S (Sync + 4 Kanäle), ADQ32-PCIe S2G5 (2,5 GS/s), BW1G0 (1 GHz); LO-Monitor an Kanal B.
 # Bedeutung, Einheit, Status und Quelle jedes Parameters: docs/PARAMETER.md
@@ -138,6 +138,18 @@ blocks:
 - id: kv_00
   kind: vacuum
   duration_s: 0.222222
+  run_id: ''
+  random_rate: 0.0
+  periodic_rate: 10000.0
+  state: {}
+  state_rate: 1000.0
+  phase: {}
+  crosstalk_amp: null
+  lo_scale: 1.0
+  eta_scale: 1.0
+- id: dark_00
+  kind: electronic
+  duration_s: 0.111111
   run_id: ''
   random_rate: 0.0
   periodic_rate: 10000.0
