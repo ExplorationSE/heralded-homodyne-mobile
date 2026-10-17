@@ -46,6 +46,9 @@ def test_live_live_session(tmp_path, mock_libs):
     assert st["modes"] == {"harp": "live", "digitizer": "live"} and st["mode"] == "live" and not st["simulated"]
     assert st["mode_labels"]["session"] == "LIVE" and st["devices"]["harp"]["hardware"]["n_channels"] == 4
     d = _run(svc)
+    msgs = [w["msg"] for w in svc.live.warnings]
+    # Mock: LO-Monitor auch im Dunkellauf an → Dunkelwert verworfen statt unsinniger LO-Normierung
+    assert any("Dunkelwert verworfen" in m for m in msgs) and not any("LO-Leistung" in m for m in msgs), msgs
     svc.close()
     man = json.loads((d / "session.json").read_text(encoding="utf-8"))
     assert man["device_modes"] == {"harp": "live", "digitizer": "live"} and man["acquisition_mode"] == "live"

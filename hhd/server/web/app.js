@@ -202,6 +202,8 @@ function renderDevices() {
 function setDevice(dev, params, confirm) {
   send("set_device", { device: dev, params, ...(confirm ? { confirm } : {}) }, (m) => {
     if (m.needs_confirm) {
+      $("confirmtitle").textContent = "Kritischen Parameter ändern?";
+      $("cyes").textContent = "Ja, ändern";
       $("confirmtext").textContent = `${dev}: ${Object.entries(params).map(([k, v]) => `${k} = ${v}`).join(", ")}`;
       $("confirm").classList.remove("hidden");
       $("cyes").onclick = () => { $("confirm").classList.add("hidden"); setDevice(dev, params, m.confirm); };
@@ -324,6 +326,8 @@ function startSession(confirm) {
   const p = { plan: $("plan").value, speed: Number($("speed").value), ...(confirm ? { confirm } : {}) };
   send("start_session", p, (m) => {
     if (m.needs_confirm) {
+      $("confirmtitle").textContent = "Messung mit echten Geräten starten?";
+      $("cyes").textContent = "Ja, starten";
       $("confirmtext").textContent = `Sitzung „${p.plan}“ mit LIVE-Geräten starten (${Object.entries(S.modes || {}).map(([k, v]) => k + ": " + v).join(", ")})`;
       $("confirm").classList.remove("hidden");
       $("cyes").onclick = () => { $("confirm").classList.add("hidden"); startSession(m.confirm); };
