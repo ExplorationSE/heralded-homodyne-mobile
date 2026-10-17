@@ -75,7 +75,9 @@ Vakuumvarianz der K-V-Läufe, x = (q − q₀)·√(½/Var_v); elektronisches Ra
   Fehlalarme 1/64 für A-Hälften).
 * **K-H-Übersprechen**: Modenquadratur der K-H-Records (⟨x⟩, Var x gegen ½, Fehler inkl. Vakuumnormierung) und
   Wellenform K-H − K-V in Bins zu 4 ns (Fehler aus der Streuung der Bin-Mittel je Record, da benachbarte Samples
-  korreliert sind), Warnung ab max |z| > 5. Test mit `crosstalk_amp = 0,3` erkannt.
+  korreliert sind), Warnung ab max |z| > 5. Test mit `crosstalk_amp = 0,3` erkannt. Nullverteilung (64 Sitzungen,
+  500 Bins): max |z| 3,30 im Mittel, höchstens 4,10 – kein Fehlalarm; K-H-Varianz z mit Streuung 1,16 (1 Warnung
+  bei |z| = 3,2).
 
 ## 4 Rekonstruktion (`hhd/recon`, phasengemittelt, Standard v1.0)
 
@@ -183,9 +185,9 @@ W_A − W_B enthält zusätzlich die Randverzerrung von B (MaxLik ≤ 1/π).
 
 | Fall | Records | Laufzeit |
 |---|---|---|
-| Standardsitzung (17 Läufe), n_boot 200 | 25 000 | ≈ 6–13 s (Extraktion 2 s, PCA 3 s, Bootstrap < 1 s) |
+| Standardsitzung (17 Läufe), n_boot 200 | 16 500 | 4,9 s (Extraktion 1,8 s, PCA 1,7 s, Bootstrap 0,5 s) |
 | Stresssitzung 1 MHz (246 MB), n_boot 200 | 159 000 (120 000 in A) | 10,4 s, 290 MB Speicher |
-| Kampagne 64 Sitzungen, 6 Prozesse | 1,6 Mio. | 255 s |
+| Kampagne 64 Sitzungen, 6 Prozesse (je Sitzung 2 Auswertungen) | 1,6 Mio. | 239 s (11 s je Sitzung) |
 
 ## 10 Grenzen und offene Punkte
 
