@@ -51,6 +51,8 @@ class SyncParams:
     warn_unexplained_fraction: float = 0.01
     warn_ambiguous_fraction: float = 1e-3
     warn_copy_fraction: float = 0.99
+    # Speicher: Harp-Ereignisse/Köpfe nach jedem Lauf freigeben (lange Sitzungen; zweiter Durchgang liest neu)
+    release_runs: bool = True
 
 
 def _herald_triggered(run: RunData) -> bool:
@@ -329,6 +331,8 @@ def sync_session(path: str | Path | SessionData, params: SyncParams | None = Non
         rs = sync_clock(run, p)
         sync_assign(rs, p)
         syncs[rs.key] = rs
+        if p.release_runs:
+            run.release()
     delta = dict(available=False, reason="abgeschaltet")
     if p.calibrate_delay:
         delta = calibrate_delay(sess, syncs, p)
@@ -338,6 +342,8 @@ def sync_session(path: str | Path | SessionData, params: SyncParams | None = Non
         for rs in syncs.values():
             off = rs.delta.get("delta_s", dmean) if _herald_triggered(rs.run) else dmean
             sync_assign(rs, p, mode_offset=off)
+            if p.release_runs:
+                rs.run.release()
     elapsed = time.perf_counter() - t_all
     n_ev = sum(rs.n_events for rs in syncs.values())
     rep = dict(schema=SYNC_SCHEMA, software=f"hhd {__version__}", backend="python", session=str(sess.path),

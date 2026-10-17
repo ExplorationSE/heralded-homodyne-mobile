@@ -127,14 +127,44 @@ class RunData:
     ptu_path: Path
     attrs: dict[str, Any]
     ptu_tags: dict[str, Any] = field(default_factory=dict)
-    timestamp: np.ndarray = field(default_factory=lambda: np.empty(0, np.int64))
-    record_start: np.ndarray = field(default_factory=lambda: np.empty(0, np.int64))
-    record_number: np.ndarray = field(default_factory=lambda: np.empty(0, np.uint32))
-    trigger_source: np.ndarray = field(default_factory=lambda: np.empty(0, np.uint8))
-    marker_ts: np.ndarray = field(default_factory=lambda: np.empty(0, np.int64))
+    n_records_file: int = 0                   # Records laut digitizer.h5 (auch ohne geladene Köpfe)
     has_data_b: bool = False
     has_marker_b: bool = False                # Kanal B an den SYNC-Markern (live, channel_b_trigger = SYNC)
     _harp: HarpStream | None = None
+    _hdr: dict | None = None                  # Digitizer-Köpfe (timestamp, record_start, …); lazy, freigebbar
+
+    # ------------------------------------------------------------------ Köpfe (lazy)
+    def _headers(self) -> dict:
+        if self._hdr is None:
+            with h5py.File(self.session.h5_path, "r") as f:
+                g = f["blocks"][self.block_id]
+                rec = g["records"]
+                self._hdr = dict(timestamp=rec["timestamp"][:].astype(np.int64),
+                                 record_start=rec["record_start"][:].astype(np.int64),
+                                 record_number=rec["record_number"][:], trigger_source=rec["trigger_source"][:],
+                                 marker_ts=g["markers/timestamp"][:].astype(np.int64))
+        return self._hdr
+
+    timestamp = property(lambda self: self._headers()["timestamp"])
+    record_start = property(lambda self: self._headers()["record_start"])
+    record_number = property(lambda self: self._headers()["record_number"])
+    trigger_source = property(lambda self: self._headers()["trigger_source"])
+    marker_ts = property(lambda self: self._headers()["marker_ts"])
+
+    def release(self) -> None:
+        """Zwischengespeicherte Harp-Ereignisse und Digitizer-Köpfe freigeben (werden bei Bedarf neu gelesen).
+        Lange Sitzungen: nach jedem Lauf aufrufen, dann wächst der Speicher nicht mit der Sitzungsdauer."""
+        self._harp = None
+        self._hdr = None
+
+    def iter_headers(self, chunk: int = 1 << 16) -> Iterator[tuple[int, dict]]:
+        """Digitizer-Köpfe blockweise (ohne den Zwischenspeicher zu füllen)."""
+        with h5py.File(self.session.h5_path, "r") as f:
+            rec = f["blocks"][self.block_id]["records"]
+            for i0 in range(0, self.n_records, chunk):
+                yield i0, dict(timestamp=rec["timestamp"][i0:i0 + chunk].astype(np.int64),
+                               record_start=rec["record_start"][i0:i0 + chunk].astype(np.int64),
+                               trigger_source=rec["trigger_source"][i0:i0 + chunk])
 
     # ------------------------------------------------------------------ Strom 1
     @property
@@ -184,7 +214,7 @@ class RunData:
 
     @property
     def n_records(self) -> int:
-        return len(self.timestamp)
+        return self.n_records_file
 
     def trigger_D(self) -> np.ndarray:
         """Trigger-Zeitpunkte in Digitizer-Zeit (s)."""
@@ -296,10 +326,11 @@ def _clean(v):
     return v
 
 
-def load_session(path: str | Path, verify: bool = True) -> SessionData:
+def load_session(path: str | Path, verify: bool = True, lazy: bool = False) -> SessionData:
     """Sitzung importieren (Manifest + Digitizer-Header + PTU-Köpfe; Wellenformen und Harp-Ereignisse lazy).
 
-    ``verify``: SHA-256 der gelesenen Dateien gegen das Manifest prüfen (Befunde in ``warnings``)."""
+    ``verify``: SHA-256 der gelesenen Dateien gegen das Manifest prüfen (Befunde in ``warnings``).
+    ``lazy``: auch die Digitizer-Köpfe erst bei Bedarf lesen (lange Sitzungen; mit ``RunData.release``)."""
     d = Path(path)
     mpath = d / MANIFEST
     if not mpath.exists():
@@ -353,11 +384,14 @@ def load_session(path: str | Path, verify: bool = True) -> SessionData:
                 warnings.append(f"/blocks/{bid}: run_id weicht vom Manifest ab")
             run = RunData(sess, r["run_id"], bid, int(r.get("index", 0)), r.get("kind", ""), r.get("dataset_type", ""),
                           r.get("comparison_role", ""), float(r.get("t_start_s", 0.0)), float(r.get("duration_s", 0.0)),
-                          ptu, {k: _clean(v) for k, v in g.attrs.items()}, tags,
-                          rec["timestamp"][:].astype(np.int64), rec["record_start"][:].astype(np.int64),
-                          rec["record_number"][:], rec["trigger_source"][:], g["markers/timestamp"][:].astype(np.int64),
+                          ptu, {k: _clean(v) for k, v in g.attrs.items()}, tags, int(rec["timestamp"].shape[0]),
                           "data_b" in rec)
             run.has_marker_b = "data_b" in g["markers"]
+            if not lazy:
+                run._hdr = dict(timestamp=rec["timestamp"][:].astype(np.int64),
+                                record_start=rec["record_start"][:].astype(np.int64),
+                                record_number=rec["record_number"][:], trigger_source=rec["trigger_source"][:],
+                                marker_ts=g["markers/timestamp"][:].astype(np.int64))
             sess.runs.append(run)
     return sess
 
