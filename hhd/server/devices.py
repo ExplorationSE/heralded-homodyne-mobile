@@ -383,10 +383,11 @@ class ReplayBackend:
         self.session = None
         self._q = {"harp": [], "digitizer": []}
         self.kinds = {"harp", "digitizer"}
+        self._run = None
 
     def prepare(self, cfg=None) -> list[RunSpec]:
         from ..io.session import load_session
-        self.session = load_session(self.session_dir)
+        self.session = load_session(self.session_dir, lazy=True)     # Köpfe erst je Lauf, blockweise
         out = []
         for i, r in enumerate(self.session.runs):
             out.append(RunSpec(r.block_id, r.kind, float(r.duration_s or 0.0), i, r.run_id, dict(attrs=dict(r.attrs))))
@@ -403,66 +404,116 @@ class ReplayBackend:
                     source_simulated=bool(self.session.manifest.get("simulated", True)))
 
     def start_run(self, idx: int) -> None:
+        """Lauf als Folge von Zeitfenstern (``chunk_s``) öffnen; PTU und digitizer.h5 werden blockweise gelesen
+        (``hhd.io.chunked``), der Speicher hängt nicht von der Laufdauer ab."""
         import time
+        from ..io import chunked as CK
+        from ..io import ptu as P
+        if getattr(self, "_run", None) is not None:
+            self._run.release()
         run = self.session.runs[idx]
-        hs = run.harp
-        her, mk = hs.role_s("herald"), hs.role_s("sync_marker")
-        t0 = mk[0] if len(mk) else (her[0] if len(her) else 0.0)
-        TDm = run.markers_D(); trig = run.trigger_D(); first = run.first_sample_D()
-        T0D = TDm[0] if len(TDm) else (trig[0] if len(trig) else 0.0)
-        T = max(float((mk[-1] - t0) if len(mk) > 1 else 0.0), float((trig[-1] - T0D) if len(trig) else 0.0), 1e-3)
-        n = max(1, int(np.ceil(T / self.chunk_s)))
-        self._chunks = []
-        if "harp" in self.kinds:                      # rohe T2-Records je Chunk (für den Datenstrom-Schreiber)
-            from ..io import ptu as P
-            raw = P.read_ptu(run.ptu_path).records
-            r = raw.astype(np.int64)
-            ofl = ((r >> 31) == 1) & (((r >> 25) & 0x3F) == 63)
-            cum = np.cumsum(np.where(ofl, np.where((r & 0x1FFFFFF) == 0, 1, r & 0x1FFFFFF), 0))
-            rt = np.where(ofl, cum * P.T2_WRAP, cum * P.T2_WRAP + (r & 0x1FFFFFF))
-            rt = np.maximum.accumulate(rt) if len(rt) else rt
-            t0ps = int(round(t0 * 1e12))
-            edges = [t0ps + int(round(k * self.chunk_s * 1e12)) for k in range(1, n)]
-            raw_chunks = list(P.iter_chunks(raw, rt, edges))
-        else:
-            raw_chunks = [None] * n
-        for k in range(n):
-            a, b = k * self.chunk_s, (k + 1) * self.chunk_s if k < n - 1 else np.inf
-            hm = (her - t0 >= a) & (her - t0 < b); mm = (mk - t0 >= a) & (mk - t0 < b)
-            rm = np.nonzero((trig - T0D >= a) & (trig - T0D < b))[0]
-            dm = (TDm - T0D >= a) & (TDm - T0D < b)
-            self._chunks.append((min(b, T), her[hm], mk[mm], rm, TDm[dm], k == n - 1, raw_chunks[k],
-                                 np.flatnonzero(dm)))
-        self._run, self._trig, self._first = run, trig, first
+        tu = run.time_unit
+        t0 = self._first_harp_s(run)
+        T0D_tu = self._first_dig_tu(run)
+        self._t0, self._T0D = t0, T0D_tu * tu
+        w_ps, w_tu = int(round(self.chunk_s * 1e12)), max(1, int(round(self.chunk_s / tu)))
+        streams = []
+        if "harp" in self.kinds:
+            streams.append(("harp", CK.iter_ptu_windows(run.ptu_path, int(round(t0 * 1e12)), w_ps)))
+        if "digitizer" in self.kinds:
+            streams.append(("rec", CK.iter_record_windows(run.session.h5_path, run.block_id, T0D_tu, w_tu)))
+            streams.append(("mk", CK.iter_marker_windows(run.session.h5_path, run.block_id, T0D_tu, w_tu,
+                                                         with_b=run.has_marker_b)))
+        self._streams = streams
+        self._dec = P.T2Decoder()
+        self._run = run
         self._k = 0
+        self._next = self._advance()
         self._t_wall0 = time.monotonic()
+
+    @staticmethod
+    def _first_harp_s(run) -> float:
+        from ..io import ptu as P
+        from ..io.session import split_events
+        dec = P.T2Decoder()
+        her0 = None
+        for i, rec in enumerate(P.iter_ptu_records(run.ptu_path, 1 << 16)):
+            hs = split_events(dec.decode(rec), run.channel_roles, run.marker_roles)
+            mk = hs.role_s("sync_marker")
+            if len(mk):
+                return float(mk.min())
+            h = hs.role_s("herald")
+            if her0 is None and len(h):
+                her0 = float(h.min())
+            if i >= 64:
+                break
+        return her0 if her0 is not None else 0.0
+
+    @staticmethod
+    def _first_dig_tu(run) -> int:
+        import h5py
+        with h5py.File(run.session.h5_path, "r") as f:
+            g = f["blocks"][run.block_id]
+            m = g["markers/timestamp"]
+            if m.shape[0]:
+                return int(np.min(m[: min(m.shape[0], 1 << 16)]))
+            ts = g["records/timestamp"]
+            return int(ts[0]) if ts.shape[0] else 0
+
+    def _advance(self):
+        """Nächstes Fenster aller Ströme (oder None); Ströme enden unabhängig, fehlende Teile sind leer."""
+        out, alive = {}, False
+        for name, g in self._streams:
+            try:
+                k, *item = next(g)
+                out[name] = item
+                alive = True
+            except StopIteration:
+                out[name] = None
+        return out if alive else None
 
     def _pull(self) -> bool:
         import time
-        if self._k >= len(self._chunks):
+        from ..io.session import split_events
+        cur = self._next
+        if cur is None:
             return False
-        t1, her, mk, rm, TDm, last, raw_h, mi = self._chunks[self._k]
-        if self.realtime and np.isfinite(t1):
+        self._next = self._advance()
+        last = self._next is None
+        k = self._k
+        self._k += 1
+        run = self._run
+        t1 = (k + 1) * self.chunk_s
+        if last:
+            t1 = max(k * self.chunk_s, min(t1, float(run.duration_s or t1)))
+        if self.realtime:
             wait = self._t_wall0 + t1 / self.speed - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
-        self._k += 1
         if "harp" in self.kinds:
+            raw_h = cur["harp"][0] if cur.get("harp") is not None else np.empty(0, np.uint32)
+            hs = split_events(self._dec.decode(raw_h), run.channel_roles, run.marker_roles)
+            her, mk = hs.role_s("herald"), hs.role_s("sync_marker")
             self._q["harp"].append(HarpData(t1, her, mk, len(her) + len(mk), last, records=raw_h))
         if "digitizer" not in self.kinds:
             return True
-        run = self._run
+        tu = run.time_unit
+        w = cur["rec"][0] if cur.get("rec") is not None else None
+        rm = w.index if w is not None else np.empty(0, np.int64)
+        mts, mb = cur["mk"] if cur.get("mk") is not None else (np.empty(0, np.int64), None)
         if len(rm):
-            data = run.read_records(rm, channel="A")
-            db = run.read_records(rm, channel="B") if run.has_data_b else None
+            data = run.read_records(slice(int(rm[0]), int(rm[-1]) + 1), channel="A")
+            db = run.read_records(slice(int(rm[0]), int(rm[-1]) + 1), channel="B") if run.has_data_b else None
         else:
             data = np.empty((0, run.record_length), np.int16)
             db = np.empty((0, int(run.device.get("channel_b_record_length", 0))), np.int16) if run.has_data_b else None
-        ms = np.sort(run.marker_ts)
-        raw = dict(timestamp=run.timestamp[rm], record_start=run.record_start[rm], trigger_source=run.trigger_source[rm],
-                   markers=ms[mi], data_b=db, marker_b=None)
-        self._q["digitizer"].append(DigData(data, db, self._trig[rm], self._first[rm], TDm, rm.astype(np.uint32), last,
-                                            raw=raw))
+        ts = w.timestamp if w is not None else np.empty(0, np.int64)
+        rs = w.record_start if w is not None else np.empty(0, np.int64)
+        trs = w.trigger_source if w is not None else np.empty(0, np.uint8)
+        raw = dict(timestamp=ts, record_start=rs, trigger_source=trs, markers=mts, data_b=db, marker_b=mb)
+        lo_b = db if db is not None else (mb if mb is not None and len(mb) else None)
+        self._q["digitizer"].append(DigData(data, lo_b, ts.astype(float) * tu, (ts + rs).astype(float) * tu,
+                                            mts.astype(float) * tu, rm.astype(np.uint32), last, raw=raw))
         return True
 
     def read(self, kind: str):
