@@ -39,6 +39,7 @@ import h5py
 import numpy as np
 
 from .. import __version__
+from ..io import modes as M
 from ..io import ptu as P
 from ..io import schema as S
 from .clock import DigitizerClock
@@ -112,6 +113,26 @@ def eta_of_run(cfg: SimConfig, b: BlockCfg, t_mid: float, path: DriftPath | None
     else:
         f = 1.0 + cfg.drift.eta_rel_per_s * (t_mid - cfg.session.start_s)
     return float(np.clip(cfg.source.eta * b.eta_scale * f, 1e-6, 1.0))
+
+
+def plan_block_attrs(cfg: SimConfig, b: BlockCfg, index: int, t0: float, calibration_id: str, run_id: str,
+                     phase: PhaseModel | None = None) -> dict:
+    """Attribute eines Laufs (Gruppe ``/blocks/<id>``) aus der Konfiguration – auch für Live-Läufe ohne Simulation."""
+    kind = b.kind
+    phase = phase or PhaseModel(cfg.phase_for(b), t0, b.duration_s)
+    test_state = make_state(b.state) if kind == "state" else None
+    periodic = b.periodic_rate if kind in ("vacuum", "electronic", "free_running") else 0.0
+    xt_amp = cfg.digitizer.crosstalk_amp if b.crosstalk_amp is None else b.crosstalk_amp
+    return dict(dataset_type=KIND_TO_DATASET[kind], kind=kind, sequence_index=index, calibration_id=calibration_id,
+                run_id=run_id, session_id=cfg.session.id, campaign_id=cfg.session.campaign,
+                comparison_role=KIND_TO_ROLE[kind], t_start_s=t0 - cfg.session.start_s,
+                signal_blocked=kind in ("herald_blocked", "vacuum", "electronic"), lo_on=kind != "electronic",
+                duration_s=b.duration_s, ptu_file=f"harp_{b.id}.ptu",
+                random_rate=b.random_rate, periodic_rate=periodic, crosstalk_amp=xt_amp,
+                state=json.dumps(test_state.describe()) if test_state else "",
+                harp_channel_roles=json.dumps(cfg.channel_roles(kind)), harp_marker_roles=json.dumps(cfg.marker_roles()),
+                adq32_trigger_source="TRIG" if kind in ("heralded", "herald_blocked", "random", "state") else "PERIODIC",
+                **phase.metadata())
 
 
 def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: DigitizerClock, adq: ADQ32,
@@ -295,15 +316,8 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         e = test_state.expected(eta_run * eta_el, theta=float(pcfg.theta0))
         expected.update(state=test_state.describe(), W00=e["W00"], p_n=e["p_n"], mean_x_at_theta0=e["mean_x"],
                         var_x_at_theta0=e["var_x"], eta_total=eta_run * eta_el, phase_sensitive=test_state.phase_sensitive)
-    attrs = dict(dataset_type=KIND_TO_DATASET[kind], kind=kind, sequence_index=index, calibration_id=calibration_id,
-                 run_id=run_id, session_id=cfg.session.id, campaign_id=cfg.session.campaign,
-                 comparison_role=KIND_TO_ROLE[kind], t_start_s=t0 - cfg.session.start_s,
-                 signal_blocked=signal_blocked, lo_on=lo_on, duration_s=T, ptu_file=f"harp_{b.id}.ptu",
-                 random_rate=b.random_rate, periodic_rate=periodic, crosstalk_amp=xt_amp,
-                 state=json.dumps(test_state.describe()) if test_state else "",
-                 harp_channel_roles=json.dumps(cfg.channel_roles(kind)), harp_marker_roles=json.dumps(cfg.marker_roles()),
-                 adq32_trigger_source="TRIG" if kind in ("heralded", "herald_blocked", "random", "state") else "PERIODIC",
-                 **phase.metadata())
+    attrs = plan_block_attrs(cfg, b, index, t0, calibration_id, run_id, phase=phase)
+    assert attrs["crosstalk_amp"] == xt_amp and attrs["periodic_rate"] == periodic
     br = BlockResult(b, index, t0, T, KIND_TO_DATASET[kind], run_id, attrs, recs, rec_t, dig, truth, expected, warnings)
     br.monitor = monitor
     return br
@@ -341,7 +355,8 @@ def _sha256(p: Path) -> str:
 
 
 def write_run(res: RunResult, out_dir: str | Path) -> dict:
-    """Schreibt PTU-Dateien, ``digitizer.h5``, ``truth.h5`` und ``session.json``."""
+    """Schreibt PTU-Dateien, ``digitizer.h5``, ``truth.h5`` und ``session.json`` (Betriebsart beider Geräte: sim)."""
+    modes = M.SIM
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     cfg = res.cfg
@@ -362,10 +377,11 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
                                 "UsrHHD_DatasetType": (P.TY_ANSI, br.dataset_type),
                                 "UsrHHD_ChannelRoles": (P.TY_ANSI, br.attrs["harp_channel_roles"]),
                                 "UsrHHD_MarkerRoles": (P.TY_ANSI, br.attrs["harp_marker_roles"]),
-                                "UsrHHD_CalibrationId": (P.TY_ANSI, res.calibration_id)})
+                                "UsrHHD_CalibrationId": (P.TY_ANSI, res.calibration_id), **M.ptu_tags(modes)})
         files[name] = "harp"
     root_attrs = dict(simulated=True, software=f"hhd {__version__}", created=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                      session_id=res.session_id, campaign_id=res.campaign_id, calibration_id=res.calibration_id)
+                      session_id=res.session_id, campaign_id=res.campaign_id, calibration_id=res.calibration_id,
+                      **M.h5_attrs(modes))
     with S.open_new(out / "digitizer.h5", root_attrs, res.device_attrs) as f:
         for br in res.blocks:
             dg = br.digitizer
@@ -398,7 +414,8 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
                     gg.create_dataset(k, data=np.asarray(v) if v is not None else np.empty(0))
     files["truth.h5"] = "truth"
     manifest = dict(format="hhd-session", schema_version=S.SCHEMA_VERSION, software=f"hhd {__version__}",
-                    simulated=True, session_id=res.session_id, campaign_id=res.campaign_id, seed=cfg.session.seed,
+                    simulated=True, device_modes=dict(modes), acquisition_mode=M.acquisition_mode(modes),
+                    session_id=res.session_id, campaign_id=res.campaign_id, seed=cfg.session.seed,
                     optics=dict(wavelength_nm=cfg.optics.wavelength_nm, herald_detector=cfg.optics.herald_detector,
                                 homodyne_pd=cfg.optics.homodyne_pd, lo_monitor_pd=cfg.lo_monitor.pd_model),
                     calibration=dict(calibration_id=res.calibration_id, mode="shared",

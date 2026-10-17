@@ -1,5 +1,46 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.10.0.dev0 – 17.10.2026 (unveröffentlicht)
+
+Auftrag („Los.“): echte Treiber für HydraHarp 500 und ADQ32 hinter dem Live-Platzhalter, speichersparender
+Simulator für den Drifttest (`docs/HARDWARE.md`). Nur öffentliche Handbücher, keine Anfrage an den Hersteller.
+
+- **Treiber** `hhd/drivers/` (ctypes, Bibliothek erst beim Öffnen geladen; Suchreihenfolge Konfiguration →
+  `HHD_HH500LIB`/`HHD_ADQAPI` → Standardorte; fehlt sie, `LibraryNotFound` mit Installationshinweis):
+  - **HH500Lib:** T2, Referenztakt, Sync/Eingänge (ETR/CFD, Flanke, Pegel, Offsets), Sync-Teiler, Marker,
+    Messung mit CTC, FIFO-Auslese, Flags/Warnungen, Debug-Dump, T2-Decoder.
+  - **ADQAPI:** Versionsprüfung, JSON-Parameter mit Typerhalt, `configure_homodyne`:
+    - Kanal A homodyn mit TRIG/PERIODIC, Kanal B LO-Monitor mit Sample Skip;
+    - Marker (ED-7) über Kanal B mit SYNC-Trigger (`markers/data_b`);
+    - `WaitForRecordBuffer`, Header 2.0, Override-JSON.
+- **Mock-Bibliotheken** in C (`hhd/drivers/mock/`, Bau mit gcc/cc/clang) mit gleicher Schnittstelle und
+  erzwingbaren Fehlern (kein Gerät, SYSERROR, FIFO voll, Overflow, falsche Version).
+- **Live-Geräte** `hhd/server/livedev.py`: Auslese-Thread, Gerätezeitfenster je Lauf, Fehler als `DeviceError`.
+- **Gemischter Betrieb:** je Gerät sim/replay/live (`harp_mode`, `digitizer_mode`, `--harp-mode`,
+  `--digitizer-mode`); Sitzungsart sim/replay/live/mixed.
+  - Die Betriebsart steht in jeder Datei: PTU-Tags `UsrHHD_DeviceMode…`, h5-Attribute, `session.json`,
+    `server_session.json`.
+  - Die Web-App zeigt sie als Abzeichen LIVE/SIM/REPLAY je Gerät, mit Banner bei gemischtem Betrieb oder Rückfall.
+  - `live_fallback` = refuse | sim.
+  - Gemischte Sitzungen werden nicht automatisch ausgewertet.
+- **Aufzeichnung im Datenstrom** `hhd/io/recorder.py`, `stream_writer.py`: PTU je Lauf, `digitizer.h5`
+  (Schema 1.2, erweiterbare Datensätze), `session.json` mit Hardware; ein abgebrochener Lauf wird verworfen.
+- **Schema 1.2:** `markers/data_b` bei `channel_b_trigger = "SYNC"`. Import und Analyse interpolieren den
+  LO-Monitor an den Triggerzeiten.
+- **ED-8b:**
+  - Start mit Live-Gerät aus der Ferne nur zweistufig bestätigt;
+  - Pause zwischen Live-Läufen mit „Weiter“ (`continue_run`);
+  - Steuersperre und Protokoll wie bisher.
+- **Datenstrom-Simulator** `hhd/sim/streaming.py`: Zeitscheiben, lazy Irrfahrt/Drift, dezimierte Wahrheit.
+  Der Spitzenspeicher hängt nicht von der Laufdauer ab (2,2 MB bei 2 × 2 s bis 2 × 8 s).
+- **Drift-Überwachung** `hhd/analysis/driftmon.py`: LO aus Kanal B, Vakuumvarianz und η, konstanter Speicher.
+  - Test: LO +2 % erkannt (+1,84 %, z = 52) und η-Drift erkannt (z = −5,3).
+  - Kontrolle ohne Drift: kein Alarm.
+- Konfiguration `[live]` in `config/server.toml`, Beispiele `server_live.toml`, `server_mixed.toml`,
+  `adq_override.example.json`.
+- Tests `tests/test_drivers.py`, `tests/test_server_live.py`, `tests/test_streaming_sim.py`.
+- Behoben: Ein doppeltes „Weiter“ konnte die nächste Pause überspringen.
+
 ## 0.9.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Auftrag von Herrn Eilers („Bitte.“, Phase 2): Server und App nach GX-Vorbild (`docs/SERVER.md`).

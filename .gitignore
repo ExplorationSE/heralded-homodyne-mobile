@@ -10,3 +10,4 @@ data/*
 !data/.gitkeep
 logs/
 hhd_data/
+hhd/drivers/mock/_build/

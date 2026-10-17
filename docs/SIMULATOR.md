@@ -247,6 +247,49 @@ Chunk enthält:
 `StreamSource` bietet `open`/`start`/`read_chunk`/`stop`/`status` wie die Quellen in GX. Darauf setzen später
 die simulierten Geräte (AP17) und der Server auf. Die Daten sind bitgleich zum Datei-Modus.
 
+**Speichersparender Datenstrom-Simulator** (`hhd.sim.streaming.StreamingSimulator`, ab 0.10): Er erzeugt jeden
+Lauf in Zeitscheiben (`slice_s`) mit `simulate_block` und schreibt jede Scheibe sofort. Die PTU-Datei entsteht
+im Datenstrom, `digitizer.h5` mit erweiterbaren Datensätzen, beides über `hhd.io.recorder`. Uhr-Irrfahrt und
+stochastische Drift entstehen lazy in Segmenten. `truth.h5` enthält eine dezimierte Driftkurve und die
+Sollwerte je Lauf.
+
+Der Spitzenspeicher hängt nur von `slice_s` ab, nicht von der Laufdauer (Python-Speicher laut tracemalloc,
+`slice_s` = 0,25 s, Recordlänge 1000):
+
+| Laufdauer | Records | Spitzenspeicher | Daten Kanal A |
+|---|---|---|---|
+| 2 × 2 s | 6211 | 2,2 MB | 12 MB |
+| 2 × 4 s | 12425 | 2,2 MB | 25 MB |
+| 2 × 8 s | 24785 | 2,3 MB | 50 MB |
+
+Bei `slice_s` = 1 s und Recordlänge 2000 liegt die Spitze bei etwa 300 MB, weil die Scheibe dann ganz im
+Speicher liegt. Für lange Läufe deshalb 0,25 bis 0,5 s wählen.
+
+Bewusste Unterschiede zum Datei-Modus:
+
+* Die Zufallszahlen werden je Scheibe gezogen. Die Statistik ist gleich, die Dateien sind nicht bitgleich.
+* Moden, die eine Scheibengrenze überlappen, fehlen (Anteil ≈ Recordlänge / `slice_s`).
+* Laufmarken und Phasenmarker werden nicht erzeugt.
+* `slice_s · f_marker` und `slice_s · periodic_rate` müssen ganzzahlig sein.
+
+**Drift-Überwachung im Datenstrom** (`hhd.analysis.driftmon.DriftMonitor`): Sie hält nur laufende Summen,
+der Speicher ist also konstant. Sie verfolgt:
+
+* die LO-Leistung aus Kanal B (relativ zum ersten K-V, Dunkelwert abgezogen; Warnung > 1 %);
+* die Vakuumvarianz je K-V (z-Test);
+* η über die Überschussvarianz der A-Läufe (Var/Var_vac − ½, Var_vac mit dem LO-Monitor umgerechnet).
+
+`trend()` legt gewichtete Geraden über die Läufe. Ergebnis in `tests/test_streaming_sim.py` (Sitzung 16,5 s,
+4 A-Läufe):
+
+| | LO-Trend | η-Trend |
+|---|---|---|
+| mit Drift: LO +2 %, η −35 % | +1,84 % (z = 52) | −36 % (z = −5,3) |
+| ohne Drift (Kontrolle) | +0,002 % (z = 0,8) | z = −1,9 |
+
+Die Warnung „LO-Leistung“ kommt nur bei Drift. Die η-Drift ist im Test groß gewählt, damit die kurze Sitzung
+genug Statistik hat; die Empfindlichkeit wächst mit √(Records).
+
 ## 8 Referenzauswertung und Validierung
 
 `hhd-sim check` (`hhd/sim/check.py`) wertet einen Lauf mit den **wahren** Modenpositionen aus. Die Schritte:
@@ -283,6 +326,7 @@ Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 
 ## 9 Grenzen (Stand 0.5.0.dev0)
 
+- Datenstrom-Simulator: Phasenmodi `ramp`/`steps` nicht unterstützt (siehe Abschnitt 7).
 - Die Referenzauswertung braucht die Ground Truth. Die Zuordnung Herald ↔ Record allein aus Markern folgt in
   AP4 (Synchronisation), Kalibrierung und Rekonstruktion in AP5–AP7.
 - Der Sollwert berücksichtigt keine überlappenden Nachbarmoden; bei R_h = 1 kHz und 1/γ = 40 ns ist das

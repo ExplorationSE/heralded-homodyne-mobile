@@ -34,7 +34,8 @@ CAMPAIGN = "campaign.json"
 FORBIDDEN_FILES = ("truth.h5",)
 RUN_KEYS = ("run_id", "id", "index", "kind", "dataset_type", "comparison_role", "t_start_s", "duration_s",
             "ptu_file", "n_records", "n_harp_records")
-SESSION_KEYS = ("format", "schema_version", "software", "simulated", "session_id", "campaign_id", "optics")
+SESSION_KEYS = ("format", "schema_version", "software", "simulated", "session_id", "campaign_id", "optics",
+                "device_modes", "acquisition_mode", "hardware", "streaming", "source_session")
 HARP_RES = 1e-12
 
 
@@ -132,6 +133,7 @@ class RunData:
     trigger_source: np.ndarray = field(default_factory=lambda: np.empty(0, np.uint8))
     marker_ts: np.ndarray = field(default_factory=lambda: np.empty(0, np.int64))
     has_data_b: bool = False
+    has_marker_b: bool = False                # Kanal B an den SYNC-Markern (live, channel_b_trigger = SYNC)
     _harp: HarpStream | None = None
 
     # ------------------------------------------------------------------ Strom 1
@@ -223,13 +225,26 @@ class RunData:
             for i0 in range(0, ds.shape[0], chunk):
                 yield i0, ds[i0:i0 + chunk]
 
+    def marker_b_means(self) -> tuple[np.ndarray, np.ndarray]:
+        """(Markerzeiten D in s, Mittelwert Kanal B je Marker) – sortiert nach Zeit; leer ohne ``markers/data_b``."""
+        if not self.has_marker_b:
+            return np.empty(0), np.empty(0)
+        with h5py.File(self.session.h5_path, "r") as f:
+            ds = f["blocks"][self.block_id]["markers"]["data_b"]
+            m = np.empty(ds.shape[0])
+            for i0 in range(0, ds.shape[0], 8192):
+                m[i0:i0 + 8192] = ds[i0:i0 + 8192].mean(axis=1)
+        t = self.marker_ts.astype(np.float64) * self.time_unit
+        o = np.argsort(t, kind="stable")
+        return t[o], m[o]
+
     def summary(self) -> dict[str, Any]:
         h = self.harp
         return dict(run_id=self.run_id, block=self.block_id, kind=self.kind, dataset_type=self.dataset_type,
                     duration_s=self.duration_s, n_records=self.n_records, n_sync_D=int(len(self.marker_ts)),
                     n_harp_records=int(h.n_records),
                     harp={r: int(len(h.role_ps(r))) for r in sorted(set(h.roles_present()))},
-                    channel_b=self.has_data_b)
+                    channel_b=self.has_data_b or self.has_marker_b)
 
 
 @dataclass
@@ -342,6 +357,7 @@ def load_session(path: str | Path, verify: bool = True) -> SessionData:
                           rec["timestamp"][:].astype(np.int64), rec["record_start"][:].astype(np.int64),
                           rec["record_number"][:], rec["trigger_source"][:], g["markers/timestamp"][:].astype(np.int64),
                           "data_b" in rec)
+            run.has_marker_b = "data_b" in g["markers"]
             sess.runs.append(run)
     return sess
 

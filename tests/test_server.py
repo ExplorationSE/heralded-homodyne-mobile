@@ -53,11 +53,14 @@ def test_short_plan_and_sim_stream():
     assert abs(nr - nh) <= 0.02 * nh            # heralded: ein Record je Herald (Totzeit vernachlässigbar)
 
 
-def test_live_device_placeholder_errors():
-    _, h, d = make_devices("live")
-    with pytest.raises(DeviceError, match="Platzhalter"):
+def test_live_device_without_vendor_library(monkeypatch, tmp_path):
+    from hhd.server.livedev import LiveCfg
+    monkeypatch.delenv("HHD_HH500LIB", raising=False); monkeypatch.delenv("HHD_ADQAPI", raising=False)
+    lc = LiveCfg(hh500_lib=str(tmp_path / "fehlt" / "libhh500lib.so"), adq_lib=str(tmp_path / "fehlt" / "libadq.so"))
+    _, h, d = make_devices("live", live_cfg=lc)
+    with pytest.raises(DeviceError, match="Herstellerbibliothek nicht gefunden.*HH500Lib"):
         h.open()
-    with pytest.raises(DeviceError, match="Platzhalter"):
+    with pytest.raises(DeviceError, match="Herstellerbibliothek nicht gefunden.*SP-Devices-SDK"):
         d.open()
 
 

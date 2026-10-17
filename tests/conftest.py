@@ -47,3 +47,12 @@ def free_run(tmp_path_factory):
                   BlockCfg(id="heralded", kind="heralded", duration_s=2.0)]
     res = run(cfg, d)
     return res, d
+
+
+@pytest.fixture(scope="session")
+def mock_libs(tmp_path_factory):
+    """Mock-Bibliotheken HH500Lib/ADQAPI (C, mit gcc übersetzt); ohne Compiler wird übersprungen."""
+    from hhd.drivers.mock.build import build, compiler
+    if compiler() is None:
+        pytest.skip("kein C-Compiler für die Mock-Bibliotheken")
+    return build(tmp_path_factory.mktemp("mocklibs"))

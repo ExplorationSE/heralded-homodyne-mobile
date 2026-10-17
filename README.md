@@ -6,14 +6,17 @@ von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasenge
 Phase θ als Option
 (ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExSE Harp GX Mobil.
 
-**Stand 0.9.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
+**Stand 0.10.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
 (`hhd.io.session`), **Synchronisation/Zuordnung** (`hhd.sync`; `docs/SYNC.md`) sowie die **Auswertung**:
 Normierung/Kalibrierung, Modenextraktion (parametrisch und PCA), phasengemittelte Rekonstruktion mit Bootstrap
 und Vergleich A/B (`hhd.calib`, `hhd.modes`, `hhd.recon`, `hhd.analysis`; `docs/ANALYSE.md`), ab 0.8 mit
 kampagnengeprüften Konfidenzintervallen (Abdeckung 68/95 %), Dunkellauf/η_el im Effizienzbudget, Nulltests (OP-5)
 und kalibrierten Driftschwellen (OP-6). Ab 0.9 **Mess-Server und Web-App** (`hhd.server`; `docs/SERVER.md`):
-Geräte HydraHarp 500/ADQ32 simuliert, als Wiedergabe oder (Platzhalter) live, Messablauf nach Laufplan,
+Geräte HydraHarp 500/ADQ32 simuliert, als Wiedergabe oder live, Messablauf nach Laufplan,
 Live-Vorschau, Auswertung per Auftrag, Ergebnisansicht auf dem Smartphone, Steuersperre, Protokoll, ED-8b.
+Ab 0.10 **Treiber für die echten Geräte** (`hhd.drivers`; `docs/HARDWARE.md`): HH500Lib und ADQAPI über ctypes,
+dynamisch geladen, gegen Mock-Bibliotheken getestet; **gemischter Betrieb** (je Gerät sim/replay/live, in jeder
+Datei und in der App gekennzeichnet) und ein **speichersparender Datenstrom-Simulator** mit Drift-Überwachung.
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
 K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als
@@ -29,8 +32,11 @@ LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Defau
 
 > [!IMPORTANT]
 > **Hinweis – bitte zuerst lesen**
-> - **Keine Geräteanbindung.** Dieser Stand erzeugt ausschließlich **simulierte Daten**. Alle Dateien tragen die
->   Kennung `simulated = true` bzw. „(SIMULATED)“ im Gerätenamen.
+> - **Geräteanbindung ungeprüft.** Die Treiber für HydraHarp 500 und ADQ32 sind nach den öffentlichen Handbüchern
+>   geschrieben und **nur gegen Mock-Bibliotheken** getestet, noch nicht an echter Hardware (Prüfliste in
+>   `docs/HARDWARE.md`). Die Herstellerbibliotheken sind **nicht** enthalten und müssen vom Hersteller bezogen
+>   werden. Die Betriebsart (sim, replay, live, gemischt) steht in jeder Datei; simulierte Dateien tragen
+>   `simulated = true` bzw. „(SIMULATED)“ im Gerätenamen.
 > - **Erstellt ausschließlich aus öffentlich verfügbaren Informationen:** HydraHarp-500-Handbuch, öffentliche
 >   PTU-Formatbeschreibung und Demos von PicoQuant, Datenblatt (20-2378) und Benutzerhandbuch (21-2539) des ADQ32.
 >   Das Repository enthält **keine Dateien von PicoQuant oder Teledyne** (keine DLLs, Header, Demo-Code, Treiber).
@@ -62,8 +68,13 @@ LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Defau
 | `hhd/sync/` | Synchronisation: `kernels` (Rust-Schnittstelle AP9), `markers` (Gitterindex, Kreuzkorrelation), `clockmap` (robust/stückweise linear), `assign` (Klassen, Totzeit, sekundär, Überlappung), `delay` (Δ über Varianzmaximum), `pipeline` (Bericht, `sync.h5`/`sync.json`), `stream` (Datenstrom) |
 | `hhd/sim/sync_validate.py` | Validierung der Synchronisation gegen die Wahrheit (Fehlzuordnungen, Residuen, Pulls a, b, Δ) – nur Tests/`hhd validate` |
 | `hhd/cli.py` | Kommandozeile `hhd` (import, sync, validate, stream, bench) |
+| `hhd/drivers/` | Treiber (ctypes): `hh500.py` (HH500Lib, T2), `adq.py` (ADQAPI, JSON-Parameter, Record-Header 2.0), dynamisches Laden; `mock/` Mock-Bibliotheken in C für Tests |
+| `hhd/io/recorder.py`, `stream_writer.py`, `modes.py` | Aufzeichnung im Datenstrom (PTU, `digitizer.h5`, `session.json`), Betriebsarten je Gerät |
+| `hhd/sim/streaming.py` | speichersparender Datenstrom-Simulator (Zeitscheiben, lazy Drift, dezimierte Wahrheit) |
+| `hhd/analysis/driftmon.py` | Drift-Überwachung im Datenstrom (LO, Vakuumvarianz, η) mit konstantem Speicher |
 | `hhd/server/` | Mess-Server (FastAPI): Geräteabstraktion live/sim/replay, Messablauf, Live-Vorschau/-Synchronisation, Auswertungsaufträge, Steuersperre, Befehlsprotokoll, Zugangscode, ED-8b; Web-App unter `hhd/server/web/` |
 | `docs/SERVER.md` | Mess-Server und Web-App: Start, Bedienung, Rechte, Schnittstelle |
+| `docs/HARDWARE.md` | echte Geräte: Bibliotheken installieren, Abbildung der Messung, Betriebsarten, Konfiguration, Inbetriebnahme-Prüfliste |
 | `docs/SYNC.md` | Import und Synchronisation: Algorithmen, Klassen, Ausgabe, Validierung, Schnittstelle |
 | `config/*.yaml` | Vorlagen: Standard (getrennte Läufe), freilaufender Trigger, Drift, Off-Herald-Option, bekannte Phase, freie Uhr, Erweiterungszustände, Übersprechen |
 | `docs/SIMULATOR.md` | Modelle, Dateiformate, Grenzen, Quellen |
@@ -159,6 +170,8 @@ python tools/drift_thresholds.py null.json drift.json 0.0027 > op6.json         
 ```bash
 python -m hhd.server --config config/server.toml    # dann http://127.0.0.1:8766/ (LAN: http://<mess-pc>:8766/)
 python -m hhd.server --mode replay --replay-dir data/S001   # Wiedergabe einer vorhandenen Sitzung
+python -m hhd.server --config config/server_live.toml      # echte Geräte (docs/HARDWARE.md)
+python -m hhd.server --harp-mode live --digitizer-mode sim  # gemischter Betrieb
 tools/start_online.sh                                 # temporär online über cloudflared (Zugangscode Pflicht)
 ```
 
@@ -169,7 +182,8 @@ pytest -q
 HHD_READ_PTU_PY=/pfad/zu/Read_PTU.py pytest tests/test_ptu.py   # optional: Vergleich mit dem offiziellen Read_PTU.py
 ```
 
-Der Vergleich mit dem PicoQuant-Demo `Read_PTU.py` wird übersprungen, wenn die Datei nicht angegeben ist; sie ist
+Die Treiber- und Live-Tests bauen Mock-Bibliotheken mit dem vorhandenen C-Compiler (gcc/cc/clang); ohne Compiler
+werden sie übersprungen. Der Vergleich mit dem PicoQuant-Demo `Read_PTU.py` wird übersprungen, wenn die Datei nicht angegeben ist; sie ist
 nicht Teil des Repositorys.
 
 ## 5 Lizenz

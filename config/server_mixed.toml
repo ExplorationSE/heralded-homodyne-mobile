@@ -1,0 +1,19 @@
+# Gemischter Betrieb: echter HydraHarp 500, simulierter Digitizer (z. B. bevor der ADQ32 eingebaut ist).
+# Umgekehrt: harp_mode = "sim", digitizer_mode = "live". Gemischte Sitzungen werden nicht automatisch ausgewertet.
+[server]
+host = "127.0.0.1"
+port = 8766
+data_dir = "hhd_data"
+log_dir = "logs"
+
+[devices]
+harp_mode = "live"
+digitizer_mode = "sim"
+sim_config = "config/standard.yaml"
+
+[live]
+live_fallback = "refuse"
+hh500_lib = ""            # $HHD_HH500LIB oder Standardorte
+
+[analysis]
+auto_analyze = false

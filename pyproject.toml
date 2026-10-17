@@ -28,6 +28,7 @@ include = ["hhd*"]
 
 [tool.setuptools.package-data]
 "hhd.server" = ["web/*"]
+"hhd.drivers.mock" = ["*.c", "*.h"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

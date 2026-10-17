@@ -32,7 +32,7 @@ CONFIRM_TTL_S = 120.0
 PROXY_HEADERS = ("cf-connecting-ip", "x-forwarded-for", "x-real-ip", "forwarded", "cf-ray")
 
 ALLOWED_CMDS = {"acquire_control", "release_control", "start_session", "stop_session", "set_display",
-                "set_device", "analyze", "clear_warnings"}
+                "set_device", "analyze", "clear_warnings", "continue_run"}
 
 
 class CommandError(ValueError):
@@ -249,6 +249,28 @@ class ParamPolicy:
                 return "ok", "aus der Ferne bestätigt"
             code = secrets.token_hex(4)
             self._pending[code] = (now, client, key, params)
+        return "confirm", code
+
+    def check_action(self, what: str, detail: dict, local: bool, client: str, confirm: str | None) -> tuple[str, str]:
+        """Zweistufige Bestätigung einer Aktion aus der Ferne (z. B. Start einer Sitzung mit Live-Geräten)."""
+        if local:
+            return "ok", "lokal (Mess-PC)"
+        key = json.dumps(["action", what, detail], sort_keys=True, default=str)
+        now = time.monotonic()
+        with self._lock:
+            for c, (t, *_r) in list(self._pending.items()):
+                if now - t > CONFIRM_TTL_S:
+                    del self._pending[c]
+            if confirm:
+                ent = self._pending.pop(str(confirm), None)
+                if ent is None:
+                    raise CommandError("Bestätigung ungültig oder abgelaufen")
+                _, cl, k2, _ = ent
+                if cl != client or k2 != key:
+                    raise CommandError("Bestätigung passt nicht zu dieser Aktion")
+                return "ok", "aus der Ferne bestätigt"
+            code = secrets.token_hex(4)
+            self._pending[code] = (now, client, key, detail)
         return "confirm", code
 
 

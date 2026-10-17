@@ -28,11 +28,16 @@ Aufbau ``digitizer.h5``::
         records/record_number   uint32 (n)
         records/trigger_source  uint8 (n)      TRIGGER_SOURCES; 255 = vom Header nicht gemeldet
         markers/timestamp       int64 (m)      SYNC-Ereignisse in time_unit
+        markers/data_b          int16 (m, L_B) optional (live, ``channel_b_trigger`` = "SYNC"): Kanal B (LO-Monitor)
+                                               zu den Markerzeiten; dann fehlt records/data_b (Kanal B wird vom
+                                               SYNC-Port getriggert und liefert so die Markerzeiten, ED-7)
         monitor/t_s, monitor/lo_power_rel      optional: externer LO-Leistungsmesser (relativ)
     /calibration           attrs: calibration_id, mode ("shared"), runs, vacuum_blocks (JSON-Liste), electronic_blocks
 
 v1.0 → v1.1 (additiv): Sitzungs-/Lauf-IDs, dataset_type ``free_running``, Gruppe ``monitor``.
 v1.1 → v1.2 (additiv): Kanal B ``records/data_b`` (LO-Monitor), Kanalrollen von Harp und ADQ32.
+1.2 (additiv, ohne Versionswechsel): ``markers/data_b`` und Geräteattribut ``channel_b_trigger``; Wurzelattribute
+``device_mode_harp``, ``device_mode_digitizer``, ``acquisition_mode`` (Betriebsart je Gerät).
 """
 from __future__ import annotations
 
@@ -118,6 +123,10 @@ def open_new(path: str | Path, root_attrs: dict[str, Any], device_attrs: dict[st
     return f
 
 
+def _s(v) -> str:
+    return v.decode() if isinstance(v, bytes) else str(v)
+
+
 def validate_digitizer_file(path: str | Path) -> list[str]:
     """Prüft eine Digitizer-Datei gegen Schema v1. Rückgabe: Liste der Befunde (leer = gültig)."""
     err: list[str] = []
@@ -168,6 +177,12 @@ def validate_digitizer_file(path: str | Path) -> list[str]:
                     err.append(f"/blocks/{bid}/records/data_b: Länge {r['data_b'].shape[0]} != {n}")
                 if r["data_b"].ndim != 2 or r["data_b"].shape[1] != Lb:
                     err.append(f"/blocks/{bid}/records/data_b: Recordlänge != channel_b_record_length {Lb}")
+            elif dev.get("channel_b_role", "off") not in ("off", b"off") and _s(dev.get("channel_b_trigger", "")) == "SYNC":
+                mb = g["markers"].get("data_b")
+                if mb is None:
+                    err.append(f"/blocks/{bid}/markers/data_b fehlt (channel_b_trigger = SYNC)")
+                elif mb.shape[0] != g["markers"]["timestamp"].shape[0] or mb.dtype != np.dtype(np.int16):
+                    err.append(f"/blocks/{bid}/markers/data_b: Länge/dtype passt nicht zu markers/timestamp")
             elif dev.get("channel_b_role", "off") not in ("off", b"off"):
                 err.append(f"/blocks/{bid}/records/data_b fehlt (channel_b_role = {dev.get('channel_b_role')})")
             if "timestamp" in r and r["timestamp"].shape[0] > 1 and np.any(np.diff(r["timestamp"][:]) <= 0):

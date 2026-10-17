@@ -104,15 +104,32 @@ function drawTrace(id, t, y, opt) {
 // ------------------------------------------------------------------ Darstellung Status
 function render() {
   if (!S) return;
-  $("simbadge").classList.toggle("hidden", !S.simulated);
+  const ML = { live: "LIVE", sim: "SIM", replay: "REPLAY" }, MC = { live: "live", sim: "sim", replay: "replay" };
+  const modes = S.modes || { harp: S.mode, digitizer: S.mode };
+  $("modebadges").innerHTML = [["harp", "HydraHarp"], ["digitizer", "ADQ32"]].map(([k, n]) =>
+    `<span class="mbadge ${MC[modes[k]] || ""}" title="${esc(n)}: ${esc(modes[k])}">${esc(n)} <b>${esc(ML[modes[k]] || modes[k])}</b></span>`).join("");
+  const sb = $("simbadge"); const sm = S.mode || "sim";
+  sb.textContent = (S.mode_labels && S.mode_labels.session) || (S.simulated ? "SIMULIERT" : "LIVE");
+  sb.className = "badge " + (sm === "live" ? "live" : sm === "mixed" ? "mixed" : "warn");
+  const mb = $("modebanner");
+  if (S.live_any || S.fallback) {
+    const live = Object.entries(modes).filter(([, m]) => m === "live").map(([k]) => k === "harp" ? "HydraHarp 500" : "ADQ32");
+    mb.innerHTML = (S.live_any ? `<b>${sm === "mixed" ? "GEMISCHTER BETRIEB" : "LIVE-MESSUNG"}</b> – echte Hardware: ${esc(live.join(" + "))}` +
+      (sm === "mixed" ? ` · simuliert/wiedergegeben: ${esc(Object.entries(modes).filter(([, m]) => m !== "live").map(([k, m]) => (k === "harp" ? "HydraHarp" : "ADQ32") + " " + m).join(", "))}` : "") +
+      " · kritische Parameter nur am Mess-PC oder mit Bestätigung" : "") +
+      (S.fallback ? `<br><b>Rückfall:</b> ${esc(S.fallback)}` : "");
+    mb.className = "modebanner " + (sm === "live" ? "live" : "mixed");
+  } else mb.className = "modebanner hidden";
   $("sub").textContent = `${S.devices.harp.model} · ${S.devices.digitizer.model} · hhd ${S.version}`;
   const mine = S.lock.holder === me, other = S.lock.holder && !mine;
   const lb = $("lockbar"); lb.className = "lockbar" + (mine ? " mine" : other ? " other" : "");
   $("locktext").textContent = mine ? "Sie steuern" + (local ? " (Mess-PC)" : " (entfernt)") : other ? `gesteuert von ${S.lock.name || "anderem Client"}` : "Nur Ansicht – niemand steuert";
   $("lockbtn").textContent = mine ? "Steuerung abgeben" : "Steuerung übernehmen";
   document.querySelectorAll("[data-ctl]").forEach(b => b.disabled = !mine);
-  const running = ["vorbereitung", "messung", "schreiben"].includes(S.state);
-  $("start").disabled = !mine || running; $("stop").disabled = !mine || !running;
+  const running = ["vorbereitung", "messung", "schreiben", "pause"].includes(S.state);
+  const paused = S.state === "pause";
+  $("start").disabled = !mine || running || paused; $("stop").disabled = !mine || !(running || paused);
+  $("cont").classList.toggle("hidden", !S.waiting_continue); $("cont").disabled = !mine;
   const st = $("state"); st.textContent = S.state_text; st.className = "pill" + (running ? " run" : S.state === "fehler" ? " err" : "");
   const plan = $("plan");
   if (!plan.options.length) for (const [k, v] of Object.entries(S.plans)) plan.add(new Option(v, k));
@@ -171,7 +188,7 @@ function renderDevices() {
       const dis = !mine || (p.local_only && !local) ? "disabled" : "";
       return `<div class="param"><div class="nm">${esc(p.name)} ${tags}<small>${esc(p.doc)}${p.unit ? " [" + esc(p.unit) + "]" : ""}</small></div>${inp.replace("<select", `<select ${dis}`).replace("<input", `<input ${dis}`)}<button class="small" data-set="${k}" data-p="${esc(p.name)}" ${dis}>setzen</button></div>`;
     }).join("");
-    return `<div class="card"><div class="row between"><h2>${esc(d.model)}</h2><span class="pill">${esc(d.mode)}${d.open ? "" : " · nicht geöffnet"}</span></div>${rows}</div>`;
+    return `<div class="card"><div class="row between"><h2>${esc(d.model)}</h2><span class="pill mode-${esc(d.mode)}">${esc(({ live: "LIVE", sim: "SIMULIERT", replay: "WIEDERGABE" })[d.mode] || d.mode)}${d.open ? "" : " · nicht geöffnet"}</span></div>${rows}</div>`;
   }).join("");
   document.querySelectorAll("[data-set]").forEach((b) => b.onclick = () => {
     const dev = b.dataset.set, name = b.dataset.p;
@@ -198,7 +215,7 @@ async function api(path) { const r = await fetch(path, { credentials: "same-orig
 async function loadSessions() {
   try {
     lastSessions = await (await api("/api/sessions")).json();
-    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.simulated ? " · simuliert" : ""}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
+    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
     document.querySelectorAll(".sess").forEach(e => e.onclick = () => openSession(e.dataset.s));
     if (selSession && lastSessions.find(s => s.id === selSession)?.analyzed && !openSession.loaded) openSession(selSession);
     if (!selSession && lastSessions.length && lastSessions[0].analyzed) openSession(lastSessions[0].id);
@@ -289,7 +306,7 @@ async function loadLog() {
     const L = await (await api("/api/log?n=200")).json();
     $("logtbl").innerHTML = L.reverse().map(e => `<div class="logrow"><div><b>${esc(e.cmd)}</b> <span class="${e.ok ? "ok-t" : "bad-t"}">${e.ok ? "ok" : "abgelehnt"}</span><small class="mut"> · ${esc((e.ts || "").replace("T", " ").slice(0, 19))} · ${e.local ? "Mess-PC" : "entfernt"} · ${esc(e.client)}</small></div><small class="mut">${esc(JSON.stringify(e.params))}${e.msg ? " → " + esc(e.msg) : ""}</small></div>`).join("") || '<div class="mut">leer</div>';
   } catch (e) { /* ignore */ }
-  if (S) $("about").innerHTML = `Server hhd ${esc(S.version)} · Geräte: ${esc(S.mode)}${S.simulated ? " (SIMULIERT)" : ""} · Serverzeit ${esc(S.server_time)}<br>Steuersperre verfällt nach ${S.lock.timeout_s} s Inaktivität oder bei Trennung. Alle Befehle werden protokolliert (logs/commands.jsonl).`;
+  if (S) $("about").innerHTML = `Server hhd ${esc(S.version)} · Betriebsart: HydraHarp ${esc((S.modes || {}).harp || S.mode)}, ADQ32 ${esc((S.modes || {}).digitizer || S.mode)}${S.simulated ? " (SIMULIERT)" : ""} · Serverzeit ${esc(S.server_time)}<br>Steuersperre verfällt nach ${S.lock.timeout_s} s Inaktivität oder bei Trennung. Alle Befehle werden protokolliert (logs/commands.jsonl).`;
 }
 
 // ------------------------------------------------------------------ Bedienung
@@ -303,7 +320,19 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   if (b.dataset.v === "v-erg" && selSession) setTimeout(() => openSession(selSession), 60);
 });
 $("lockbtn").onclick = () => send(S && S.lock.holder === me ? "release_control" : "acquire_control");
-$("start").onclick = () => send("start_session", { plan: $("plan").value, speed: Number($("speed").value) });
+function startSession(confirm) {
+  const p = { plan: $("plan").value, speed: Number($("speed").value), ...(confirm ? { confirm } : {}) };
+  send("start_session", p, (m) => {
+    if (m.needs_confirm) {
+      $("confirmtext").textContent = `Sitzung „${p.plan}“ mit LIVE-Geräten starten (${Object.entries(S.modes || {}).map(([k, v]) => k + ": " + v).join(", ")})`;
+      $("confirm").classList.remove("hidden");
+      $("cyes").onclick = () => { $("confirm").classList.add("hidden"); startSession(m.confirm); };
+      $("cno").onclick = () => { $("confirm").classList.add("hidden"); toast("abgebrochen"); };
+    } else toast(m.msg, !m.ok);
+  });
+}
+$("start").onclick = () => startSession();
+$("cont").onclick = () => send("continue_run");
 $("stop").onclick = () => { if (confirm("Sitzung stoppen? Abgeschlossene Läufe werden gespeichert.")) send("stop_session"); };
 $("plan").onchange = () => send("set_display", { plan: $("plan").value });
 $("autoana").onchange = () => send("set_display", { auto_analyze: $("autoana").checked });

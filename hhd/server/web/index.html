@@ -13,10 +13,12 @@
 <body>
 <header>
   <div class="brand"><img src="/icon.svg" alt=""><div><b>HHD Mobil</b><small id="sub">HydraHarp 500 + ADQ32</small></div></div>
+  <span id="modebadges" class="modebadges" title="Betriebsart je Gerät"></span>
   <span id="simbadge" class="badge warn hidden">SIMULIERT</span>
   <span id="conn" class="dot bad" title="Verbindung"></span>
 </header>
 
+<div id="modebanner" class="modebanner hidden"></div>
 <div id="lockbar" class="lockbar">
   <span id="locktext">Nur Ansicht</span>
   <button id="lockbtn" class="small">Steuerung übernehmen</button>
@@ -35,6 +37,7 @@
     <div class="row">
       <button id="start" class="ok" data-ctl>Sitzung starten</button>
       <button id="stop" class="bad" data-ctl>Stopp</button>
+      <button id="cont" class="ok hidden" data-ctl>Weiter (nächster Lauf)</button>
     </div>
     <div id="sessinfo" class="mut"></div>
     <div id="planbar" class="planbar"></div>

@@ -124,6 +124,12 @@ class RunQuadratures:
 
 
 def record_means_b(run, chunk: int = 4096) -> np.ndarray:
+    """Mittelwert Kanal B (LO-Monitor) je Record. Live mit ``channel_b_trigger`` = SYNC liegt Kanal B nur zu den
+    Markerzeiten vor (``markers/data_b``); dann wird auf die Triggerzeiten interpoliert (LO-Drift ≪ 1 kHz)."""
+    if run.n_records and not run.has_data_b and getattr(run, "has_marker_b", False):
+        tm, mb = run.marker_b_means()
+        if len(tm) >= 1:
+            return np.interp(run.trigger_D(), tm, mb) if len(tm) > 1 else np.full(run.n_records, mb[0])
     if not run.has_data_b or run.n_records == 0:
         return np.full(run.n_records, np.nan)
     out = np.empty(run.n_records)

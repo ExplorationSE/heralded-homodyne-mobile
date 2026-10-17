@@ -136,7 +136,13 @@ class LivePreview:
             if len(self.vac_runs) == 1 and r.lo_n:
                 self.lo_ref = r.b_sum / r.lo_n
         if r.spec.kind == "electronic" and r.lo_n:
-            self.dark_b = r.b_sum / r.lo_n
+            dk = r.b_sum / r.lo_n
+            if self.lo_ref is not None and abs(self.lo_ref - dk) < 0.05 * max(abs(self.lo_ref), abs(dk), 1.0):
+                # LO-Monitor im Dunkellauf praktisch wie mit LO: LO nicht abgeschaltet (oder Kanal B ohne Signal)
+                self._warn("lo", f"Dunkellauf {r.spec.block_id}: LO-Monitor unverändert ({dk:.0f} LSB) – LO nicht "
+                                 "abgeschaltet? Dunkelwert verworfen")
+            else:
+                self.dark_b = dk
         if r.spec.kind == "heralded" and r.t_run > 0:
             rate = r.n_heralds / r.t_run
             if self.herald_rate_ref is None:

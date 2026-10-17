@@ -2,11 +2,14 @@
 
 Jedes Gerät (HydraHarp 500, ADQ32) gibt es in drei Betriebsarten (Gesamtplan v1.7, ED-8b):
 
-* ``live``   – echtes Gerät über das Hersteller-SDK. **Platzhalter:** die Klassen dokumentieren die
-  benötigten SDK-Aufrufe und melden beim Öffnen einen klaren Fehler, solange kein Treiber eingebunden ist;
+* ``live``   – echtes Gerät über die Herstellerbibliothek (``hhd.drivers``: HH500Lib bzw. ADQAPI, zur Laufzeit
+  geladen; Klassen in ``hhd.server.livedev``). Fehlt die Bibliothek, meldet ``open`` einen klaren Fehler;
 * ``sim``    – Simulator (``hhd.sim``) im Datenstrom-Modus, auf Wunsch in Echtzeit; die Dateien sind
   bitgleich zum Datei-Modus des Simulators;
 * ``replay`` – Wiedergabe einer vorhandenen Sitzung aus den Dateien (PTU + ``digitizer.h5``).
+
+Jedes Gerät hat seine eigene Betriebsart (gemischter Betrieb, z. B. HydraHarp live + ADQ32 simuliert); die
+Betriebsart steht in den Metadaten jeder Ausgabedatei (``hhd.io.modes``).
 
 Daten werden **dekodiert** übergeben (der Server braucht für Vorschau und Live-Synchronisation nur Zeiten
 und Records): ``HarpData`` (Herald- und SYNC-Marker-Zeiten in Harp-Zeit) und ``DigData`` (Records,
@@ -81,6 +84,13 @@ HARP_PARAMS = [
     ParamSpec("herald_offset_ps", 0, "ps", "Kanalversatz Herald-Kanal", critical=True, lo=-99999, hi=99999),
     ParamSpec("ref_clock", "intern", "", "Referenztakt (intern | 10 MHz extern | White Rabbit)", critical=True,
               choices=["intern", "extern_10MHz", "white_rabbit"]),
+    ParamSpec("trg_mode", "ETR", "", "Triggerart aller Eingänge: ETR (Flanke) | CFD", critical=True,
+              choices=["ETR", "CFD"]),
+    ParamSpec("edge", "falling", "", "Flanke bei ETR (NIM-Pulse: falling)", critical=True, choices=["falling", "rising"]),
+    ParamSpec("cfd_zerocross_mV", 10, "mV", "CFD-Nulldurchgangspegel", critical=True, lo=-100, hi=100),
+    ParamSpec("sync_offset_ps", 0, "ps", "Kanalversatz Sync-Eingang", critical=True, lo=-99999, hi=99999),
+    ParamSpec("aux_level_mV", -100.0, "mV", "Triggerpegel CH2–CH4 (Triggerkopie, Hilfskanäle)", critical=True,
+              lo=-1200, hi=1200),
     ParamSpec("marker_enable", True, "", "Marker-Eingänge (SYNC-Marker, Laufmarker)", critical=True),
     ParamSpec("trigger_output", False, "", "programmierbarer Triggerausgang (Laser/Schalter)", critical=True,
               local_only=True),
@@ -93,6 +103,14 @@ DIG_PARAMS = [
     ParamSpec("input_range_b_mV", 1000.0, "mV", "Eingangsbereich Kanal B (LO-Monitor)", critical=True,
               choices=[250.0, 500.0, 1000.0, 2500.0]),
     ParamSpec("dc_offset_mV", 0.0, "mV", "DC-Offset Kanal A", critical=True, lo=-250, hi=250),
+    ParamSpec("dc_offset_b_mV", 0.0, "mV", "DC-Offset Kanal B (unipolarer Bereich des LO-Monitors)", critical=True,
+              lo=-250, hi=250),
+    ParamSpec("sync_level_mV", 500.0, "mV", "Pegel des SYNC-Eingangs (10-MHz-Marker, ED-7)", critical=True,
+              lo=-2500, hi=2500),
+    ParamSpec("record_length", 5000, "Samples", "Recordlänge Kanal A (Kanal B: / Sample Skip)", critical=True,
+              lo=64, hi=65536),
+    ParamSpec("pretrigger", 2000, "Samples", "Pretrigger Kanal A (negativer horizontal_offset)", critical=True,
+              lo=0, hi=16360),
     ParamSpec("trigger_level_mV", 300.0, "mV", "Pegel des externen Triggers (TRIG-Eingang)", critical=True,
               lo=-2500, hi=2500),
     ParamSpec("ref_clock", "intern", "", "Referenztakt (intern | 10 MHz extern)", critical=True,
@@ -125,6 +143,7 @@ class HarpData:
     markers_s: np.ndarray
     n_records: int = 0
     run_done: bool = False
+    records: np.ndarray | None = None   # rohe T2-Records (uint32) für den Datenstrom-Schreiber
 
 
 @dataclass
@@ -136,6 +155,7 @@ class DigData:
     markers_D: np.ndarray
     record_number: np.ndarray
     run_done: bool = False
+    raw: dict | None = None             # timestamp, record_start (time_unit), trigger_source, markers, data_b, marker_b
 
 
 class Device(ABC):
@@ -159,7 +179,7 @@ class Device(ABC):
     def info(self) -> dict:
         return dict(kind=self.kind, mode=self.mode, model=self.model, open=self.is_open, running=self.running,
                     params=dict(self.params), param_specs=[p.to_dict() for p in self.PARAMS],
-                    simulated=self.mode != "live")
+                    simulated=self.mode == "sim")
 
     def configure(self, **p) -> dict:
         """Parameter prüfen und setzen (Berechtigung prüft der Server)."""
@@ -198,46 +218,6 @@ class Device(ABC):
         self.running = False
 
 
-# ------------------------------------------------------------------ live (Platzhalter)
-class HydraHarp500Live(Device):
-    """Platzhalter für die HydraHarp 500 über PicoQuant **snAPI** bzw. ``HH500Lib``.
-
-    Benötigte Aufrufe (Abbildung der Methoden): ``open`` → ``HH500_OpenDevice``/``Initialize(mode=T2,
-    refsource)``; ``configure`` → ``SetSyncDiv``, ``SetSyncEdgeTrg``/``SetInputEdgeTrg`` (Pegel), ``SetInputChannelOffset``,
-    ``SetMarkerEnable``, ``SetTriggerOutput`` (nur lokal); ``start`` → ``StartMeas``; ``read`` → ``ReadFiFo``
-    (T2-Records, dekodiert mit ``hhd.io.ptu.T2Decoder``; PTU-Datei parallel geschrieben); ``stop`` → ``StopMeas``.
-    """
-    kind, mode, model = "harp", "live", "PicoQuant HydraHarp 500"
-    PARAMS = HARP_PARAMS
-
-    def open(self) -> dict:
-        raise DeviceError("HydraHarp 500: kein Treiber eingebunden (Platzhalter, snAPI/HH500Lib fehlt). "
-                          "Betriebsart 'sim' oder 'replay' wählen.")
-
-    def read(self):
-        raise DeviceError("nicht geöffnet")
-
-
-class ADQ32Live(Device):
-    """Platzhalter für den Teledyne SP Devices ADQ32 über **ADQAPI** (``pyadq``).
-
-    Abbildung: ``open`` → ``CreateADQControlUnit``/``SetupDevice``; ``configure`` → ``GetParameters``/``SetParameters``
-    (``ADQ_PARAMETER_ID_TOP``: Eingangsbereich, DC-Offset, Triggerpegel/-quelle, Referenztakt, Recordlänge,
-    horizontaler Versatz, Marker auf GPIO); ``start`` → ``StartDataAcquisition``; ``read`` → ``WaitForRecordBuffer``
-    (Records + Header: Zeitstempel, record_start, Triggerquelle; Marker aus dem GPIO-Ereigniskanal), Dateien wie
-    ``hhd.io.schema`` (``digitizer.h5``); ``stop`` → ``StopDataAcquisition``.
-    """
-    kind, mode, model = "digitizer", "live", "Teledyne SP Devices ADQ32"
-    PARAMS = DIG_PARAMS
-
-    def open(self) -> dict:
-        raise DeviceError("ADQ32: kein Treiber eingebunden (Platzhalter, ADQAPI/pyadq fehlt). "
-                          "Betriebsart 'sim' oder 'replay' wählen.")
-
-    def read(self):
-        raise DeviceError("nicht geöffnet")
-
-
 # ------------------------------------------------------------------ Simulation
 class SimBackend:
     """Gemeinsamer Simulator beider Geräte: simuliert eine Sitzung und spielt sie laufweise in Echtzeit ab.
@@ -258,6 +238,7 @@ class SimBackend:
         self._done_block: str | None = None
         self._decoder = None
         self._roles = ({}, {})
+        self.kinds = {"harp", "digitizer"}    # gemischter Betrieb: nur die simulierten Geräte lesen
 
     # Konfiguration der Sitzung
     def make_config(self, session_id: str, seed: int, plan: str = "standard"):
@@ -277,11 +258,17 @@ class SimBackend:
         from ..sim.engine import simulate
         self.cfg = cfg
         self.res = simulate(cfg)
-        return [RunSpec(b.cfg.id, b.cfg.kind, b.duration, i, b.run_id) for i, b in enumerate(self.res.blocks)]
+        return [RunSpec(b.cfg.id, b.cfg.kind, b.duration, i, b.run_id, dict(attrs=dict(b.attrs)))
+                for i, b in enumerate(self.res.blocks)]
 
     @property
     def device_attrs(self) -> dict:
         return self.res.device_attrs if self.res else {}
+
+    def session_meta(self) -> dict:
+        r = self.res
+        return dict(session_id=r.session_id, campaign_id=r.campaign_id, calibration_id=r.calibration_id,
+                    seed=r.cfg.session.seed)
 
     def start_run(self, idx: int) -> None:
         from ..io.ptu import T2Decoder
@@ -303,15 +290,20 @@ class SimBackend:
             c = next(self._it)
         except (StopIteration, TypeError):
             return False
-        ev = self._decoder.decode(c.harp_records)
-        hs = split_events(ev, *self._roles)
-        self._q["harp"].append(HarpData(c.t_end, hs.role_s("herald"), hs.role_s("sync_marker"),
-                                        len(c.harp_records), c.last_in_block))
-        tu = self._tu
-        self._q["digitizer"].append(DigData(c.rec_data, self._data_b(c), c.rec_timestamp.astype(float) * tu,
-                                            (c.rec_timestamp + c.rec_record_start).astype(float) * tu,
-                                            np.sort(c.marker_timestamp).astype(float) * tu, c.rec_number,
-                                            c.last_in_block))
+        if "harp" in self.kinds:
+            ev = self._decoder.decode(c.harp_records)
+            hs = split_events(ev, *self._roles)
+            self._q["harp"].append(HarpData(c.t_end, hs.role_s("herald"), hs.role_s("sync_marker"),
+                                            len(c.harp_records), c.last_in_block, records=c.harp_records))
+        if "digitizer" in self.kinds:
+            tu = self._tu
+            db = self._data_b(c)
+            raw = dict(timestamp=c.rec_timestamp, record_start=c.rec_record_start, trigger_source=c.rec_trigger_source,
+                       markers=c.marker_timestamp, data_b=db, marker_b=None)
+            self._q["digitizer"].append(DigData(c.rec_data, db, c.rec_timestamp.astype(float) * tu,
+                                                (c.rec_timestamp + c.rec_record_start).astype(float) * tu,
+                                                np.sort(c.marker_timestamp).astype(float) * tu, c.rec_number,
+                                                c.last_in_block, raw=raw))
         return True
 
     def _data_b(self, c):
@@ -319,7 +311,7 @@ class SimBackend:
         return None if db is None else db[c.rec_number]
 
     def read(self, kind: str):
-        if not self._q[kind]:
+        while not self._q[kind]:
             if not self._pull():
                 return None
         return self._q[kind].pop(0)
@@ -390,18 +382,25 @@ class ReplayBackend:
         self.chunk_s, self.speed, self.realtime = chunk_s, speed, realtime
         self.session = None
         self._q = {"harp": [], "digitizer": []}
+        self.kinds = {"harp", "digitizer"}
 
     def prepare(self, cfg=None) -> list[RunSpec]:
         from ..io.session import load_session
         self.session = load_session(self.session_dir)
         out = []
         for i, r in enumerate(self.session.runs):
-            out.append(RunSpec(r.block_id, r.kind, float(r.duration_s or 0.0), i, r.run_id))
+            out.append(RunSpec(r.block_id, r.kind, float(r.duration_s or 0.0), i, r.run_id, dict(attrs=dict(r.attrs))))
         return out
 
     @property
     def device_attrs(self) -> dict:
         return dict(self.session.device) if self.session else {}
+
+    def session_meta(self) -> dict:
+        ra = self.session.root_attrs
+        return dict(session_id=str(ra.get("session_id", "")), campaign_id=str(ra.get("campaign_id", "")),
+                    calibration_id=str(ra.get("calibration_id", "")), source_session=str(self.session_dir),
+                    source_simulated=bool(self.session.manifest.get("simulated", True)))
 
     def start_run(self, idx: int) -> None:
         import time
@@ -414,12 +413,26 @@ class ReplayBackend:
         T = max(float((mk[-1] - t0) if len(mk) > 1 else 0.0), float((trig[-1] - T0D) if len(trig) else 0.0), 1e-3)
         n = max(1, int(np.ceil(T / self.chunk_s)))
         self._chunks = []
+        if "harp" in self.kinds:                      # rohe T2-Records je Chunk (für den Datenstrom-Schreiber)
+            from ..io import ptu as P
+            raw = P.read_ptu(run.ptu_path).records
+            r = raw.astype(np.int64)
+            ofl = ((r >> 31) == 1) & (((r >> 25) & 0x3F) == 63)
+            cum = np.cumsum(np.where(ofl, np.where((r & 0x1FFFFFF) == 0, 1, r & 0x1FFFFFF), 0))
+            rt = np.where(ofl, cum * P.T2_WRAP, cum * P.T2_WRAP + (r & 0x1FFFFFF))
+            rt = np.maximum.accumulate(rt) if len(rt) else rt
+            t0ps = int(round(t0 * 1e12))
+            edges = [t0ps + int(round(k * self.chunk_s * 1e12)) for k in range(1, n)]
+            raw_chunks = list(P.iter_chunks(raw, rt, edges))
+        else:
+            raw_chunks = [None] * n
         for k in range(n):
             a, b = k * self.chunk_s, (k + 1) * self.chunk_s if k < n - 1 else np.inf
             hm = (her - t0 >= a) & (her - t0 < b); mm = (mk - t0 >= a) & (mk - t0 < b)
             rm = np.nonzero((trig - T0D >= a) & (trig - T0D < b))[0]
             dm = (TDm - T0D >= a) & (TDm - T0D < b)
-            self._chunks.append((min(b, T), her[hm], mk[mm], rm, TDm[dm], k == n - 1))
+            self._chunks.append((min(b, T), her[hm], mk[mm], rm, TDm[dm], k == n - 1, raw_chunks[k],
+                                 np.flatnonzero(dm)))
         self._run, self._trig, self._first = run, trig, first
         self._k = 0
         self._t_wall0 = time.monotonic()
@@ -428,27 +441,32 @@ class ReplayBackend:
         import time
         if self._k >= len(self._chunks):
             return False
-        t1, her, mk, rm, TDm, last = self._chunks[self._k]
+        t1, her, mk, rm, TDm, last, raw_h, mi = self._chunks[self._k]
         if self.realtime and np.isfinite(t1):
             wait = self._t_wall0 + t1 / self.speed - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
         self._k += 1
-        self._q["harp"].append(HarpData(t1, her, mk, len(her) + len(mk), last))
+        if "harp" in self.kinds:
+            self._q["harp"].append(HarpData(t1, her, mk, len(her) + len(mk), last, records=raw_h))
+        if "digitizer" not in self.kinds:
+            return True
         run = self._run
         if len(rm):
             data = run.read_records(rm, channel="A")
-            try:
-                db = run.read_records(rm, channel="B")
-            except Exception:  # noqa: BLE001 – Kanal B optional
-                db = None
+            db = run.read_records(rm, channel="B") if run.has_data_b else None
         else:
-            data, db = np.empty((0, 0), np.int16), None
-        self._q["digitizer"].append(DigData(data, db, self._trig[rm], self._first[rm], TDm, rm.astype(np.uint32), last))
+            data = np.empty((0, run.record_length), np.int16)
+            db = np.empty((0, int(run.device.get("channel_b_record_length", 0))), np.int16) if run.has_data_b else None
+        ms = np.sort(run.marker_ts)
+        raw = dict(timestamp=run.timestamp[rm], record_start=run.record_start[rm], trigger_source=run.trigger_source[rm],
+                   markers=ms[mi], data_b=db, marker_b=None)
+        self._q["digitizer"].append(DigData(data, db, self._trig[rm], self._first[rm], TDm, rm.astype(np.uint32), last,
+                                            raw=raw))
         return True
 
     def read(self, kind: str):
-        if not self._q[kind]:
+        while not self._q[kind]:
             if not self._pull():
                 return None
         return self._q[kind].pop(0)
@@ -477,17 +495,33 @@ class ReplayDigitizer(_SimDevice):
     PARAMS = DIG_PARAMS
 
 
-def make_devices(mode: str, base_config=None, replay_dir=None, chunk_s: float = 0.1, speed: float = 1.0,
-                 realtime: bool = True, time_scale: float | None = None):
-    """(backend, harp, digitizer) für ``mode`` ∈ {live, sim, replay}."""
-    if mode == "sim":
+def make_devices(modes, base_config=None, replay_dir=None, chunk_s: float = 0.1, speed: float = 1.0,
+                 realtime: bool = True, time_scale: float | None = None, live_cfg=None):
+    """(backend, harp, digitizer) für ``modes`` = {"harp": m, "digitizer": m} mit m ∈ {live, sim, replay}
+    (eine Zeichenkette gilt für beide Geräte).
+
+    Simulierte Geräte teilen sich einen Simulator (über SYNC-Marker gekoppelte Ströme), wiedergegebene eine
+    Wiedergabe; im gemischten Betrieb liest der gemeinsame Hintergrund nur die Ströme seiner Geräte."""
+    if isinstance(modes, str):
+        modes = {"harp": modes, "digitizer": modes}
+    for k, m in modes.items():
+        if m not in ("live", "sim", "replay"):
+            raise DeviceError(f"unbekannte Betriebsart {m!r} ({k})")
+    hm, dm = modes["harp"], modes["digitizer"]
+    if "sim" in (hm, dm) and "replay" in (hm, dm):
+        raise DeviceError("sim und replay lassen sich nicht mischen (getrennte Zeitbasis); live mit sim oder replay ist möglich")
+    be = None
+    if "sim" in (hm, dm):
         be = SimBackend(base_config, chunk_s, speed, realtime, time_scale)
-        return be, SimHarp(be), SimDigitizer(be)
-    if mode == "replay":
+    elif "replay" in (hm, dm):
         if not replay_dir:
             raise DeviceError("replay: Verzeichnis der Sitzung fehlt (devices.replay_dir)")
         be = ReplayBackend(replay_dir, chunk_s, speed, realtime)
-        return be, ReplayHarp(be), ReplayDigitizer(be)
-    if mode == "live":
-        return None, HydraHarp500Live(), ADQ32Live()
-    raise DeviceError(f"unbekannte Betriebsart {mode!r}")
+    if be is not None:
+        be.kinds = {k for k, m in modes.items() if m != "live"}
+    if "live" in (hm, dm):
+        from .livedev import ADQ32Live, HydraHarp500Live, LiveCfg
+        lc = live_cfg or LiveCfg()
+    harp = (HydraHarp500Live(lc) if hm == "live" else SimHarp(be) if hm == "sim" else ReplayHarp(be))
+    dig = (ADQ32Live(lc) if dm == "live" else SimDigitizer(be) if dm == "sim" else ReplayDigitizer(be))
+    return be, harp, dig

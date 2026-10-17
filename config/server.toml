@@ -1,4 +1,5 @@
 # HHD-Mess-Server (python -m hhd.server --config config/server.toml)
+# Beispiele für Live- und gemischten Betrieb: config/server_live.toml, config/server_mixed.toml, docs/HARDWARE.md
 [server]
 host = "0.0.0.0"          # LAN; nur lokal/Tunnel: "127.0.0.1"
 port = 8766               # GX nutzt 8765
@@ -9,14 +10,30 @@ lock_timeout_s = 300.0
 status_hz = 2.0
 
 [devices]
-device_mode = "sim"       # live (SDK, derzeit Platzhalter) | sim | replay
+device_mode = "sim"       # beide Geräte: live | sim | replay
+harp_mode = ""            # gemischter Betrieb: leer = device_mode, sonst live | sim | replay
+digitizer_mode = ""       #   (sim und replay nicht mischbar; live mit sim oder replay erlaubt)
 sim_config = "config/standard.yaml"
 replay_dir = ""           # bei replay: Sitzungsverzeichnis
 chunk_s = 0.1
-speed = 1.0               # Echtzeitfaktor (sim/replay)
+speed = 1.0               # Echtzeitfaktor (sim/replay; mit Live-Gerät immer 1)
 realtime = true
 time_scale = 0.0          # 0 = Laufdauern wie Konfiguration
 delta_T_ns = 76.1         # nominelle Verzögerung Trigger → Modenzentrum (Live-Vorschau)
+
+[live]
+live_fallback = "refuse"          # Live-Gerät fehlt: refuse (Start gesperrt) | sim (Rückfall, deutlich angezeigt)
+live_pause_between_runs = false   # nach jedem Lauf auf „Weiter“ warten (Blocker/Trigger umstecken)
+live_remote_start_confirm = true  # ED-8b: Start mit Live-Gerät aus der Ferne nur zweistufig
+hh500_lib = ""                    # leer = $HHD_HH500LIB oder Standardorte
+hh500_devidx = 0
+hh500_serial = ""                 # optional: nur dieses Gerät öffnen
+adq_lib = ""                      # leer = $HHD_ADQAPI oder Standardorte
+adq_device_index = 0
+adq_trace_dir = "logs/adq_trace"
+adq_marker_capture = "channel_b_sync"   # channel_b_sync (Kanal B auf SYNC = Marker, ED-7) | channel_b_trig
+adq_json_override = ""            # JSON mit zusätzlichen ADQAPI-Parametern (nach Inbetriebnahme)
+adq_drain_ms = 200
 
 [analysis]
 auto_analyze = true
