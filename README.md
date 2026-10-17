@@ -67,7 +67,7 @@ LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Defau
 | `hhd/io/session.py` | Import: Sitzung/Kampagne (Manifest-Whitelist, Prüfsummen, **ohne** `truth.h5`), PTU chunkweise, ADQ32-Records Kanal A/B blockweise |
 | `hhd/sync/` | Synchronisation: `kernels` (Rust-Schnittstelle AP9), `markers` (Gitterindex, Kreuzkorrelation), `clockmap` (robust/stückweise linear), `assign` (Klassen, Totzeit, sekundär, Überlappung), `delay` (Δ über Varianzmaximum), `pipeline` (Bericht, `sync.h5`/`sync.json`), `stream` (Datenstrom) |
 | `hhd/sim/sync_validate.py` | Validierung der Synchronisation gegen die Wahrheit (Fehlzuordnungen, Residuen, Pulls a, b, Δ) – nur Tests/`hhd validate` |
-| `hhd/cli.py` | Kommandozeile `hhd` (import, sync, validate, stream, bench) |
+| `hhd/cli.py` | Kommandozeile `hhd` (import, sync, validate, stream, bench, calibrate, reconstruct, compare [--streaming], drift, report) |
 | `hhd/drivers/` | Treiber (ctypes): `hh500.py` (HH500Lib, T2), `adq.py` (ADQAPI, JSON-Parameter, Record-Header 2.0), dynamisches Laden; `mock/` Mock-Bibliotheken in C für Tests |
 | `hhd/io/recorder.py`, `stream_writer.py`, `modes.py` | Aufzeichnung im Datenstrom (PTU, `digitizer.h5`, `session.json`), Betriebsarten je Gerät |
 | `hhd/sim/streaming.py` | speichersparender Datenstrom-Simulator (Zeitscheiben, lazy Drift, dezimierte Wahrheit) |
