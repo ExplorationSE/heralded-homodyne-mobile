@@ -38,6 +38,7 @@ class AnalysisParams:
     estimator: str = "maxlik"
     nmax: int = 10
     tol: float = 1e-8
+    binned_above: int = 50000               # ab dieser Gruppengröße Histogramm-MaxLik (gleiches Ergebnis, ~100× schneller)
     n_boot: int = 200
     boot_vacuum: bool = True                # OP-1: Vakuumnormierung im Bootstrap neu ziehen
     bias_correct: bool = True               # OP-2: Bootstrap-Biaskorrektur für W(0,0)
@@ -89,6 +90,10 @@ def _group_index(session, sd, quads) -> dict:
     return G
 
 
+def _est(ap: AnalysisParams, n: int) -> str:
+    return "binned" if (ap.estimator == "maxlik" and n > ap.binned_above) else ap.estimator
+
+
 # ---------------------------------------------------------------- Bootstrap
 class Normalizer:
     """Normierte Quadraturen aller Gruppen; im Bootstrap mit neu gezogenen Vakuumdaten (gemeinsam für A und B)."""
@@ -136,7 +141,7 @@ def bootstrap_groups(norm: Normalizer, keys, point: dict, ap: AnalysisParams, rn
         for k in keys:
             x = xs[k]
             xb = x[rng.integers(0, len(x), len(x))]
-            g = group_stats(xb, ap.nmax, ap.estimator, p0=point[k]["_p"], full=False, tol=max(ap.tol, 1e-7))
+            g = group_stats(xb, ap.nmax, _est(ap, len(xb)), p0=point[k]["_p"], full=False, tol=max(ap.tol, 1e-7))
             st[k] = g
             for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var"):
                 res[k][q].append(g[q])
@@ -288,7 +293,7 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
     cal, drift_kv = calibrate(session, quads, ap.calib_params())
     timing["calibrate"] = time.time() - t
     pca = None
-    if ap.pca and "A" in groups:
+    if ap.pca and "A" in groups and "KV" in groups:
         t = time.time()
         runs = {r.block_id: r for r in session.runs}
         gA = [(runs[b], np.flatnonzero(m), ex["centres"][b]) for b, m in groups["A"]]
@@ -296,7 +301,10 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
         var_sample = _vacuum_sample_var(gV, ex["offset"])
         pca = pca_mode(gA, gV, ex["offset"], var_sample, spec)
         timing["pca"] = time.time() - t
-        if ap.mode_source in ("pca", "pca_raw"):
+        if not pca["available"]:
+            warnings.append("PCA nicht möglich: " + pca["reason"])
+            pca = None
+        if pca and ap.mode_source in ("pca", "pca_raw"):
             spec = pca_fitted_template(pca, spec) if ap.mode_source == "pca" else pca_template(pca, spec)
             if ap.mode_source == "pca_raw":
                 warnings.append("Mode aus roher PCA-Eigenmode: Varianz durch Auswahl an denselben Daten verzerrt")
@@ -318,7 +326,8 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
     if "reconstruct" in stages:
         t = time.time()
         keys = [k for k in ("A", "B", "B_interleaved", "KH", "state") if k in groups and norm.x(k).size > 10]
-        point = {k: group_stats(norm.x(k), ap.nmax, ap.estimator, tol=ap.tol) for k in keys}
+        xs0 = {k: norm.x(k) for k in keys}
+        point = {k: group_stats(xs0[k], ap.nmax, _est(ap, len(xs0[k])), tol=ap.tol) for k in keys}
         timing["reconstruct"] = time.time() - t
         t = time.time()
         bkeys = [k for k in ("A", "B", "state") if k in point]

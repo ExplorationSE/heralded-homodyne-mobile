@@ -224,15 +224,20 @@ def crosstalk_check(session, quads: dict, cal: Calibration, p: CalibParams | Non
     n = len(x)
     mean, var = float(np.mean(x)), float(np.var(x))
     z_mean = mean / np.sqrt(var / n)
-    z_var = (var - VAC) / (VAC * np.sqrt(2 / n))
+    z_var = (var - VAC) / (VAC * np.sqrt(2 / n + 2 / cal.n_kv))      # inkl. Unsicherheit der Vakuumnormierung
+
+    B = p.crosstalk_bin
 
     def avg_wave(blocks, only_matched):
+        """Mittel und Varianz der Bin-Mittel je Record (Samples innerhalb eines Bins sind korreliert)."""
         s = None; s2 = None; cnt = 0
         for b in blocks:
             r = runs[b]
             sel = (quads[b].seg_class == 0) if only_matched else np.ones(r.n_records, bool)
             for i0, blk in r.iter_records(chunk=1024):
                 y = blk[sel[i0:i0 + len(blk)]].astype(np.float64)
+                L = (y.shape[1] // B) * B
+                y = y[:, :L].reshape(len(y), -1, B).mean(-1)
                 if s is None:
                     s = np.zeros(y.shape[1]); s2 = np.zeros(y.shape[1])
                 s += y.sum(0); s2 += (y ** 2).sum(0); cnt += len(y)
@@ -242,10 +247,8 @@ def crosstalk_check(session, quads: dict, cal: Calibration, p: CalibParams | Non
 
     mh, vh, nh = avg_wave(kh, True)
     mv, vv, nv = avg_wave(kv, False)
-    B = p.crosstalk_bin
-    L = (len(mh) // B) * B
-    d = (mh[:L] - mv[:L]).reshape(-1, B).mean(1)
-    se = np.sqrt((vh[:L] / nh + vv[:L] / nv).reshape(-1, B).mean(1) / B)   # Samples ≈ unabhängig (1 GHz BW)
+    d = mh - mv
+    se = np.sqrt(vh / nh + vv / nv)
     z = d / se
     j = int(np.argmax(np.abs(z)))
     pre = -float(session.device.get("horizontal_offset", 0))

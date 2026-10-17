@@ -43,17 +43,23 @@ def pca_mode(groups_A, groups_V, offset: float, var_kv_sample: float, spec: Mode
 
     def acc(groups):
         S1 = S2 = None; N = 0
+        nb_ = (2 * half) // bin_samples
         for run, idx, c in groups:
             if N >= max_records:
                 break
             idx = idx[: max(0, max_records - N)]
             s1, s2, n = _accumulate(run, idx, c, half, bin_samples, offset, scale)
             S1 = s1 if S1 is None else S1 + s1; S2 = s2 if S2 is None else S2 + s2; N += n
+        if N == 0:
+            return None, 0
         m = S1 / N
         return S2 / N - np.outer(m, m), N
 
-    CA, nA = acc(groups_A)
-    CV, nV = acc(groups_V)
+    CA, nA = acc(groups_A) if groups_A else (None, 0)
+    CV, nV = acc(groups_V) if groups_V else (None, 0)
+    if nA < 100 or nV < 100:
+        return dict(available=False, reason=f"zu wenige vollständige Fenster (A {nA}, K-V {nV}; Fenster ±{half_ns} ns)",
+                    n_A=int(nA), n_V=int(nV))
     dC = CA - CV
     w, V = np.linalg.eigh(dC)
     o = np.argsort(w)[::-1]; w, V = w[o], V[:, o]
@@ -83,7 +89,7 @@ def pca_mode(groups_A, groups_V, offset: float, var_kv_sample: float, spec: Mode
     noise = sum((V[:, j] @ CA @ V[:, j]) * a1 / nA + (V[:, j] @ CV @ V[:, j]) * v1 / nV for j in range(1, nb))
     d_noise = float(noise / l1 ** 2) if l1 > 0 else float("nan")
     # Rauschgrenze des Überlapps (Monte-Carlo-frei: Eigenvektorfehler ~ √(nb/n)·σ/λ₁)
-    return dict(n_A=int(nA), n_V=int(nV), bins=int(nb), bin_samples=bin_samples, half_ns=half_ns,
+    return dict(available=True, n_A=int(nA), n_V=int(nV), bins=int(nb), bin_samples=bin_samples, half_ns=half_ns,
                 units="Vakuumvarianz je Sample ≙ ½ (Bins korreliert)", eigenvalues=w[:5].tolist(), lambda1=float(w[0]), ratio_l2_l1=float(w[1] / w[0]) if w[0] > 0 else float("nan"),
                 overlap_param=ov, overlap_noise_expected=d_noise,
                 overlap_param_corrected=float(min(1.0, ov + d_noise)), eta_mode_mismatch=float(max(0.0, 1 - ov - d_noise)), gamma_fit=float(best[1]), tau_fit_ns=float(1e9 / best[1]),

@@ -3,7 +3,7 @@
 Je Sitzung: Synchronisation (falls fehlend), Auswertung mit gemeinsamem Vakuum-Bootstrap (OP-1-Lösung) und zum
 Vergleich ohne Vakuumnormierung im Bootstrap (frühere Methode), Validierung gegen truth.h5.
 
-Aufruf: python tools/campaign_analysis.py <kampagne> [n_boot] [n_proc] > studie.json
+Aufruf: python tools/campaign_analysis.py <kampagne[,kampagne…]> [n_boot] [n_proc] > studie.json
 """
 import json
 import os
@@ -35,16 +35,16 @@ def one(args):
 
 
 def main():
-    camp = Path(sys.argv[1])
+    camps = [Path(c) for c in sys.argv[1].split(",")]
     n_boot = int(sys.argv[2]) if len(sys.argv) > 2 else 200
     n_proc = int(sys.argv[3]) if len(sys.argv) > 3 else 4
-    dirs = sorted(p.parent for p in camp.glob("*/session.json"))
+    dirs = [p.parent for camp in camps for p in sorted(camp.glob("*/session.json"))]
     t0 = time.time()
     with ProcessPoolExecutor(n_proc) as ex:
         res = list(ex.map(one, [(d, n_boot) for d in dirs]))
     import numpy as np
     pca = [r["pca"] for r in res if r["pca"]]
-    out = dict(campaign=str(camp), n_sessions=len(res), n_boot=n_boot, elapsed_s=time.time() - t0,
+    out = dict(campaign=[str(c) for c in camps], n_sessions=len(res), n_boot=n_boot, elapsed_s=time.time() - t0,
                summary=summarize_pulls([r["v"] for r in res]),
                summary_without_vacuum_bootstrap=summarize_pulls([r["v_novac"] for r in res]),
                pca=dict(overlap_mean=float(np.mean([p["overlap_param"] for p in pca])),

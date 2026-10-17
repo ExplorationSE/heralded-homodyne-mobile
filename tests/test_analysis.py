@@ -249,3 +249,28 @@ def test_mode_source_pca_raw_biased(ana_std):
     d, r = ana_std
     rp = analyze_session(d, AnalysisParams(n_boot=0, mode_source="pca_raw"), write=False)
     assert any("PCA" in w for w in rp["warnings"])
+
+
+def test_pca_unavailable_and_binned_switch(ana_std):
+    from hhd.modes.pca import pca_mode
+    assert pca_mode([], [], 0.0, 1.0, ModeSpec("double_exponential"))["available"] is False
+    d, r = ana_std
+    rb = analyze_session(d, AnalysisParams(n_boot=5, pca=False, binned_above=100), write=False)
+    assert rb["reconstruction"]["A"]["estimator"] == "binned"
+    assert rb["reconstruction"]["A"]["W00"] == pytest.approx(r["reconstruction"]["A"]["W00"], abs=2e-3)
+
+
+def test_crosstalk_detected(tmp_path):
+    cfg = small_standard(31)
+    cfg.blocks = [BlockCfg(id="kv0", kind="vacuum", duration_s=0.3, periodic_rate=4000),
+                  BlockCfg(id="kh", kind="herald_blocked", duration_s=0.6, crosstalk_amp=0.3),
+                  BlockCfg(id="a1", kind="heralded", duration_s=0.5),
+                  BlockCfg(id="kv1", kind="vacuum", duration_s=0.3, periodic_rate=4000)]
+    run(cfg, tmp_path)
+    r = analyze_session(tmp_path, AnalysisParams(pca=False), stages=(), write=False)
+    xt = r["crosstalk"]
+    assert xt["waveform"]["max_abs_z"] > 5 and any("Übersprechen" in f for f in xt["flags"])
+
+
+def test_crosstalk_null(ana_std):
+    assert ana_std[1]["crosstalk"]["waveform"]["max_abs_z"] < 5
