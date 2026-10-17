@@ -6,8 +6,9 @@ von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasenge
 Phase θ als Option
 (ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExSE Harp GX Mobil.
 
-**Stand 0.5.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`) und die Dateiformate (`hhd.io`). Import, Analyse,
-Server und App folgen (AP3 ff., siehe Gesamtplan v1.6).
+**Stand 0.6.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`) sowie **Import**
+(`hhd.io.session`) und **Synchronisation/Zuordnung** (`hhd.sync`, Kommando `hhd`; Beschreibung in
+`docs/SYNC.md`). Analyse (Normierung, Moden, Rekonstruktion), Server und App folgen (siehe Gesamtplan v1.7).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
 K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als
@@ -52,6 +53,11 @@ LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Defau
 | `hhd/sim/plan.py` | Laufplan M1: Blockfolge K-V/K-H/A/B, Segmentzahlen, Datenvolumen, σ(η), σ(W(0,0)), Driftfehler je Normierung (Modell), Anpassungsregel nach der Stabilitätsmessung (AP14) |
 | `hhd/sim/study.py` | schnelle Sitzungssimulation auf Quadraturebene für Monte-Carlo-Studien (gegen die Engine getestet) |
 | `hhd/sim/cli.py` | Kommandozeile `hhd-sim` |
+| `hhd/io/session.py` | Import: Sitzung/Kampagne (Manifest-Whitelist, Prüfsummen, **ohne** `truth.h5`), PTU chunkweise, ADQ32-Records Kanal A/B blockweise |
+| `hhd/sync/` | Synchronisation: `kernels` (Rust-Schnittstelle AP9), `markers` (Gitterindex, Kreuzkorrelation), `clockmap` (robust/stückweise linear), `assign` (Klassen, Totzeit, sekundär, Überlappung), `delay` (Δ über Varianzmaximum), `pipeline` (Bericht, `sync.h5`/`sync.json`), `stream` (Datenstrom) |
+| `hhd/sim/sync_validate.py` | Validierung der Synchronisation gegen die Wahrheit (Fehlzuordnungen, Residuen, Pulls a, b, Δ) – nur Tests/`hhd validate` |
+| `hhd/cli.py` | Kommandozeile `hhd` (import, sync, validate, stream, bench) |
+| `docs/SYNC.md` | Import und Synchronisation: Algorithmen, Klassen, Ausgabe, Validierung, Schnittstelle |
 | `config/*.yaml` | Vorlagen: Standard (getrennte Läufe), freilaufender Trigger, Drift, Off-Herald-Option, bekannte Phase, freie Uhr, Erweiterungszustände, Übersprechen |
 | `docs/SIMULATOR.md` | Modelle, Dateiformate, Grenzen, Quellen |
 | `docs/PARAMETER.md` | vollständige Parametertabelle (erzeugt) |
@@ -66,7 +72,7 @@ Python 3.11–3.13.
 python -m venv .venv
 . .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-pip install -e .                # stellt den Befehl hhd-sim bereit (alternativ: python -m hhd.sim)
+pip install -e .                # stellt die Befehle hhd und hhd-sim bereit (alternativ: python -m hhd, python -m hhd.sim)
 ```
 
 ## 3 Benutzung
@@ -116,7 +122,19 @@ Driftindikatoren dieses Laufs: A-B-A z = +0,1 (W(0,0)), K-V-Varianz +0,4 % (z = 
 Mit `config/drift.yaml` zeigen K-V und LO-Monitor (Kanal B) die LO-Drift, die Effizienzdrift nur der A-B-A-Vergleich.
 
 Die Auswertung in `hhd.sim.check` nutzt die **wahren** Modenpositionen aus `truth.h5`; sie prüft den Simulator,
-nicht die spätere Analyse (die muss Herald und Record allein aus Markern zuordnen, AP4/AP5).
+nicht die spätere Analyse.
+
+**Import und Synchronisation** (ohne Wahrheit; `docs/SYNC.md`):
+
+```bash
+hhd import data/S001             # Läufe, Records, Marker, Kanalrollen, Prüfsummen
+hhd sync data/S001               # → data/S001/sync/sync.h5 + sync.json (Klassen, Uhrabbildung, Δ, Selbstprüfung)
+hhd sync data/K1                 # Kampagne
+hhd validate data/S001           # nur Simulation: Fehlzuordnungen, Pulls a, b, Δ gegen truth.h5
+hhd stream data/S001             # chunkweiser Synchronisierer gegen Batch
+hhd bench data/S001              # Durchsatz (Ereignisse/s)
+```
+(ohne Installation: `python -m hhd …`)
 
 ## 4 Tests
 

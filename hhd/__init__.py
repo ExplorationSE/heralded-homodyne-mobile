@@ -1,8 +1,7 @@
 """ExSE Harp ADQ32 HHD Mobil – Kernpaket ``hhd`` (HHD = Heralded Homodyne).
 
-Stand 0.1.0-dev: Teilpakete ``hhd.sim`` (Simulator, AP2) und ``hhd.io`` (Dateiformate).
-Die weiteren Teilpakete laut Gesamtplan (sync, calib, modes, recon, compare, devices, run, ...)
-folgen in den nächsten Arbeitspaketen.
+Teilpakete: ``hhd.sim`` (Simulator, AP2), ``hhd.io`` (Dateiformate, Import), ``hhd.sync`` (Synchronisation und
+Zuordnung). Die weiteren Teilpakete laut Gesamtplan (calib, modes, recon, compare, devices, run, ...) folgen.
 """
 
-__version__ = "0.5.0.dev0"
+__version__ = "0.6.0.dev0"

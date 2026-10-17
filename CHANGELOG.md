@@ -1,5 +1,31 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.6.0.dev0 – 17.10.2026 (unveröffentlicht)
+
+Auftrag von Herrn Eilers: Import und Synchronisation (Gesamtplan v1.7, Synchronisationsbericht).
+
+- **Import** `hhd/io/session.py`: `load_session`/`load_campaign` (Schemaprüfung, SHA-256), Manifest-Whitelist
+  (`expected`, `config`, `seed` werden verworfen), `truth.h5` gesperrt (`PermissionError`); `RunData` mit Harp-Strom
+  nach Kanalrollen (`UsrHHD_ChannelRoles`/`UsrHHD_MarkerRoles`), Trigger-/Sample-/Markerzeiten des ADQ32,
+  Records Kanal A und `data_b` blockweise; PTU chunkweise (`read_ptu_header`, `iter_ptu_records`).
+- **Synchronisation** `hhd/sync/`: Marker-Gitterindex mit fortschreitendem Periodenfit, Kreuzkorrelation über
+  das Auslassmuster (Eindeutigkeit), robuste Gerade und stückweise lineare Korrektur mit Kreuzvalidierung,
+  Verfeinerung über Herald/Trigger-Paare (gewichtete Steigung, optional stückweise), Zuordnungsklassen
+  (zugeordnet, verwaist, mehrdeutig, Zufalls-/Zustandstrigger über CH4, periodisch; Heralds zugeordnet/sekundär/
+  ungetriggert mit Grund Totzeit/Rand/unerklärt), überlappende Fenster, CH2-Prüfung (abgewiesene Trigger),
+  Lauf B/K-V mit Zeitachse ohne Herald-Zuordnung, Δ-Feinkalibrierung über das Maximum der bedingten
+  Quadraturvarianz (Δ_T gepoolt, Δ je Lauf = Δ_T + δ_HT, Bootstrap), Selbstprüfung mit Warnungen; Ausgabe
+  `sync/sync.h5` und `sync/sync.json`.
+- **Datenstrom** `hhd/sync/stream.py`: `StreamingSynchronizer` (Einrasten, Nachführen, Zuordnung mit Latenz).
+- **Schnittstelle Rust-Kern (AP9):** `hhd.sync.kernels` (zustandslose Array-Funktionen), Wahl über
+  `HHD_SYNC_BACKEND`.
+- **Validierung** `hhd/sim/sync_validate.py` (nur mit Wahrheit): Markerpaare, Pulls a/b, Abbildungsfehler,
+  Fehlzuordnungsrate, Verluste, Klassenkonsistenz, Δ- und Δ_T-Pull.
+- **CLI** `hhd` (`import`, `sync`, `validate`, `stream`, `bench`), `python -m hhd`.
+- **Tests** `tests/test_import.py`, `tests/test_sync.py` (gemeinsame 10 MHz, freie Uhr mit Markern am M3,
+  Irrfahrt mit stückweisem Fit, fehlende/zusätzliche Marker, falscher Versatz, Stresstest 200 kHz, Kampagne,
+  Datenstrom = Batch, keine Wahrheit, CLI). Doku `docs/SYNC.md`.
+
 ## 0.5.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Entscheidungen von Herrn Eilers zum Vorschlag M1: 1550 nm, LO-Monitor PDA05CF2 + 10 dB, Herald-Detektor SNSPD
