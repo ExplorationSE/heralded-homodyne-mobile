@@ -250,6 +250,11 @@ def drift_ab(session, norm: Normalizer, ap: AnalysisParams) -> dict:
                 v, ve = var_with_err(x); w, we = w00_linear(x)
                 per.append(dict(block=b, group=key, t=float(r.t_start_s + r.duration_s / 2), n=int(len(x)),
                                 var_x=v, var_err=ve, W00_moments=w, W00_moments_err=we))
+    return drift_ab_from_per(per, ap)
+
+
+def drift_ab_from_per(per: list[dict], ap: AnalysisParams) -> dict:
+    """Driftprüfungen aus den Kenngrößen je Lauf (auch für die Datenstrom-Auswertung)."""
     out: dict = dict(per_run=per, flags=[])
     A = [p for p in per if p["group"] == "A"]
     B = [p for p in per if p["group"] == "B"]

@@ -211,7 +211,7 @@ def drift_vacuum_lo(cal: Calibration, p: CalibParams) -> dict:
 
 
 def crosstalk_check(session, quads: dict, cal: Calibration, p: CalibParams | None = None,
-                    max_records: int = 20000) -> dict:
+                    max_records: int = 20000, kh_stats: dict | None = None) -> dict:
     """K-H-Übersprechprüfung: Records mit Herald-Trigger bei blockiertem Signal (K-H) gegen K-V.
 
     1. Modenquadratur: ⟨x⟩ ≈ 0 und Var x ≈ ½ (z-Werte);
@@ -224,15 +224,17 @@ def crosstalk_check(session, quads: dict, cal: Calibration, p: CalibParams | Non
     if not kh:
         return dict(available=False, reason="kein K-H-Lauf")
     runs = {r.block_id: r for r in session.runs}
-    xs = []
-    for b in kh:
-        rq = quads[b]
-        r = runs[b]
-        m = rq.seg_class == 0
-        xs.append(cal.normalize(rq.q[m], rq.t_session[m], b, rq.lo_b[m]))
-    x = np.concatenate(xs)
-    n = len(x)
-    mean, var = float(np.mean(x)), float(np.var(x))
+    if kh_stats is not None:             # Datenstrom-Auswertung: Kenngrößen der zugeordneten K-H-Records vorab
+        n, mean, var = int(kh_stats["n"]), float(kh_stats["mean"]), float(kh_stats["var"])
+    else:
+        xs = []
+        for b in kh:
+            rq = quads[b]
+            m = rq.seg_class == 0
+            xs.append(cal.normalize(rq.q[m], rq.t_session[m], b, rq.lo_b[m]))
+        x = np.concatenate(xs)
+        n = len(x)
+        mean, var = float(np.mean(x)), float(np.var(x))
     z_mean = mean / np.sqrt(var / n)
     z_var = (var - VAC) / (VAC * np.sqrt(2 / n + 2 / cal.n_kv))      # inkl. Unsicherheit der Vakuumnormierung
 
