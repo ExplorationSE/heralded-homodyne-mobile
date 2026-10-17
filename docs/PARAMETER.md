@@ -89,6 +89,13 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `markers.d_MH` | 1.5e-08 | s | Annahme | Vorbericht Synchronisation, Parameter | Laufzeit Markerquelle → Harp |
 | `drift.lo_rel_per_s` | 0 | 1/s | Vorschlag | Gesamtplan v1.4, R15 | lineare relative Drift der LO-Leistung ab Sitzungsbeginn (0 = aus); Vakuumrauschen ∝ √P_LO, elektronisches Rauschen fest |
 | `drift.eta_rel_per_s` | 0 | 1/s | Vorschlag | Gesamtplan v1.4, R15 | lineare relative Drift der Zustandseffizienz η je Lauf (Modenanpassung, Justage) |
+| `drift.lo_rw_per_sqrt_s` | 0 | 1/√s | Annahme | Vorschlag M1 Laufplan | Irrfahrt der relativen LO-Leistung: Streuung der Änderung nach τ = q·√τ (0 = aus); z. B. 0,5 %/√h ≙ 8,3e-5 |
+| `drift.lo_sin_amp` | 0 |  | Annahme | Vorschlag M1 Laufplan | relative Amplitude einer periodischen LO-Schwankung (z. B. Klimaanlage); 0 = aus |
+| `drift.lo_sin_period_s` | 1200 | s | Annahme | Vorschlag M1 Laufplan | Periode der periodischen LO-Schwankung (Phase zufällig) |
+| `drift.eta_rw_per_sqrt_s` | 0 | 1/√s | Annahme | Vorschlag M1 Laufplan | Irrfahrt der relativen Effizienz η (Modenanpassung, Justage); 0 = aus |
+| `drift.eta_sin_amp` | 0 |  | Annahme | Vorschlag M1 Laufplan | relative Amplitude einer periodischen η-Schwankung; 0 = aus |
+| `drift.eta_sin_period_s` | 1200 | s | Annahme | Vorschlag M1 Laufplan | Periode der periodischen η-Schwankung |
+| `drift.grid_dt_s` | 0.05 | s | Vorschlag |  | Stützstellenabstand der stochastischen Drift (linear interpoliert) |
 | `drift.monitor` | False |  | Vorschlag |  | zusätzlich externer, langsamer LO-Leistungsmesser (/blocks/<id>/monitor); Standard ist die Photodiode an ADQ32-Kanal B (lo_monitor) |
 | `drift.monitor_rate_Hz` | 10 | Hz | Annahme |  | Abtastrate des externen LO-Leistungsmessers |
 | `drift.monitor_noise_rel` | 0.001 |  | Annahme |  | relatives Rauschen des externen LO-Leistungsmessers |
@@ -98,6 +105,7 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `lo_monitor.dark_lsb` | 20 | LSB | Annahme |  | Dunkelwert (Photodiode ohne Licht + ADC-Offset); im Labor mit LO aus messen |
 | `lo_monitor.noise_lsb` | 3 | LSB | Annahme |  | Rauschen je Sample (Photodiode + Verstärker + ADC) |
 | `lo_monitor.rin_rel` | 0.001 |  | Annahme |  | relatives Intensitätsrauschen des LO je Record |
+| `lo_monitor.gain_rw_per_sqrt_s` | 0 | 1/√s | Annahme | Vorschlag M1 Laufplan | Irrfahrt der Monitor-Verstärkung (Teilerverhältnis, Polarisation, Photodiode); verfälscht die Normierung mit dem Monitor; 0 = aus |
 | `blocks[].id` | heralded |  | Vorschlag |  | eindeutiger Blockname |
 | `blocks[].kind` | heralded |  | Vorschlag |  | heralded \| random \| free_running \| vacuum \| herald_blocked \| electronic \| state |
 | `blocks[].duration_s` | 5 | s | Vorschlag |  | Messdauer des Laufs |

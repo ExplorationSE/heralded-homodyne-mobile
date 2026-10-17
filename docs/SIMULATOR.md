@@ -161,6 +161,28 @@ Die frühere Variante mit eingestreuten Zufallstriggern ist als Option erhalten 
 
 Die Sollwerte je Lauf gelten für eine Normierung mit der Vakuumskala dieses Laufs.
 
+**Stochastische Drift** (`hhd/sim/drift.py`, ab 0.4.0) [Annahme]: P_LO(t) und η(t) erhalten zusätzlich eine
+Irrfahrt (`lo_rw_per_sqrt_s`, `eta_rw_per_sqrt_s`: Streuung der relativen Änderung nach τ ist q·√τ) und eine
+Sinusschwankung mit zufälliger Phase (`*_sin_amp`, `*_sin_period_s`), auf einem Raster `grid_dt_s` linear
+interpoliert; die Verstärkung des LO-Monitors driftet mit `lo_monitor.gain_rw_per_sqrt_s` (Teilerverhältnis,
+Polarisation). Die Pfade stammen aus einem eigenen Zweig des Sitzungs-Seeds; Sitzungen ohne stochastische
+Drift bleiben bitgleich. Die Wahrheit steht in `truth.h5` unter `/drift` (t_grid, lo, eta_factor, monitor_gain).
+Szenarien „gut“, „typisch“, „schlecht“: `hhd.sim.drift.SCENARIOS`.
+
+### Laufplan und Studie
+
+`hhd/sim/plan.py` erzeugt Blockfolgen (`make_plan`: kv_00, kh_start, a_01, b_01, …, K-V nach je `kv_every`
+Zyklen, a_n+1, kv_end) und berechnet Segmentzahlen, Datenvolumen, σ(η̂) = √((m4 − m2²)/N_A + 2·m2²/N_V)
+mit m2 = ½ + η, m4 = ¾ + 3η (|1⟩ nach Verlust), σ(W(0,0)) = c_W/√N_A und den erwarteten Driftfehler je
+Normierung exakt für Irrfahrt, lineare und periodische Drift (`drift_error`). `adapt_plan` ist die
+Anpassungsregel nach der Stabilitätsmessung (AP14): Rauschmodell aus der Allan-Abweichung → größter
+K-V-Abstand → T_A, Zyklen, K-V-Läufe. `hhd/sim/study.py` simuliert Sitzungen auf Quadraturebene
+(Monte Carlo, ~0,2 s je Sitzung); `tests/test_plan_study.py` prüft Modell, schnelle Studie und volle Engine
+gegeneinander. `tools/laufplan_studie.py` erzeugt die Abbildungen des Vorschlags M1.
+
+Bei `--norm interpolated` enthält der ABA-Vergleich jetzt die Statistik der K-V-Läufe (verschiedene
+Interpolationsgewichte); ohne diesen Term gab es rund 20 % Fehlalarme.
+
 ## 6 Dateien eines Laufs
 
 | Datei | Inhalt |
@@ -232,7 +254,7 @@ Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 - Fock |2⟩ und Katze im Sollbereich;
 - Übersprechen wird über K-H erkannt.
 
-## 9 Grenzen (Stand 0.3.0.dev0)
+## 9 Grenzen (Stand 0.4.0.dev0)
 
 - Die Referenzauswertung braucht die Ground Truth. Die Zuordnung Herald ↔ Record allein aus Markern folgt in
   AP4 (Synchronisation), Kalibrierung und Rekonstruktion in AP5–AP7.

@@ -9,6 +9,8 @@ Beispiele::
     hhd-sim validate out/S001                    # Schema- und Konsistenzprüfung
     hhd-sim check out/S001 --norm interpolated   # Referenzauswertung, Vergleich A/B, Driftindikatoren
     hhd-sim stream config/standard.yaml --speed 1 --chunk 0.05
+    hhd-sim plan --rate 1000 -o config/laufplan_m1.yaml          # Laufplan (Startwerte) mit Statistik/Datenbudget
+    hhd-sim plan --allan stabil.csv --rate 10000                 # Anpassungsregel nach der Stabilitätsmessung (AP14)
 """
 from __future__ import annotations
 
@@ -100,6 +102,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--boot", type=int, default=100)
     p.add_argument("--norm", choices=("pooled", "interpolated", "monitor"), default="pooled",
                    help="Vakuumnormierung: gemeinsam, zeitlich interpoliert oder mit LO-Monitor")
+    p = sub.add_parser("plan", help="Laufplan: Startwerte bzw. Anpassung aus einer Stabilitätsmessung (Allan)")
+    p.add_argument("--rate", type=float, default=1000.0, help="Herald-Rate in 1/s")
+    p.add_argument("--T-A", dest="T_A", type=float, default=60.0)
+    p.add_argument("--T-B", dest="T_B", type=float, default=30.0)
+    p.add_argument("--cycles", type=int, default=6)
+    p.add_argument("--kv-every", type=int, default=3)
+    p.add_argument("--T-KV", dest="T_KV", type=float, default=20.0)
+    p.add_argument("--rate-KV", dest="rate_KV", type=float, default=10000.0)
+    p.add_argument("--rate-B", dest="rate_B", type=float, default=2000.0)
+    p.add_argument("--T-KH", dest="T_KH", type=float, default=60.0)
+    p.add_argument("--allan", help="CSV (Zeit s, relative Vakuumskala bzw. LO-Leistung) → Allan-Analyse und Anpassungsregel")
+    p.add_argument("--target", type=float, default=0.005, help="Ziel σ(η) gesamt")
+    p.add_argument("--norm", choices=("pooled", "interpolated", "monitor"), default="interpolated")
+    p.add_argument("-o", "--out", help="YAML mit den Blöcken (für hhd-sim run) schreiben")
     a = ap.parse_args(argv)
 
     try:
@@ -152,6 +168,45 @@ def main(argv: list[str] | None = None) -> int:
                       f"Marker {len(c.marker_timestamp):4d}")
                 if a.max_chunks and i + 1 >= a.max_chunks:
                     break
+            return 0
+        if a.cmd == "plan":
+            from .plan import PlanSpec, adapt_plan, make_plan, statistics
+            if a.allan:
+                from .drift import allan_deviation, fit_noise_model
+                d = np.loadtxt(a.allan, delimiter=",", comments="#")
+                t, y = d[:, 0], d[:, 1] / np.mean(d[:, 1])
+                tau, ad, n = allan_deviation(y, float(np.median(np.diff(t))))
+                noise = fit_noise_model(tau, ad, n)
+                print("Allan-Abweichung (relativ):")
+                for tt, aa in zip(tau, ad):
+                    print(f"  τ = {tt:9.1f} s   σ_A = {aa:.2e}")
+                print(f"Rauschmodell: weiß {noise['white']:.2e} (τ = 1 s), Irrfahrt q = {noise['q_rw']:.2e}/√s, "
+                      f"linear {noise['lin']:.2e}/s")
+                r = adapt_plan(noise, R_herald=a.rate, sigma_eta_target=a.target, mode=a.norm)
+                spec = PlanSpec(**r["spec"])
+                print(f"K-V-Abstand höchstens {r['L_max_s'] / 60:.1f} min; σ(η) gesamt {r['sigma_eta_total']:.4f} "
+                      f"(Drift {r['drift_error']['A']:.4f}), {'Ziel erreicht' if r['feasible'] else 'Ziel NICHT erreicht'}")
+                print(f"Empfehlung: {r['hint']}")
+            else:
+                spec = PlanSpec(T_A=a.T_A, T_B=a.T_B, n_cycles=a.cycles, kv_every=a.kv_every, T_KV=a.T_KV,
+                                rate_KV=a.rate_KV, rate_B=a.rate_B, T_KH=a.T_KH)
+            bl = make_plan(spec)
+            st = statistics(bl, R_herald=a.rate)
+            print(f"Laufplan: {len(bl)} Läufe, {st['t_total_s'] / 60:.1f} min, Daten {st['data_GB']:.1f} GB "
+                  f"(max. {st['peak_rate_MBps']:.0f} MB/s)")
+            print(f"  Segmente A {st['N']['heralded']:.0f}, B {st['N']['free_running']:.0f}, K-V {st['N']['vacuum']:.0f}, "
+                  f"K-H {st['N']['herald_blocked']:.0f}")
+            print(f"  σ(η) {st['sigma_eta']:.4f} (A {st['sigma_eta_stat_A']:.4f}, Vakuum {st['sigma_eta_vac']:.4f}), "
+                  f"σ(W00) {st['sigma_W00']:.4f}, K-H: Zusatzvarianz ≥ {100 * st['kh_excess_3sigma_rel']:.2f} % nachweisbar (3σ)")
+            print("  " + " → ".join(f"{b['id']}({b['duration_s']:g}s)" for b in bl))
+            if a.out:
+                import yaml
+                head = (f"# Laufplan (hhd-sim plan) für Herald-Rate {a.rate:g}/s – Vorschlag M1, Startwerte vor AP14\n"
+                        f"# PlanSpec: {json.dumps(spec.to_dict())}\n"
+                        f"# {st['t_total_s'] / 60:.1f} min, {st['data_GB']:.1f} GB, σ(η) {st['sigma_eta']:.4f}, "
+                        f"σ(W00) {st['sigma_W00']:.4f}\n")
+                Path(a.out).write_text(head + yaml.safe_dump({"source": {"R_herald": a.rate}, "blocks": bl},
+                                                             sort_keys=False, allow_unicode=True), encoding="utf-8")
             return 0
         if a.cmd == "validate":
             err = validate_run(a.run_dir)

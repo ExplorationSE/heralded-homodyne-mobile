@@ -145,8 +145,10 @@ class ADQ32:
     def acquire(self, rng: np.random.Generator, t0: float, duration: float, trig: TriggerInput,
                 periodic_rate: float, mode_centre_true: np.ndarray, mode_x: np.ndarray,
                 sync_true: np.ndarray, crosstalk_true: np.ndarray, crosstalk_amp: float,
-                lo_on: bool = True, lo_scale_fn=None) -> DigitizerRecording:
-        """``lo_scale_fn(t_true)``: relative LO-Leistung (Drift); das optische Signal skaliert mit √P_LO."""
+                lo_on: bool = True, lo_scale_fn=None, monitor_gain_fn=None) -> DigitizerRecording:
+        """``lo_scale_fn(t_true)``: relative LO-Leistung (Drift); das optische Signal skaliert mit √P_LO.
+
+        ``monitor_gain_fn(t_true)``: relative Verstärkung des LO-Monitors an Kanal B (Drift des Abgriffs)."""
         c, d, clk = self.cfg, self.cfg.digitizer, self.clk
         fs, tu, L, pre = self.fs, self.tu, self.L, self.pre
         # TRIG-Kandidaten (Herald, Zufall, Zustand) mit Eingangsjitter und Zeitauflösung
@@ -193,8 +195,8 @@ class ADQ32:
         sig_el = np.sqrt(VAC_VAR / c.clearance)
         xtD = np.sort(clk(crosstalk_true)) if len(crosstalk_true) and crosstalk_amp else np.empty(0)
         kk = np.arange(L)
+        t_rec_true = t0 + (ts_rec * tu - TD_start) / (1 + clk.eps)
         if lo_scale_fn is not None and n:
-            t_rec_true = t0 + (ts_rec * tu - TD_start) / (1 + clk.eps)
             lo_amp = np.sqrt(np.asarray(lo_scale_fn(t_rec_true), float) * np.ones(n))
         else:
             lo_amp = np.ones(n)
@@ -204,6 +206,8 @@ class ADQ32:
             lm = c.lo_monitor
             Lb = c.lo_b_record_length
             p_rec = lo_rel * (1.0 + rng.normal(0, lm.rin_rel, n))
+            if monitor_gain_fn is not None and n:
+                p_rec = p_rec * np.asarray(monitor_gain_fn(t_rec_true), float)
             yb = lm.dark_lsb + lm.lsb_nominal * p_rec[:, None] + rng.normal(0, lm.noise_lsb, (n, Lb))
             data_b = np.clip(np.round(yb), -self.lim - 1, self.lim).astype(np.int16).reshape(n, Lb)
         data = np.empty((n, L), np.int16)

@@ -52,6 +52,13 @@ class SessionCfg:
 class DriftCfg:
     lo_rel_per_s: float = P(0.0, "1/s", doc="lineare relative Drift der LO-Leistung ab Sitzungsbeginn (0 = aus); Vakuumrauschen ∝ √P_LO, elektronisches Rauschen fest", status="Vorschlag", source="Gesamtplan v1.4, R15")
     eta_rel_per_s: float = P(0.0, "1/s", doc="lineare relative Drift der Zustandseffizienz η je Lauf (Modenanpassung, Justage)", status="Vorschlag", source="Gesamtplan v1.4, R15")
+    lo_rw_per_sqrt_s: float = P(0.0, "1/√s", doc="Irrfahrt der relativen LO-Leistung: Streuung der Änderung nach τ = q·√τ (0 = aus); z. B. 0,5 %/√h ≙ 8,3e-5", status="Annahme", source="Vorschlag M1 Laufplan")
+    lo_sin_amp: float = P(0.0, "", doc="relative Amplitude einer periodischen LO-Schwankung (z. B. Klimaanlage); 0 = aus", status="Annahme", source="Vorschlag M1 Laufplan")
+    lo_sin_period_s: float = P(1200.0, "s", doc="Periode der periodischen LO-Schwankung (Phase zufällig)", status="Annahme", source="Vorschlag M1 Laufplan")
+    eta_rw_per_sqrt_s: float = P(0.0, "1/√s", doc="Irrfahrt der relativen Effizienz η (Modenanpassung, Justage); 0 = aus", status="Annahme", source="Vorschlag M1 Laufplan")
+    eta_sin_amp: float = P(0.0, "", doc="relative Amplitude einer periodischen η-Schwankung; 0 = aus", status="Annahme", source="Vorschlag M1 Laufplan")
+    eta_sin_period_s: float = P(1200.0, "s", doc="Periode der periodischen η-Schwankung", status="Annahme", source="Vorschlag M1 Laufplan")
+    grid_dt_s: float = P(0.05, "s", doc="Stützstellenabstand der stochastischen Drift (linear interpoliert)", status="Vorschlag")
     monitor: bool = P(False, doc="zusätzlich externer, langsamer LO-Leistungsmesser (/blocks/<id>/monitor); Standard ist die Photodiode an ADQ32-Kanal B (lo_monitor)", status="Vorschlag")
     monitor_rate_Hz: float = P(10.0, "Hz", doc="Abtastrate des externen LO-Leistungsmessers", status="Annahme")
     monitor_noise_rel: float = P(1e-3, "", doc="relatives Rauschen des externen LO-Leistungsmessers", status="Annahme")
@@ -71,6 +78,7 @@ class LoMonitorCfg:
     dark_lsb: float = P(20.0, "LSB", doc="Dunkelwert (Photodiode ohne Licht + ADC-Offset); im Labor mit LO aus messen", status="Annahme")
     noise_lsb: float = P(3.0, "LSB", doc="Rauschen je Sample (Photodiode + Verstärker + ADC)", status="Annahme")
     rin_rel: float = P(1e-3, "", doc="relatives Intensitätsrauschen des LO je Record", status="Annahme")
+    gain_rw_per_sqrt_s: float = P(0.0, "1/√s", doc="Irrfahrt der Monitor-Verstärkung (Teilerverhältnis, Polarisation, Photodiode); verfälscht die Normierung mit dem Monitor; 0 = aus", status="Annahme", source="Vorschlag M1 Laufplan")
 
 
 @dataclass
@@ -434,6 +442,12 @@ class SimConfig:
         T_tot = sum(b.duration_s + self.session.gap_s for b in self.blocks)
         if 1 + min(0.0, dr.lo_rel_per_s) * T_tot <= 0.05 or 1 + min(0.0, dr.eta_rel_per_s) * T_tot <= 0.05:
             e.append("drift: negative Drift macht LO-Leistung bzw. η in der Sitzung ≤ 5 %")
+        if min(dr.lo_rw_per_sqrt_s, dr.eta_rw_per_sqrt_s, self.lo_monitor.gain_rw_per_sqrt_s) < 0:
+            e.append("drift: Irrfahrt-Koeffizienten ≥ 0")
+        if abs(dr.lo_sin_amp) >= 0.5 or abs(dr.eta_sin_amp) >= 0.5 or dr.lo_sin_period_s <= 0 or dr.eta_sin_period_s <= 0:
+            e.append("drift: |sin_amp| < 0,5 und sin_period_s > 0")
+        if dr.grid_dt_s <= 0:
+            e.append("drift.grid_dt_s > 0")
         if dr.monitor_rate_Hz <= 0 or dr.monitor_noise_rel < 0:
             e.append("drift.monitor_rate_Hz > 0, monitor_noise_rel ≥ 0")
         for b in self.blocks:

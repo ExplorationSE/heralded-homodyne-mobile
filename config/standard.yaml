@@ -99,6 +99,13 @@ markers:
 drift:
   lo_rel_per_s: 0.0
   eta_rel_per_s: 0.0
+  lo_rw_per_sqrt_s: 0.0
+  lo_sin_amp: 0.0
+  lo_sin_period_s: 1200.0
+  eta_rw_per_sqrt_s: 0.0
+  eta_sin_amp: 0.0
+  eta_sin_period_s: 1200.0
+  grid_dt_s: 0.05
   monitor: false
   monitor_rate_Hz: 10.0
   monitor_noise_rel: 0.001
@@ -109,6 +116,7 @@ lo_monitor:
   dark_lsb: 20.0
   noise_lsb: 3.0
   rin_rel: 0.001
+  gain_rw_per_sqrt_s: 0.0
 blocks:
 - id: kv_start
   kind: vacuum

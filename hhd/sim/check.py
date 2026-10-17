@@ -297,6 +297,29 @@ def check_run(run_dir: str | Path, n_boot: int = 100, norm_mode: str = "pooled")
         rr.close()
 
 
+def interpolation_weights(t: float, t_kv: np.ndarray) -> np.ndarray:
+    """Gewichte der K-V-Läufe bei linearer Interpolation (konstant außerhalb), wie ``np.interp``."""
+    w = np.zeros(len(t_kv))
+    j = int(np.searchsorted(t_kv, t))
+    if j == 0:
+        w[0] = 1.0
+    elif j >= len(t_kv):
+        w[-1] = 1.0
+    else:
+        f = (t - t_kv[j - 1]) / (t_kv[j] - t_kv[j - 1])
+        w[j - 1], w[j] = 1 - f, f
+    return w
+
+
+def aba_calibration_variance(rr, per_run: list, first: str, last: str, v_a: float, v_b: float) -> float:
+    """Varianz von Var_b − Var_a durch die Statistik der K-V-Läufe bei interpolierter Normierung.
+
+    v = m₂/s² mit s² = Σ_k w_k·V_k: δv/v = −Σ_k w_k·ε_k, ε_k relative Fehler von V_k (Varianz 2/n_k)."""
+    t_kv = np.array([v["t"] for v in per_run]); n_kv = np.array([v["n"] for v in per_run], float)
+    wa = interpolation_weights(rr.t_mid(first), t_kv); wb = interpolation_weights(rr.t_mid(last), t_kv)
+    return float(np.sum((v_b * wb - v_a * wa) ** 2 * 2 / n_kv))
+
+
 def _comparison(rr: SessionReader, out: dict, xs_role: dict, exp_role: dict, per_run: list, n_boot: int) -> dict:
     """Vergleich getrennter Läufe (ED-12) und Driftindikatoren."""
     comp: dict = {}
@@ -323,6 +346,15 @@ def _comparison(rr: SessionReader, out: dict, xs_role: dict, exp_role: dict, per
     if len(hr) >= 2:
         a, b = out["blocks"][hr[0]], out["blocks"][hr[-1]]
         drift["aba"] = dict(first=hr[0], last=hr[-1], W00=_diff(b, a, "W00"), var_x=_diff(b, a, "var_x"))
+        if out.get("norm_mode") == "interpolated" and len(per_run) >= 2:
+            # Skalen aus verschiedenen K-V-Läufen: deren Statistik geht in die Differenz ein (sonst Fehlalarme)
+            cal = aba_calibration_variance(rr, per_run, hr[0], hr[-1], a["var_x"], b["var_x"])
+            for key, fac in (("var_x", 1.0), ("W00", 2 / np.pi)):          # δW(0,0) ≈ −(2/π)·δVar (|1⟩-nah)
+                dd = drift["aba"][key]
+                dd["err_stat"] = dd["err"]
+                dd["err"] = float(np.hypot(dd["err"], fac * np.sqrt(cal)))
+                dd["z"] = float(dd["diff"] / dd["err"]) if dd["err"] > 0 else float("nan")
+            drift["aba"]["calibration_included"] = True
     if len(per_run) >= 2:
         v0, v1 = per_run[0], per_run[-1]
         rel = v1["var"] / v0["var"] - 1

@@ -43,6 +43,7 @@ from ..io import ptu as P
 from ..io import schema as S
 from .clock import DigitizerClock
 from .config import BlockCfg, SimConfig
+from .drift import DriftPath
 from .digitizer import ADQ32, TRIG_HERALD, TRIG_RANDOM, TRIG_STATE, TriggerInput
 from .harp import HydraHarp500
 from .phase import PhaseModel
@@ -85,6 +86,7 @@ class RunResult:
     campaign_id: str = ""
     out_dir: Path | None = None
     files: dict = field(default_factory=dict)
+    drift: Any = None                    # DriftPath (stochastische Drift) oder None
 
 
 def _poisson_times(rng, rate, t0, T):
@@ -92,20 +94,29 @@ def _poisson_times(rng, rate, t0, T):
     return np.sort(rng.uniform(t0, t0 + T, n))
 
 
-def lo_scale_fn(cfg: SimConfig, b: BlockCfg):
-    """relative LO-Leistung als Funktion der wahren Zeit (lineare Drift ab Sitzungsbeginn × Laufsprung)."""
+def lo_scale_fn(cfg: SimConfig, b: BlockCfg, path: DriftPath | None = None):
+    """relative LO-Leistung als Funktion der wahren Zeit (Drift ab Sitzungsbeginn × Laufsprung).
+
+    Ohne stochastische Drift (``path`` None oder rein linear) gilt das lineare Modell ``drift.lo_rel_per_s``.
+    """
+    if path is not None and path.stochastic:
+        return lambda t: b.lo_scale * path.lo(t)
     t_s, a = cfg.session.start_s, cfg.drift.lo_rel_per_s
     return lambda t: b.lo_scale * (1.0 + a * (np.asarray(t, float) - t_s))
 
 
-def eta_of_run(cfg: SimConfig, b: BlockCfg, t_mid: float) -> float:
+def eta_of_run(cfg: SimConfig, b: BlockCfg, t_mid: float, path: DriftPath | None = None) -> float:
     """Zustandseffizienz im Lauf (Drift zur Laufmitte × Laufsprung), begrenzt auf (0, 1]."""
-    eta = cfg.source.eta * b.eta_scale * (1.0 + cfg.drift.eta_rel_per_s * (t_mid - cfg.session.start_s))
-    return float(np.clip(eta, 1e-6, 1.0))
+    if path is not None and path.stochastic:
+        f = float(path.eta(t_mid))
+    else:
+        f = 1.0 + cfg.drift.eta_rel_per_s * (t_mid - cfg.session.start_s)
+    return float(np.clip(cfg.source.eta * b.eta_scale * f, 1e-6, 1.0))
 
 
 def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: DigitizerClock, adq: ADQ32,
-                   harp: HydraHarp500, ss: np.random.SeedSequence, calibration_id: str, run_id: str = "") -> BlockResult:
+                   harp: HydraHarp500, ss: np.random.SeedSequence, calibration_id: str, run_id: str = "",
+                   drift_path: DriftPath | None = None) -> BlockResult:
     rs = [np.random.default_rng(s) for s in ss.spawn(8)]
     r_src, r_state, r_phase, r_harp, r_dig, r_mark, r_trig, r_misc = rs
     src, h, d, mk = cfg.source, cfg.harp, cfg.digitizer, cfg.markers
@@ -114,10 +125,11 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     pcfg = cfg.phase_for(b)
     phase = PhaseModel(pcfg, t0, T)
     signal_blocked = kind in ("herald_blocked", "vacuum", "electronic")
-    lo_fn = lo_scale_fn(cfg, b)
+    lo_fn = lo_scale_fn(cfg, b, drift_path)
     t_mid = t0 + T / 2
     lo_mid = float(lo_fn(t_mid))
-    eta_run = eta_of_run(cfg, b, t_mid)
+    eta_run = eta_of_run(cfg, b, t_mid, drift_path)
+    mon_fn = drift_path.monitor_gain if (drift_path is not None and drift_path.stochastic) else None
     lo_on = kind != "electronic"
     spdc_on = kind != "state"
     warnings: list[str] = []
@@ -212,7 +224,8 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     trig = TriggerInput(cat(trig_t, float), cat(trig_k, np.int8), cat(trig_i, np.int64))
     xt_amp = d.crosstalk_amp if b.crosstalk_amp is None else b.crosstalk_amp
     dig = adq.acquire(r_dig, t0, T, trig, periodic, mode_t, mode_x, t_m + d.d_MD,
-                      t_det + d.d_T, xt_amp, lo_on=lo_on, lo_scale_fn=lo_fn)
+                      t_det + d.d_T, xt_amp, lo_on=lo_on, lo_scale_fn=lo_fn,
+                      monitor_gain_fn=mon_fn)
     # LO-Leistungsmonitor (Photodiode), relative Leistung
     if cfg.drift.monitor:
         t_mon = t0 + np.arange(0.0, T, 1.0 / cfg.drift.monitor_rate_Hz)
@@ -297,17 +310,19 @@ def simulate(cfg: SimConfig) -> RunResult:
     ss_clock, ss_blocks = root.spawn(2)
     t_end = se.start_s + sum(b.duration_s + se.gap_s for b in cfg.blocks) + 1.0
     clk = DigitizerClock(cfg.clock, t_end, np.random.default_rng(ss_clock))
+    path = DriftPath(cfg.drift, cfg.lo_monitor, se.start_s, t_end, np.random.default_rng(root.spawn(1)[0]))
+    path = path if path.stochastic else None
     adq = ADQ32(cfg, clk)
     harp = HydraHarp500(cfg)
     cal_id = cfg.calibration_id
     blocks = []
     t0 = se.start_s
     for i, (b, ss, rid) in enumerate(zip(cfg.blocks, ss_blocks.spawn(len(cfg.blocks)), cfg.run_ids())):
-        br = simulate_block(cfg, b, i, t0, clk, adq, harp, ss, cal_id, rid)
+        br = simulate_block(cfg, b, i, t0, clk, adq, harp, ss, cal_id, rid, drift_path=path)
         br.warnings = warnings + br.warnings
         blocks.append(br)
         t0 += b.duration_s + se.gap_s
-    return RunResult(cfg, blocks, adq.device_attrs(), clk, cal_id, se.id, se.campaign)
+    return RunResult(cfg, blocks, adq.device_attrs(), clk, cal_id, se.id, se.campaign, drift=path)
 
 
 def _sha256(p: Path) -> str:
@@ -360,6 +375,10 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
         ck = f.create_group("clock")
         ck.attrs.update(eps=res.clock.eps, t_arm_s=res.clock.t_arm, rw_D=res.clock.D)
         ck.create_dataset("t_grid", data=res.clock.tg); ck.create_dataset("phi", data=res.clock.phig)
+        if res.drift is not None:                         # stochastische Drift: wahrer Verlauf über die Sitzung
+            dg = f.create_group("drift")
+            for k, v in res.drift.truth().items():
+                dg.create_dataset(k, data=v)
         for br in res.blocks:
             g = f.create_group(f"blocks/{br.cfg.id}")
             g.attrs.update(t0_true_s=br.t0, duration_s=br.duration, dataset_type=br.dataset_type, run_id=br.run_id,

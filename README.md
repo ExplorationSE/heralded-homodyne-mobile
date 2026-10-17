@@ -6,7 +6,7 @@ von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasenge
 Phase θ als Option
 (ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExSE Harp GX Mobil.
 
-**Stand 0.3.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`) und die Dateiformate (`hhd.io`). Import, Analyse,
+**Stand 0.4.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`) und die Dateiformate (`hhd.io`). Import, Analyse,
 Server und App folgen (AP3 ff., siehe Gesamtplan v1.5).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
@@ -44,11 +44,14 @@ CH2 ADQ32-Trigger-Kopie, CH3 reserviert, CH4 Hilfstrigger; M1 Laufmarke, M2 Phas
 | `hhd/sim/engine.py` | Sitzung aus getrennten Läufen (K-V, K-H, mit/ohne Herald, getriggerte Zustände), Drift, LO-Monitor, Kampagnen, Dateiausgabe, Ground Truth |
 | `hhd/sim/check.py` | Referenzauswertung mit Ground Truth: Vakuumnormierung (gemeinsam / interpoliert / LO-Monitor), Varianz, W(0,0), Phasenfit, Vergleich A/B, Driftindikatoren |
 | `hhd/sim/stream.py` | Datenstrom-Modus: Wiedergabe in Chunks (optional Echtzeit), Hülle `StreamSource` als spätere Geräteschnittstelle |
+| `hhd/sim/drift.py` | Stochastische Drift (Irrfahrt, periodisch, linear) für LO, η und Monitor-Verstärkung; Allan-Abweichung und Rauschmodell-Fit; Driftszenarien [Annahme] |
+| `hhd/sim/plan.py` | Laufplan M1: Blockfolge K-V/K-H/A/B, Segmentzahlen, Datenvolumen, σ(η), σ(W(0,0)), Driftfehler je Normierung (Modell), Anpassungsregel nach der Stabilitätsmessung (AP14) |
+| `hhd/sim/study.py` | schnelle Sitzungssimulation auf Quadraturebene für Monte-Carlo-Studien (gegen die Engine getestet) |
 | `hhd/sim/cli.py` | Kommandozeile `hhd-sim` |
 | `config/*.yaml` | Vorlagen: Standard (getrennte Läufe), freilaufender Trigger, Drift, Off-Herald-Option, bekannte Phase, freie Uhr, Erweiterungszustände, Übersprechen |
 | `docs/SIMULATOR.md` | Modelle, Dateiformate, Grenzen, Quellen |
 | `docs/PARAMETER.md` | vollständige Parametertabelle (erzeugt) |
-| `tools/` | Read_PTU-kompatibler Leser, Neuerzeugung von Standardkonfiguration und Parametertabelle |
+| `tools/` | Read_PTU-kompatibler Leser, Neuerzeugung von Standardkonfiguration und Parametertabelle, Laufplan-Studie (`laufplan_studie.py`) |
 | `tests/` | pytest-Suite |
 
 ## 2 Installation
@@ -73,6 +76,8 @@ hhd-sim validate data/S001                    # Schema v1.2, Prüfsummen, PTU-K�
 hhd-sim check data/S001                       # Sollwerte, Vergleich A/B, Driftindikatoren (mit Ground Truth)
 hhd-sim check data/S001 --norm interpolated   # Vakuumnormierung zeitlich interpoliert (bzw. --norm monitor)
 hhd-sim stream config/standard.yaml --chunk 0.1 --speed 1   # Echtzeit-Wiedergabe
+hhd-sim plan --rate 1000 -o config/laufplan_m1.yaml   # Laufplan-Startwerte: Statistik, Datenvolumen, Blockfolge
+hhd-sim plan --allan stabil.csv --rate 10000          # Anpassungsregel aus einer Stabilitätsmessung (Zeit s, Wert)
 ```
 
 Struktur: **Kampagne** (`campaign.json`) → **Sitzung** (ein Verzeichnis, eine `calibration_id`) → **Läufe**

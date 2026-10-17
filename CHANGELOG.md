@@ -1,5 +1,19 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.4.0.dev0 – 17.10.2026 (unveröffentlicht)
+
+Vorschlag M1 (Laufplan, LO-Photodiode, Laufmarke) für Herrn Eilers.
+
+- **Stochastische Drift** `hhd/sim/drift.py`: Irrfahrt und Sinus für LO-Leistung und η, Drift der
+  Monitor-Verstärkung (`lo_monitor.gain_rw_per_sqrt_s`), Wahrheit in `truth.h5:/drift`; Allan-Abweichung und
+  Rauschmodell-Fit; Szenarien gut/typisch/schlecht [Annahme]. Bestehende Sitzungen bleiben bitgleich.
+- **Laufplan** `hhd/sim/plan.py`: Blockfolge, Statistik, Datenvolumen, Driftfehlermodell je Normierung,
+  Anpassungsregel `adapt_plan` (AP14); Kommando `hhd-sim plan` (auch `--allan` für eine Stabilitätsmessung);
+  Vorlage `config/laufplan_m1.yaml`.
+- **Schnelle Studie** `hhd/sim/study.py` (Monte Carlo auf Quadraturebene) und `tools/laufplan_studie.py`.
+- **Auswertung:** ABA-Vergleich bei `--norm interpolated` mit K-V-Statistik (vorher Fehlalarme).
+- Tests `tests/test_plan_study.py`.
+
 ## 0.3.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Entscheidungen von Herrn Eilers zu Gesamtplan v1.4: Lauf B freilaufend, LO-Monitor an ADQ32-Kanal B,
