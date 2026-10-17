@@ -1,7 +1,7 @@
 """OP-2: Bias von W(0,0) je Schätzer, Abschneidung, Iterationszahl und N (Quadraturebene, ohne Synchronisation).
 
 Zustand wie Lauf A der Standardsitzung: ξ·(verlustbehaftetes |1⟩, η) + (1−ξ)·Vakuum mit η_eff = 0,617.
-Aufruf: python tools/op2_w00_bias.py [n_rep] [N]  → JSON auf stdout.
+Aufruf: python tools/op2_w00_bias.py [n_rep] [N] [kurz]  → JSON auf stdout.
 """
 import json
 import sys
@@ -10,7 +10,7 @@ import time
 import numpy as np
 
 sys.path.insert(0, ".")
-from hhd.recon.core import reconstruct, wigner00  # noqa: E402
+from hhd.recon.core import fit_eta_fock1, reconstruct, wigner00  # noqa: E402
 from hhd.sim.check import em_photon_number  # noqa: E402  (frühere Referenz: EM 400 Iterationen)
 
 
@@ -20,12 +20,21 @@ def sample(rng, n, eta_eff):
     return np.where(one, np.sqrt(eta_eff) * x1, 0.0) + np.sqrt(1 - eta_eff) * rng.normal(0, np.sqrt(0.5), n)
 
 
+def boot_bc(x, rng, n_boot=100):
+    """Bootstrap-Biaskorrektur: W − (⟨W*⟩ − W)."""
+    r = reconstruct(x, 10, "maxlik", tol=1e-8)
+    wb = [reconstruct(x[rng.integers(0, len(x), len(x))], 10, "maxlik", tol=1e-7, p0=r.p).W00 for _ in range(n_boot)]
+    return 2 * r.W00 - float(np.mean(wb))
+
+
 def main():
     n_rep = int(sys.argv[1]) if len(sys.argv) > 1 else 300
     N = int(sys.argv[2]) if len(sys.argv) > 2 else 5000
     eta = 0.6169
     W_true = (1 - 2 * eta) / np.pi
     rng = np.random.default_rng(2026)
+    full = len(sys.argv) <= 3 or sys.argv[3] != "kurz"
+    rb = np.random.default_rng(7)
     cases = {
         "em400_n10 (alt)": lambda x: wigner00(em_photon_number(x, 10, 400)),
         "em150_n10 (alter Bootstrap)": lambda x: wigner00(em_photon_number(x, 10, 150)),
@@ -37,7 +46,11 @@ def main():
         "binned40_n10": lambda x: reconstruct(x, 10, "binned", tol=1e-9, bins=40).W00,
         "moments_n2": lambda x: reconstruct(x, 2, "moments").W00,
         "moments_n3": lambda x: reconstruct(x, 3, "moments").W00,
+        "fit_fock1 (Modell n≤1)": lambda x: (1 - 2 * fit_eta_fock1(x)["eta"]) / np.pi,
+        "maxlik_n10_bootstrap_bc": lambda x: boot_bc(x, rb),
     }
+    if not full:
+        cases = {k: cases[k] for k in ("maxlik_n10", "moments_n2", "fit_fock1 (Modell n≤1)", "maxlik_n10_bootstrap_bc")}
     res = {k: [] for k in cases}
     t0 = time.time()
     for _ in range(n_rep):

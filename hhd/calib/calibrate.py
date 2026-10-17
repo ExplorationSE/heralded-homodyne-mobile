@@ -102,8 +102,8 @@ class Calibration:
 
     def to_dict(self) -> dict:
         d = {k: v for k, v in asdict(self).items() if k not in ("vac_q", "vac_t")}
-        d.update(clearance=self.clearance, clearance_dB=float(10 * np.log10(self.clearance)) if self.var_el else None,
-                 eta_el=self.eta_el, f_el=self.f_el, scale_lsb=float(np.sqrt(self.var_kv / VAC)))
+        d.update(clearance=self.clearance if self.var_el else None, clearance_dB=float(10 * np.log10(self.clearance)) if self.var_el else None,
+                 eta_el=self.eta_el if self.var_el is not None else None, f_el=self.f_el, scale_lsb=float(np.sqrt(self.var_kv / VAC)))
         return d
 
 

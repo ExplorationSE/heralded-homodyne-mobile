@@ -5,6 +5,11 @@
     hhd validate <sitzung|kampagne>          (nur Simulation) Vergleich mit truth.h5
     hhd stream   <sitzung> [--run ID]        chunkweiser Synchronisierer, Vergleich mit Batch
     hhd bench    <sitzung>                   Durchsatz (Ereignisse/s)
+    hhd calibrate   <sitzung>                Quadraturen, Vakuum-/Elektronik-/LO-Kalibrierung, Drift, Übersprechen, PCA
+    hhd reconstruct <sitzung>                zusätzlich phasengemittelte Rekonstruktion mit Bootstrap
+    hhd compare     <sitzung>                vollständige Kette inkl. Vergleich A/B → analysis/result.json
+    hhd report      <sitzung|result.json>    Bericht (Markdown) ausgeben
+    hhd validate-analysis <sitzung>          (nur Simulation) Auswertung gegen truth.h5
 
 Der Simulator bleibt ``hhd-sim`` (bzw. ``python -m hhd.sim``).
 """
@@ -177,8 +182,107 @@ def cmd_bench(a) -> int:
     return 0
 
 
+def _aparams(a):
+    from .analysis.pipeline import AnalysisParams
+    ap = AnalysisParams()
+    for k in ("norm", "estimator", "nmax", "n_boot", "seed", "mode_source", "dark_count_rate"):
+        v = getattr(a, k, None)
+        if v is not None:
+            setattr(ap, k, v)
+    if a.clearance_db is not None:
+        ap.clearance_dB = a.clearance_db
+    if a.gamma_ns:
+        ap.gamma = 1.0 / (a.gamma_ns * 1e-9)
+    if a.mode_shape:
+        ap.mode_shape = a.mode_shape
+    ap.boot_vacuum = not a.no_boot_vacuum
+    ap.pca = not a.no_pca or ap.mode_source in ("pca", "pca_raw")
+    ap.bandwidth_model = not a.no_bandwidth
+    return ap
+
+
+def _run_analysis(a, stages):
+    from .analysis.pipeline import analyze_session
+    from .io.session import is_campaign
+    from pathlib import Path
+    paths = sorted(p.parent for p in Path(a.path).glob("*/session.json")) if is_campaign(a.path) else [Path(a.path)]
+    out = []
+    for p in paths:
+        r = analyze_session(p, _aparams(a), out_dir=a.out if len(paths) == 1 else None,
+                            sync_params=_params(a), stages=stages)
+        out.append(r)
+    return out
+
+
+def cmd_calibrate(a) -> int:
+    from .analysis.report import render_report
+    for r in _run_analysis(a, ()):
+        print(render_report(r) if not a.json else json.dumps(r["calibration"], indent=1, ensure_ascii=False, default=float))
+        print(f"Ausgabe: {r['_out_dir']}")
+    return 0
+
+
+def cmd_reconstruct(a) -> int:
+    from .analysis.report import render_report
+    for r in _run_analysis(a, ("reconstruct",)):
+        print(render_report(r)); print(f"Ausgabe: {r['_out_dir']}")
+    return 0
+
+
+def cmd_compare(a) -> int:
+    from .analysis.report import render_report
+    rc = 0
+    for r in _run_analysis(a, ("reconstruct", "compare")):
+        print(render_report(r)); print(f"Ausgabe: {r['_out_dir']}")
+        rc |= bool(r["warnings"]) and a.strict
+    return int(rc)
+
+
+def cmd_report(a) -> int:
+    from pathlib import Path
+    from .analysis.report import report_from_file
+    p = Path(a.path)
+    f = p if p.suffix == ".json" else p / "analysis" / "result.json"
+    if not f.exists():
+        print(f"{f} fehlt – zuerst `hhd compare {a.path}` ausführen", file=sys.stderr)
+        return 2
+    txt = report_from_file(f)
+    if a.out:
+        Path(a.out).write_text(txt, encoding="utf-8"); print(f"Bericht: {a.out}")
+    else:
+        print(txt)
+    return 0
+
+
+def cmd_validate_analysis(a) -> int:
+    from pathlib import Path
+    from .analysis.pipeline import analyze_session
+    from .sim.analysis_validate import validate_analysis
+    p = Path(a.path)
+    f = p / "analysis" / "result.json"
+    r = json.loads(f.read_text(encoding="utf-8")) if (f.exists() and not a.rerun) else \
+        analyze_session(p, _aparams(a), sync_params=_params(a))
+    v = validate_analysis(p, r)
+    if a.json:
+        print(json.dumps(v, indent=1, ensure_ascii=False, default=float)); return 0
+    print(f"Validierung Auswertung {v['session_id']}")
+    for k, g in v["groups"].items():
+        for q in ("var_x", "W00", "W00_bc", "W00_moments", "eta_fit"):
+            o = g.get(q)
+            if o and o.get("err") and o["err"] > 1e-6:          # Vakuum am Rand (W = 1/π): ohne Pull
+                print(f"  {k:3s} {q:12s} {o['value']:+.4f} ± {o['err']:.4f}  wahr {o['true']:+.4f}  Pull {o['pull']:+.2f}")
+    for q in ("eta_comparison", "W00_diff", "eta_state"):
+        o = v.get(q)
+        if o and o.get("pull") is not None:
+            print(f"  {q:16s} {o['value']:+.4f} ± {o['err']:.4f}  wahr {o['true']:+.4f}  Pull {o['pull']:+.2f}")
+    for q in ("eta_el", "xi"):
+        if q in v:
+            print(f"  {q:16s} {v[q]['value']:.4f}  wahr {v[q]['true']:.4f}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="hhd", description="ExSE Harp ADQ32 HHD Mobil – Auswertung (Import, Synchronisation)")
+    ap = argparse.ArgumentParser(prog="hhd", description="ExSE Harp ADQ32 HHD Mobil – Auswertung (Import, Synchronisation, Kalibrierung, Rekonstruktion, Vergleich)")
     ap.add_argument("--version", action="version", version=f"hhd {__version__}")
     sp = ap.add_subparsers(dest="cmd", required=True)
 
@@ -206,6 +310,27 @@ def main(argv: list[str] | None = None) -> int:
     p = sp.add_parser("bench", help="Durchsatz messen"); p.add_argument("path")
     p.add_argument("--repeat", type=int, default=1); p.add_argument("--no-delay", action="store_true")
     p.set_defaults(f=cmd_bench)
+
+    def anal(p):
+        common(p)
+        p.add_argument("-o", "--out", help="Ausgabeordner (Standard <sitzung>/analysis)")
+        p.add_argument("--norm", choices=("pooled", "interpolated", "monitor", "monitor_record"))
+        p.add_argument("--clearance-db", type=float, help="Clearance (dB) aus Labormessung, falls kein Dunkellauf")
+        p.add_argument("--estimator", choices=("maxlik", "em", "binned", "moments"))
+        p.add_argument("--nmax", type=int); p.add_argument("--n-boot", type=int); p.add_argument("--seed", type=int)
+        p.add_argument("--mode-source", choices=("parametric", "pca", "pca_raw"))
+        p.add_argument("--no-pca", action="store_true"); p.add_argument("--no-bandwidth", action="store_true")
+        p.add_argument("--no-boot-vacuum", action="store_true", help="Vakuumnormierung im Bootstrap festhalten (alt)")
+        p.add_argument("--dark-count-rate", type=float, help="Herald-Dunkelzählrate 1/s für ξ (Standard 100)")
+        p.add_argument("--json", action="store_true"); p.add_argument("--strict", action="store_true")
+
+    p = sp.add_parser("calibrate", help="Quadraturen und Kalibrierung"); anal(p); p.set_defaults(f=cmd_calibrate)
+    p = sp.add_parser("reconstruct", help="Kalibrierung + Rekonstruktion"); anal(p); p.set_defaults(f=cmd_reconstruct)
+    p = sp.add_parser("compare", help="vollständige Kette inkl. Vergleich A/B"); anal(p); p.set_defaults(f=cmd_compare)
+    p = sp.add_parser("report", help="Bericht aus analysis/result.json"); p.add_argument("path")
+    p.add_argument("-o", "--out"); p.set_defaults(f=cmd_report)
+    p = sp.add_parser("validate-analysis", help="(nur Simulation) Auswertung gegen truth.h5"); anal(p)
+    p.add_argument("--rerun", action="store_true"); p.set_defaults(f=cmd_validate_analysis)
     a = ap.parse_args(argv)
     return a.f(a)
 

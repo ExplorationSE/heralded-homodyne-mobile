@@ -90,8 +90,22 @@ def pca_mode(groups_A, groups_V, offset: float, var_kv_sample: float, spec: Mode
                 centre_shift_ns=float(best[2] / fs * 1e9), mode=e1.tolist(), mode_param=f.tolist())
 
 
+def pca_fitted_template(pca: dict, spec: ModeSpec) -> ModeSpec:
+    """Parametrische Mode mit γ und Zentrumsversatz aus der PCA-Anpassung (Option ``mode_source = "pca"``).
+
+    Zwei angepasste Parameter statt ~100 freier Bins: keine nennenswerte Auswahlverzerrung der Varianz."""
+    sp = ModeSpec(spec.shape, pca["gamma_fit"], spec.fs, spec.bandwidth_Hz)
+    h = sp.half + int(np.ceil(abs(pca["centre_shift_ns"]) * 1e-9 * spec.fs)) + 1
+    k = np.arange(-h, h + 1)
+    f = mode_function(sp, k - pca["centre_shift_ns"] * 1e-9 * spec.fs)
+    return ModeSpec("custom", pca["gamma_fit"], spec.fs, spec.bandwidth_Hz, custom=f / np.linalg.norm(f))
+
+
 def pca_template(pca: dict, spec: ModeSpec) -> ModeSpec:
-    """Datengetriebene Mode als Vorlage (lineare Interpolation auf das Sample-Raster, Ränder → 0)."""
+    """Rohe Eigenmode als Vorlage (``mode_source = "pca_raw"``, nur zur Prüfung): an denselben Daten bestimmt,
+    daher Auswahlverzerrung nach oben (Varianz um etwa den erwarteten Rauschanteil des Überlapps × λ₁ zu groß).
+
+    Datengetriebene Mode als Vorlage (lineare Interpolation auf das Sample-Raster, Ränder → 0)."""
     e1 = np.asarray(pca["mode"]); B = pca["bin_samples"]
     nb = len(e1)
     u = (np.arange(nb) - (nb - 1) / 2) * B

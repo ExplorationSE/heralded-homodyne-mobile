@@ -19,7 +19,7 @@ import numpy as np
 from .. import __version__
 from ..calib.calibrate import CalibParams, Calibration, calibrate, crosstalk_check
 from ..modes.extract import ModeSpec, adc_offset, extract_run, template_bank
-from ..modes.pca import pca_mode, pca_template
+from ..modes.pca import pca_fitted_template, pca_mode, pca_template
 from ..recon.stats import group_stats
 from .syncdata import ensure_sync, group_mask, mode_centres
 
@@ -31,7 +31,7 @@ class AnalysisParams:
     mode_shape: str = "double_exponential"
     gamma: float = 1 / 40e-9
     bandwidth_model: bool = True            # Analogbandbreite des Digitizers in der Vorlage berücksichtigen
-    mode_source: str = "parametric"         # oder "pca"
+    mode_source: str = "parametric"         # "pca": γ/Versatz aus PCA; "pca_raw": rohe Eigenmode (Prüfung)
     pca: bool = True
     norm: str = "pooled"
     clearance_dB: float | None = None
@@ -296,8 +296,10 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
         var_sample = _vacuum_sample_var(gV, ex["offset"])
         pca = pca_mode(gA, gV, ex["offset"], var_sample, spec)
         timing["pca"] = time.time() - t
-        if ap.mode_source == "pca":
-            spec = pca_template(pca, spec)
+        if ap.mode_source in ("pca", "pca_raw"):
+            spec = pca_fitted_template(pca, spec) if ap.mode_source == "pca" else pca_template(pca, spec)
+            if ap.mode_source == "pca_raw":
+                warnings.append("Mode aus roher PCA-Eigenmode: Varianz durch Auswahl an denselben Daten verzerrt")
             quads, ex = extract_session(session, sd, ap, spec)
             cal, drift_kv = calibrate(session, quads, ap.calib_params())
     xt = crosstalk_check(session, quads, cal, ap.calib_params())
