@@ -36,7 +36,7 @@ class StreamState:
 
 
 class StreamingSynchronizer:
-    def __init__(self, marker_period: float | None = None, n_lock: int = 200, window: int = 2000,
+    def __init__(self, marker_period: float | None = None, n_lock: int = 64, window: int = 2000,
                  tol_min: float = 2e-9, k_sigma: float = 6.0):
         self.P = marker_period
         self.n_lock, self.window = n_lock, window
@@ -169,7 +169,7 @@ class StreamingSynchronizer:
                     max_buffer=self.st.max_buffer, cmap=self.st.cmap.to_dict() if self.st.cmap else None)
 
 
-def stream_run(run, chunk_records: int = 4096) -> dict:
+def stream_run(run, chunk_records: int = 1024) -> dict:
     """Spielt einen Lauf chunkweise ein: Harp-Chunks aus der PTU-Datei, Digitizer anteilig in Zeitordnung."""
     n_ptu = max(int(run.ptu_tags.get("TTResult_NumberOfRecords", 0)), 1)
     s = StreamingSynchronizer()
