@@ -294,7 +294,28 @@ Nulltests). A-B-A max |z| > drift_z + 0,5 (Bonferroni über 6 Paare).
 
 ### 11.5 Prüfung mit 10-facher Datenmenge
 
-PLATZHALTER_10X
+Je 7 Sitzungen ohne Drift (Messung A/B, `null_a`, `null_b`), 7 mit η-Sprung −10 % und 6 mit η linear −5 %
+(`eta_lin5_a/_b`), jeweils mit 10-facher Datenmenge gegenüber dem Zeitraffer (`tools/drift_thresholds.py … 0.0027 9`,
+Hochrechnung Faktor 9 auf Echtzeit; `docs/studien/op6_driftschwellen_10x.json`):
+
+| Indikator | Fehlalarm (14) | η-Sprung −10 % | η lin −5 % | Hochrechnung Echtzeit |
+|---|---|---|---|---|
+| A-B-A-χ² p < 0,0027 | 0/14 | 5/7 | 0/6 | η-Sprung 100 % |
+| χ² A-Läufe p < 0,0027 | 0/14 | 5/7 | 0/6 | η-Sprung 100 %, η lin 20–46 % |
+| A-B-A max \|z\| > 3,51 | 0/14 | 4/7 | 0/6 | – |
+| AA-Var z, AA-KS | 0/14 | 3/7 | 0/6 | – |
+| K-V z (η lin) | 0/14 | 0/7 | 0/6 | η lin 2–87 % |
+| A-Hälften z (η lin) | 0/14 | 0/7 | 0/6 | η lin 26–29 % (mittleres z −0,80) |
+| beliebiger Indikator | **2/14** (kh_z_mean, BB-KS) | **5/7 (71 %)** | 0/6 | – |
+
+Ergebnis: Der η-Sprung −10 % wird bereits mit 10-facher Datenmenge in 71 % der Sitzungen erkannt (Zeitraffer 8 %),
+die Hochrechnung „≈ 100 % in Echtzeit" über χ² der A-Läufe / A-B-A-χ² ist bestätigt. Für η linear −5 % ist die
+Echtzeit-Hochrechnung aus dem Zeitraffer (96 % über A-Hälften) **zu optimistisch**: aus den 10-fachen Sitzungen folgen
+nur etwa 30 % über A-Hälften bzw. bis 87 % über K-V z (große Streuung zwischen den zwei Teilkampagnen, je 3 Sitzungen).
+Eine langsame η-Drift von 5 % je Sitzung ist damit in Echtzeit nur teilweise nachweisbar; sicher erkannt werden
+Drifts ab etwa 10 %. Fehlalarm je Sitzung 2/14 = 14 ± 9 % (Zeitraffer 3,0 %; bei 14 Sitzungen nicht signifikant
+verschieden, Einzelindikatoren je 0–1/14). Die Standardschwellen aus 11.4 bleiben unverändert; eine Prüfung in
+Echtzeit (90-fach, ca. 10 GB je Sitzung) steht aus.
 
 ### 11.6 Dunkellauf und η_el
 

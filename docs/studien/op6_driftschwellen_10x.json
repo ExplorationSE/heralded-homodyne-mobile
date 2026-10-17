@@ -1,0 +1,402 @@
+{
+ "alpha": 0.0027,
+ "time_factor": 9.0,
+ "n_null": 14,
+ "scenarios": {
+  "eta_step10": 7,
+  "eta_lin5_a": 3,
+  "eta_lin5_b": 3
+ },
+ "indicators": {
+  "kv_z": {
+   "sensitivity": {
+    "eta_step10": {
+     "mean_z": -0.9215792791922346,
+     "mean_z_err": 0.32516822887670366,
+     "detection_realtime": 0.40701156266111893
+    },
+    "eta_lin5_a": {
+     "mean_z": -0.3236193050454039,
+     "mean_z_err": 0.3919428577990651,
+     "detection_realtime": 0.021258892207069297
+    },
+    "eta_lin5_b": {
+     "mean_z": -1.3798897415931175,
+     "mean_z_err": 0.1529905773767909,
+     "detection_realtime": 0.8727927277345096
+    }
+   },
+   "rule": "|z| > 3.00",
+   "threshold": 2.9999769927034015,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.63024921013724,
+   "null_std": 0.64069887563702,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "kv_slope_z": {
+   "sensitivity": {
+    "eta_step10": {
+     "mean_z": -0.9141265734425985,
+     "mean_z_err": 0.3284194623646704,
+     "detection_realtime": 0.39835887217680727
+    },
+    "eta_lin5_a": {
+     "mean_z": -0.3107704978876692,
+     "mean_z_err": 0.3905470600140301,
+     "detection_realtime": 0.01937781465243484
+    },
+    "eta_lin5_b": {
+     "mean_z": -1.3724236513566104,
+     "mean_z_err": 0.1565908812449137,
+     "detection_realtime": 0.868065671708285
+    }
+   },
+   "rule": "|z| > 3.00",
+   "threshold": 2.9999769927034015,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.6219904153686523,
+   "null_std": 0.638747417255286,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "halves_z": {
+   "sensitivity": {
+    "eta_step10": {
+     "mean_z": -0.28229654400739207,
+     "mean_z_err": 0.4092347076475789,
+     "detection_realtime": 0.015715725729065568
+    },
+    "eta_lin5_a": {
+     "mean_z": -0.8201426652108155,
+     "mean_z_err": 0.05153675123191893,
+     "detection_realtime": 0.29475407283013655
+    },
+    "eta_lin5_b": {
+     "mean_z": -0.7850677916827372,
+     "mean_z_err": 0.513692574498502,
+     "detection_realtime": 0.25953699327956936
+    }
+   },
+   "rule": "|z| > 3.00",
+   "threshold": 2.9999769927034015,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.4655968649421411,
+   "null_std": 0.3435274973749637,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "kh_z_var": {
+   "sensitivity": {
+    "eta_step10": {
+     "mean_z": -0.5324172834691088,
+     "mean_z_err": 0.3265270783749433,
+     "detection_realtime": 0.08035154919067866
+    },
+    "eta_lin5_a": {
+     "mean_z": -0.5844119771292571,
+     "mean_z_err": 0.45863736107198083,
+     "detection_realtime": 0.10624722988563733
+    },
+    "eta_lin5_b": {
+     "mean_z": -1.1350941629848608,
+     "mean_z_err": 0.2558350456247123,
+     "detection_realtime": 0.6573735166133657
+    }
+   },
+   "rule": "|z| > 3.00",
+   "threshold": 2.9999769927034015,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.8326920707508005,
+   "null_std": 0.6504199555789472,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "kh_z_mean": {
+   "sensitivity": {
+    "eta_step10": {
+     "mean_z": -0.05607779297949719,
+     "mean_z_err": 0.5201278858837997,
+     "detection_realtime": 0.0030816500903031482
+    },
+    "eta_lin5_a": {
+     "mean_z": -0.134551216937173,
+     "mean_z_err": 0.7803877963834981,
+     "detection_realtime": 0.0050438503284638645
+    },
+    "eta_lin5_b": {
+     "mean_z": 0.8837672293686389,
+     "mean_z_err": 0.6488079837975328,
+     "detection_realtime": 0.3636665510558267
+    }
+   },
+   "rule": "|z| > 3.00",
+   "threshold": 2.9999769927034015,
+   "false_alarm": 0.07142857142857142,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.07142857142857142,
+   "null_mean": 1.1347721045089403,
+   "null_std": 0.805714272785545,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "AA_var_z": {
+   "sensitivity": {
+    "eta_step10": {
+     "mean_z": 2.764321983611043,
+     "mean_z_err": 0.655676482242309,
+     "detection_realtime": 0.9999999398334056
+    },
+    "eta_lin5_a": {
+     "mean_z": -0.8495122116823989,
+     "mean_z_err": 0.7443466502332863,
+     "detection_realtime": 0.3258361153568315
+    },
+    "eta_lin5_b": {
+     "mean_z": -0.4927411279153727,
+     "mean_z_err": 0.5428070483829323,
+     "detection_realtime": 0.06403917847669506
+    }
+   },
+   "rule": "|z| > 3.00",
+   "threshold": 2.9999769927034015,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.5894070068216853,
+   "null_std": 0.5969585543258279,
+   "detection": {
+    "eta_step10": 0.42857142857142855,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "BB_var_z": {
+   "sensitivity": {
+    "eta_step10": {
+     "mean_z": -0.6184718048009401,
+     "mean_z_err": 0.36937509300189164,
+     "detection_realtime": 0.12619600866284467
+    },
+    "eta_lin5_a": {
+     "mean_z": 0.059176193537299776,
+     "mean_z_err": 0.6135030539989683,
+     "detection_realtime": 0.003125663615120977
+    },
+    "eta_lin5_b": {
+     "mean_z": 0.1828546954286101,
+     "mean_z_err": 0.3340078896929223,
+     "detection_realtime": 0.007308516659952427
+    }
+   },
+   "rule": "|z| > 3.00",
+   "threshold": 2.9999769927034015,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.6785826282026372,
+   "null_std": 0.4541023726640078,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "aba_chi2_p": {
+   "sensitivity": {
+    "eta_step10": {
+     "lambda_": 28.299144326594217,
+     "lambda_err": 9.129350243749988,
+     "detection_realtime": 1.0
+    },
+    "eta_lin5_a": {
+     "lambda_": 0.8215499823462089,
+     "lambda_err": 2.689443267547152,
+     "detection_realtime": 0.14793747038639418
+    },
+    "eta_lin5_b": {
+     "lambda_": 0.0,
+     "lambda_err": 3.250413610595223,
+     "detection_realtime": 0.0027
+    }
+   },
+   "rule": "p < 0.0027",
+   "threshold": 0.0027,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.505973731723169,
+   "null_std": 0.3664161220200206,
+   "detection": {
+    "eta_step10": 0.7142857142857143,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "runs_A_chi2_p": {
+   "sensitivity": {
+    "eta_step10": {
+     "lambda_": 21.805125295135674,
+     "lambda_err": 5.661043281427549,
+     "detection_realtime": 1.0
+    },
+    "eta_lin5_a": {
+     "lambda_": 1.5712866754589454,
+     "lambda_err": 1.8824420787836467,
+     "detection_realtime": 0.45810221999134665
+    },
+    "eta_lin5_b": {
+     "lambda_": 0.9707405031777316,
+     "lambda_err": 3.5409514309384726,
+     "detection_realtime": 0.20168576752502476
+    }
+   },
+   "rule": "p < 0.0027",
+   "threshold": 0.0027,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.5721834748874267,
+   "null_std": 0.3022845229821372,
+   "detection": {
+    "eta_step10": 0.7142857142857143,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "runs_B_chi2_p": {
+   "sensitivity": {
+    "eta_step10": {
+     "lambda_": 2.3870305988685967,
+     "lambda_err": 1.365155210931732,
+     "detection_realtime": 0.7943830974536729
+    },
+    "eta_lin5_a": {
+     "lambda_": 0.0,
+     "lambda_err": 1.1846591975772827,
+     "detection_realtime": 0.0027
+    },
+    "eta_lin5_b": {
+     "lambda_": 0.0,
+     "lambda_err": 1.5247831384354162,
+     "detection_realtime": 0.0027
+    }
+   },
+   "rule": "p < 0.0027",
+   "threshold": 0.0027,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.5113628667885017,
+   "null_std": 0.37689012736911476,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "AA_ks_p": {
+   "sensitivity": {},
+   "rule": "p < 0.0027",
+   "threshold": 0.0027,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 0.627112193146847,
+   "null_std": 0.2862212794471505,
+   "detection": {
+    "eta_step10": 0.42857142857142855,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "BB_ks_p": {
+   "sensitivity": {},
+   "rule": "p < 0.0027",
+   "threshold": 0.0027,
+   "false_alarm": 0.07142857142857142,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.07142857142857142,
+   "null_mean": 0.5412191912284928,
+   "null_std": 0.24475496197388893,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "aba_max_z": {
+   "sensitivity": {},
+   "rule": "max |z| > 3.51",
+   "threshold": 3.5088787519844318,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 1.5658146618449766,
+   "null_std": 0.6450296050233828,
+   "detection": {
+    "eta_step10": 0.5714285714285714,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  },
+  "lo_dev": {
+   "sensitivity": {},
+   "rule": "|ΔP/P| > 0.20%",
+   "threshold": 0.002,
+   "false_alarm": 0.0,
+   "false_alarm_err": 0.01386854096765152,
+   "false_alarm_old": 0.0,
+   "null_mean": 2.438047719199865e-05,
+   "null_std": 5.770880366995925e-06,
+   "detection": {
+    "eta_step10": 0.0,
+    "eta_lin5_a": 0.0,
+    "eta_lin5_b": 0.0
+   }
+  }
+ },
+ "session_false_alarm": 0.14285714285714285,
+ "session_detection": {
+  "eta_step10": 0.7142857142857143,
+  "eta_lin5_a": 0.0,
+  "eta_lin5_b": 0.0
+ },
+ "realtime_best": {
+  "eta_step10": {
+   "indicator": "aba_chi2_p",
+   "detection": 1.0
+  },
+  "eta_lin5_a": {
+   "indicator": "runs_A_chi2_p",
+   "detection": 0.45810221999134665
+  },
+  "eta_lin5_b": {
+   "indicator": "kv_z",
+   "detection": 0.8727927277345096
+  }
+ }
+}
