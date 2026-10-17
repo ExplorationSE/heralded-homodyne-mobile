@@ -102,6 +102,17 @@ def collect_q2(read_block, idx: np.ndarray, pos0: np.ndarray, fs: float, grid: n
     return out
 
 
+def col_mean(Q: np.ndarray) -> np.ndarray:
+    """Spaltenmittel ohne NaN; Spalten ganz ohne Werte (Rasterpunkt außerhalb aller Records) → NaN, ohne
+    ``RuntimeWarning: Mean of empty slice``."""
+    ok = np.isfinite(Q)
+    n = ok.sum(axis=0)
+    s = np.where(ok, Q, 0.0).sum(axis=0)
+    out = np.full(Q.shape[1] if Q.ndim > 1 else 0, np.nan)
+    np.divide(s, n, out=out, where=n > 0)
+    return out
+
+
 def _fit(grid, V, gamma, shape, p0=None):
     model = lambda d, c, A, d0: c + A * overlap(d - d0, gamma, shape) ** 2
     ok = np.isfinite(V)
@@ -112,14 +123,14 @@ def _fit(grid, V, gamma, shape, p0=None):
 
 
 def scan(Q2: np.ndarray, grid: np.ndarray, gamma: float, shape: str, n_boot: int = 100, seed: int = 1) -> dict:
-    V = np.nanmean(Q2, axis=0)
+    V = col_mean(Q2)
     popt, perr, _ = _fit(grid, V, gamma, shape)
     rng = np.random.default_rng(seed)
     bs = []
     for _ in range(n_boot):
         ii = rng.integers(0, len(Q2), len(Q2))
         try:
-            p, _, _ = _fit(grid, np.nanmean(Q2[ii], axis=0), gamma, shape, p0=popt)
+            p, _, _ = _fit(grid, col_mean(Q2[ii]), gamma, shape, p0=popt)
             bs.append(p)
         except (RuntimeError, ValueError):
             pass
@@ -139,7 +150,9 @@ def calibrate(sources: list, fs: float, kern: np.ndarray, norm: VacuumNorm, gamm
         return np.concatenate([collect_q2(rb, ix, p0, fs, grid, kern, norm) for rb, ix, p0 in sources if len(ix)])
     g1 = np.arange(coarse[0], coarse[1] + coarse[2] / 2, coarse[2])
     Q1 = q2(g1)
-    V1 = np.nanmean(Q1, axis=0)
+    V1 = col_mean(Q1)
+    if not np.isfinite(V1).any():
+        raise ValueError("Δ-Grobraster liegt ganz außerhalb der Records")
     d_coarse = float(g1[np.nanargmax(V1)])
     g2 = np.arange(d_coarse - fine_half, d_coarse + fine_half + fine_step / 2, fine_step)
     res = scan(q2(g2), g2, gamma, shape, n_boot=n_boot, seed=seed)
