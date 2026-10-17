@@ -109,7 +109,8 @@ function render() {
   $("modebadges").innerHTML = [["harp", "HydraHarp"], ["digitizer", "ADQ32"]].map(([k, n]) =>
     `<span class="mbadge ${MC[modes[k]] || ""}" title="${esc(n)}: ${esc(modes[k])}">${esc(n)} <b>${esc(ML[modes[k]] || modes[k])}</b></span>`).join("");
   const sb = $("simbadge"); const sm = S.mode || "sim";
-  sb.textContent = (S.mode_labels && S.mode_labels.session) || (S.simulated ? "SIMULIERT" : "LIVE");
+  sb.textContent = ((S.mode_labels && S.mode_labels.session) || (S.simulated ? "SIMULIERT" : "LIVE"))
+    + (S.sim_engine === "stream" ? " · DATENSTROM" : "");
   sb.className = "badge " + (sm === "live" ? "live" : sm === "mixed" ? "mixed" : "warn");
   const mb = $("modebanner");
   if (S.live_any || S.fallback) {
@@ -136,6 +137,9 @@ function render() {
   if (document.activeElement !== plan) plan.value = S.display.plan;
   if (document.activeElement !== $("speed")) $("speed").value = S.display.speed;
   $("autoana").checked = !!S.display.auto_analyze;
+  $("simeng_l").classList.toggle("hidden", !S.sim_engine);
+  if (S.sim_engine && document.activeElement !== $("simeng")) $("simeng").value = S.sim_engine;
+  $("simeng").disabled = !mine || running || paused;
   $("sessinfo").textContent = (S.session_id ? `Sitzung ${S.session_id}` : "") + (S.msg ? " · " + S.msg : "") + (S.device_error ? " · " + S.device_error : "");
   const L = S.live || {}, runs = L.runs || [];
   $("planbar").innerHTML = (S.plan || []).map((r, i) => {
@@ -189,7 +193,7 @@ function renderDevices() {
       const dis = !mine || (p.local_only && !local) ? "disabled" : "";
       return `<div class="param"><div class="nm">${esc(p.name)} ${tags}<small>${esc(p.doc)}${p.unit ? " [" + esc(p.unit) + "]" : ""}</small></div>${inp.replace("<select", `<select ${dis}`).replace("<input", `<input ${dis}`)}<button class="small" data-set="${k}" data-p="${esc(p.name)}" ${dis}>setzen</button></div>`;
     }).join("");
-    return `<div class="card"><div class="row between"><h2>${esc(d.model)}</h2><span class="pill mode-${esc(d.mode)}">${esc(({ live: "LIVE", sim: "SIMULIERT", replay: "WIEDERGABE" })[d.mode] || d.mode)}${d.open ? "" : " · nicht geöffnet"}</span></div>${rows}</div>`;
+    return `<div class="card"><div class="row between"><h2>${esc(d.model)}</h2><span class="pill mode-${esc(d.mode)}">${esc(({ live: "LIVE", sim: d.sim_engine === "stream" ? "SIMULIERT · DATENSTROM" : "SIMULIERT", replay: "WIEDERGABE" })[d.mode] || d.mode)}${d.open ? "" : " · nicht geöffnet"}</span></div>${rows}</div>`;
   }).join("");
   document.querySelectorAll("[data-set]").forEach((b) => b.onclick = () => {
     const dev = b.dataset.set, name = b.dataset.p;
@@ -340,6 +344,7 @@ $("start").onclick = () => startSession();
 $("cont").onclick = () => send("continue_run");
 $("stop").onclick = () => { if (confirm("Sitzung stoppen? Abgeschlossene Läufe werden gespeichert.")) send("stop_session"); };
 $("plan").onchange = () => send("set_display", { plan: $("plan").value });
+$("simeng").onchange = () => send("set_display", { sim_engine: $("simeng").value });
 $("autoana").onchange = () => send("set_display", { auto_analyze: $("autoana").checked });
 $("clrwarn").onclick = () => send("clear_warnings");
 $("refresh").onclick = loadSessions;

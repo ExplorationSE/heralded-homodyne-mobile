@@ -20,7 +20,7 @@ from pathlib import Path
 from .. import __version__
 from .control import (ALLOWED_CMDS, CommandError, CommandLog, ControlLock, ParamPolicy, safe_session_dir)
 from ..io import modes as M
-from .devices import DeviceError, ReplayBackend, RunSpec, SimBackend, make_devices
+from .devices import SIM_ENGINES, DeviceError, ReplayBackend, RunSpec, SimBackend, make_devices, make_sim_backend
 from .live import KIND_LABEL, LiveParams, LivePreview
 from ..io.recorder import SessionRecorder
 
@@ -56,6 +56,7 @@ class ServerConfig:
     adq_json_override: str = ""           # JSON-Datei mit zusätzlichen ADQ-Parametersätzen
     adq_drain_ms: int = 200
     sim_config: str = "config/standard.yaml"
+    sim_engine: str = "batch"             # batch (Sitzung im Speicher) | stream (Zeitscheiben, beschränkter Speicher)
     replay_dir: str = ""
     chunk_s: float = 0.1
     speed: float = 1.0                    # Echtzeitfaktor (Simulation/Wiedergabe)
@@ -195,7 +196,7 @@ class MeasurementService:
                 self.modes, base_config=self._abs(cfg.sim_config) if cfg.sim_config else None,
                 replay_dir=self._abs(cfg.replay_dir) if cfg.replay_dir else None, chunk_s=cfg.chunk_s, speed=cfg.speed,
                 realtime=cfg.realtime, time_scale=cfg.time_scale or None,
-                live_cfg=self._live_cfg() if "live" in self.modes.values() else None)
+                live_cfg=self._live_cfg() if "live" in self.modes.values() else None, sim_engine=cfg.sim_engine)
             self.device_errors = {}
             for d in (self.harp, self.dig):
                 try:
@@ -219,6 +220,30 @@ class MeasurementService:
                 continue
             break
         self.device_error = " ".join(f"[{k}] {v}" for k, v in self.device_errors.items())
+
+    @property
+    def sim_engine(self) -> str | None:
+        """Simulator-Art (batch | stream), wenn ein Gerät simuliert wird, sonst None."""
+        return getattr(self.backend, "engine", None) if "sim" in self.modes.values() else None
+
+    def _set_sim_engine(self, engine: str) -> None:
+        if engine not in SIM_ENGINES:
+            raise CommandError(f"sim_engine: {' | '.join(SIM_ENGINES)}")
+        if self._thread and self._thread.is_alive():
+            raise CommandError("Simulator-Art nur ohne laufende Sitzung umschaltbar")
+        if "sim" not in self.modes.values():
+            raise CommandError("kein simuliertes Gerät (Betriebsart live/replay)")
+        if engine == self.sim_engine:
+            return
+        old, c = self.backend, self.cfg
+        be = make_sim_backend(engine, self._abs(c.sim_config) if c.sim_config else None, c.chunk_s,
+                              old.speed, old.realtime, c.time_scale or None)
+        be.kinds = set(old.kinds)
+        self.backend = be
+        for d in (self.harp, self.dig):
+            if getattr(d, "mode", "") == "sim" and hasattr(d, "backend"):
+                d.backend = be
+        self.cfg.sim_engine = engine
 
     @property
     def acquisition_mode(self) -> str:
@@ -256,6 +281,7 @@ class MeasurementService:
         return dict(type="status", version=__version__, mode=self.acquisition_mode, modes=dict(self.modes),
                     mode_labels={k: M.LABEL[v] for k, v in self.modes.items()} | {"session": M.LABEL[self.acquisition_mode]},
                     simulated=self.simulated, live_any=self.live_any, fallback=self.fallback_msg,
+                    sim_engine=self.sim_engine, sim_engines=list(SIM_ENGINES),
                     waiting_continue=self.waiting_continue, pause_between_runs=self.cfg.live_pause_between_runs,
                     state=self.state, state_text=STATES.get(self.state, self.state), msg=self.msg,
                     session_id=self.session_id, run_index=self.run_idx,
@@ -359,6 +385,9 @@ class MeasurementService:
                 out[k] = v
             elif k == "auto_analyze":
                 out[k] = bool(v)
+            elif k == "sim_engine":
+                self._set_sim_engine(str(v))
+                out[k] = str(v)
             elif k in allowed:
                 x = float(v)
                 lo, hi = allowed[k]
@@ -454,9 +483,12 @@ class MeasurementService:
             with self._mtx:
                 self.live.fs = fs
             self.plan = runs
-            if acq not in ("sim", "replay"):                   # live/gemischt: Datenstrom-Schreiber
+            streamed = bool(getattr(self.backend, "records_stream", False))
+            if acq not in ("sim", "replay") or streamed:       # live/gemischt/Simulator im Datenstrom: Schreiber
                 hw = {k: d.hw for k, d in (("harp", self.harp), ("digitizer", self.dig)) if modes[k] == "live"}
                 extra = dict(source_session=meta.get("source_session")) if meta.get("source_session") else {}
+                if streamed:
+                    extra |= self.backend.extra_manifest()
                 rec = SessionRecorder(out, modes, meta, dev_attrs, hw, extra)
             self.state, self.msg = "messung", ""
             for i, run in enumerate(runs):
@@ -519,10 +551,10 @@ class MeasurementService:
                     import shutil
                     shutil.rmtree(out, ignore_errors=True)
             if n_done:
-                if acq in ("sim", "replay"):
+                if acq in ("sim", "replay") or streamed:
                     self.backend.write_files(out, n_done)
                 meta_s = dict(format="hhd-server-session", software=f"hhd {__version__}", mode=acq,
-                              device_modes=modes, acquisition_mode=acq,
+                              device_modes=modes, acquisition_mode=acq, sim_engine=self.sim_engine,
                               simulated=self.simulated, plan=plan, note=note, runs_done=n_done, runs_planned=len(runs),
                               stopped=self._stop.is_set(), devices=dict(harp=self.harp.info()["params"],
                                                                         digitizer=self.dig.info()["params"]),

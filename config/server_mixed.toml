@@ -10,6 +10,7 @@ log_dir = "logs"
 harp_mode = "live"
 digitizer_mode = "sim"
 sim_config = "config/standard.yaml"
+sim_engine = "batch"             # batch: Sitzung im Speicher; stream: Zeitscheiben (lange Sitzungen, beschränkter Speicher)
 
 [live]
 live_fallback = "refuse"

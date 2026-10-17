@@ -213,74 +213,113 @@ class StreamingSimulator:
                 raise ValueError(f"{b.id}: Phasenmodus {self.cfg.phase_for(b).mode} im Datenstrom-Simulator nicht unterstützt")
         self.n_records = 0
 
-    def run(self, out_dir: str | Path) -> dict:
+    # ------------------------------------------------------------------ schrittweise Schnittstelle
+    def setup(self) -> list[_Run]:
+        """Sitzung vorbereiten (Uhr, Drift, Geräte, Seeds); liefert die Läufe. Danach ``iter_run(i)`` für
+        i = 0, 1, … in dieser Reihenfolge (Uhr- und Drift-Irrfahrt laufen nur vorwärts)."""
         cfg = self.cfg
-        warnings = cfg.validate()
+        self.warnings = cfg.validate()
         se = cfg.session
         root = np.random.SeedSequence(se.seed)
         ss_clock, ss_blocks = root.spawn(2)
-        clk = StreamClock(cfg.clock, np.random.default_rng(ss_clock))
-        path = StreamDriftPath(cfg.drift, cfg.lo_monitor, se.start_s, np.random.default_rng(root.spawn(1)[0]))
-        path_used = path if path.stochastic else None
-        adq, harp = ADQ32(cfg, clk), HydraHarp500(cfg)
-        dev = adq.device_attrs()
-        cal = cfg.calibration_id
-        meta = dict(session_id=se.id, campaign_id=se.campaign, calibration_id=cal)
-        rec = SessionRecorder(Path(out_dir), M.SIM, meta, dev,
-                              extra_manifest=dict(seed=se.seed, config=cfg.to_dict(),
-                                                  streaming=dict(slice_s=self.slice_s, generator="hhd.sim.streaming")))
-        runs_truth = []
+        self._clk = StreamClock(cfg.clock, np.random.default_rng(ss_clock))
+        self._path = StreamDriftPath(cfg.drift, cfg.lo_monitor, se.start_s, np.random.default_rng(root.spawn(1)[0]))
+        self._path_used = self._path if self._path.stochastic else None
+        self._adq, self._harp = ADQ32(cfg, self._clk), HydraHarp500(cfg)
+        self.device_attrs = self._adq.device_attrs()
+        self.calibration_id = cfg.calibration_id
+        self.meta = dict(session_id=se.id, campaign_id=se.campaign, calibration_id=self.calibration_id)
+        self.extra_manifest = dict(seed=se.seed, config=cfg.to_dict(),
+                                   streaming=dict(slice_s=self.slice_s, generator="hhd.sim.streaming"))
+        self.runs, self._ss, self._t0 = [], [], []
         t0 = se.start_s
         for i, (b, ssb, rid) in enumerate(zip(cfg.blocks, ss_blocks.spawn(len(cfg.blocks)), cfg.run_ids())):
-            attrs = plan_block_attrs(cfg, b, i, t0, cal, rid)
-            run = _Run(b.id, b.kind, float(b.duration_s), i, rid, dict(attrs=attrs))
-            rec.begin_run(run)
-            n_sl = max(1, int(round(b.duration_s / self.slice_s)))
-            enc = _T2Shift()
-            for j, ss in enumerate(ssb.spawn(n_sl)):
-                dur = min(self.slice_s, b.duration_s - j * self.slice_s)
-                if dur <= 0:
-                    break
-                bj = copy.copy(b)
-                bj.duration_s = dur
-                ts = t0 + j * self.slice_s
-                br = simulate_block(cfg, bj, i, ts, clk, adq, harp, ss, cal, rid, drift_path=path_used)
-                dg = br.digitizer
-                rec.feed(_H(enc.shift(br.harp_records, int(round(j * self.slice_s * 1e12)))),
-                         _D(dg.data, dict(timestamp=dg.timestamp, record_start=dg.record_start,
-                                          trigger_source=dg.trigger_source, markers=dg.marker_ts, data_b=dg.data_b,
-                                          marker_b=None)))
-                self.n_records += len(dg.timestamp)
-                if path_used is not None:
-                    path.sample(ts + dur / 2)
-                if self.on_slice is not None:
-                    self.on_slice(dict(block_id=b.id, kind=b.kind, index=i, slice=j, t_session=ts - se.start_s),
-                                  dg, ts - se.start_s)
-                del br, dg
-            rec.end_run(True)
-            t_mid = t0 + b.duration_s / 2
-            runs_truth.append(dict(id=b.id, run_id=rid, kind=b.kind, t_mid_s=t_mid - se.start_s,
-                                   lo_scale=float(lo_scale_fn(cfg, b, path_used)(t_mid)),
-                                   eta_state=eta_of_run(cfg, b, t_mid, path_used)))
+            attrs = plan_block_attrs(cfg, b, i, t0, self.calibration_id, rid)
+            self.runs.append(_Run(b.id, b.kind, float(b.duration_s), i, rid, dict(attrs=attrs)))
+            self._ss.append(ssb)
+            self._t0.append(t0)
             t0 += b.duration_s + se.gap_s
-        man = rec.close()
+        self.runs_truth = []
+        self._next_run = 0
+        return self.runs
+
+    def iter_run(self, i: int):
+        """Scheiben des Laufs ``i``: je Scheibe ``(info, harp_records, dg)`` mit ``harp_records`` als T2-Strom des
+        Laufs (Zeit ab Laufbeginn, Überläufe fortlaufend) und ``dg`` den Digitizer-Records
+        (``hhd.sim.digitizer.DigitizerBlock``). Die Wahrheit des Laufs wird erst nach der letzten Scheibe
+        festgehalten (abgebrochene Läufe zählen nicht)."""
+        if i != self._next_run:
+            raise RuntimeError(f"Läufe nur der Reihe nach (erwartet {self._next_run}, nicht {i})")
+        self._next_run += 1
+        cfg, se = self.cfg, self.cfg.session
+        b, ssb, t0 = cfg.blocks[i], self._ss[i], self._t0[i]
+        rid = self.runs[i].run_id
+        n_sl = max(1, int(round(b.duration_s / self.slice_s)))
+        enc = _T2Shift()
+        for j, ss in enumerate(ssb.spawn(n_sl)):
+            dur = min(self.slice_s, b.duration_s - j * self.slice_s)
+            if dur <= 0:
+                break
+            bj = copy.copy(b)
+            bj.duration_s = dur
+            ts = t0 + j * self.slice_s
+            br = simulate_block(cfg, bj, i, ts, self._clk, self._adq, self._harp, ss, self.calibration_id, rid,
+                                drift_path=self._path_used)
+            dg = br.digitizer
+            hrec = enc.shift(br.harp_records, int(round(j * self.slice_s * 1e12)))
+            self.n_records += len(dg.timestamp)
+            if self._path_used is not None:
+                self._path.sample(ts + dur / 2)
+            info = dict(block_id=b.id, kind=b.kind, index=i, slice=j, t_session=ts - se.start_s,
+                        t_run_end=j * self.slice_s + dur, last=j == n_sl - 1 or (j + 1) * self.slice_s >= b.duration_s)
+            yield info, hrec, dg
+            del br, dg
+        t_mid = t0 + b.duration_s / 2
+        self.runs_truth.append(dict(id=b.id, run_id=rid, kind=b.kind, t_mid_s=t_mid - se.start_s,
+                                    lo_scale=float(lo_scale_fn(cfg, b, self._path_used)(t_mid)),
+                                    eta_state=eta_of_run(cfg, b, t_mid, self._path_used)))
+
+    def write_truth(self, out_dir: str | Path, man: dict | None = None, run_ids: set | None = None) -> dict:
+        """``truth.h5`` (dezimiert, keine Ereignisse) schreiben und ``session.json`` ergänzen."""
+        cfg = self.cfg
         out = Path(out_dir)
-        with h5py.File(out / "truth.h5", "w") as f:              # dezimierte Wahrheit (keine Ereignisse)
+        if man is None:
+            man = json.loads((out / "session.json").read_text(encoding="utf-8"))
+        rt = [r for r in self.runs_truth if run_ids is None or r["id"] in run_ids]
+        with h5py.File(out / "truth.h5", "w") as f:
             f.attrs.update(format=S.FORMAT_TRUTH, schema_version=S.SCHEMA_VERSION, software=f"hhd {__version__}",
-                           config_json=cfg.to_json(), streaming=True, warnings_json=json.dumps(warnings))
-            if path_used is not None:
+                           config_json=cfg.to_json(), streaming=True, warnings_json=json.dumps(self.warnings))
+            if self._path_used is not None:
                 g = f.create_group("drift")
-                for k, v in path.truth().items():
+                for k, v in self._path.truth().items():
                     g.create_dataset(k, data=v)
-            for r in runs_truth:
+            for r in rt:
                 g = f.create_group(f"blocks/{r['id']}")
                 g.attrs.update(run_id=r["run_id"], kind=r["kind"], t_mid_s=r["t_mid_s"], lo_scale=r["lo_scale"],
                                eta_state=r["eta_state"])
         from .engine import _sha256
-        man["files"]["truth.h5"] = dict(role="truth", sha256=_sha256(out / "truth.h5"))
-        man["truth"] = runs_truth
+        man.setdefault("files", {})["truth.h5"] = dict(role="truth", sha256=_sha256(out / "truth.h5"))
+        man["truth"] = rt
+        for k, v in self.extra_manifest.items():
+            man.setdefault(k, v)
         (out / "session.json").write_text(json.dumps(man, indent=1, ensure_ascii=False, default=float), encoding="utf-8")
         return man
+
+    def run(self, out_dir: str | Path) -> dict:
+        runs = self.setup()
+        rec = SessionRecorder(Path(out_dir), M.SIM, self.meta, self.device_attrs, extra_manifest=self.extra_manifest)
+        for i, run in enumerate(runs):
+            rec.begin_run(run)
+            for info, hrec, dg in self.iter_run(i):
+                rec.feed(_H(hrec), _D(dg.data, dict(timestamp=dg.timestamp, record_start=dg.record_start,
+                                                    trigger_source=dg.trigger_source, markers=dg.marker_ts,
+                                                    data_b=dg.data_b, marker_b=None)))
+                if self.on_slice is not None:
+                    self.on_slice({k: info[k] for k in ("block_id", "kind", "index", "slice", "t_session")}, dg,
+                                  info["t_session"])
+            rec.end_run(True)
+        man = rec.close()
+        return self.write_truth(out_dir, man)
 
 
 class _T2Shift:

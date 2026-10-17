@@ -31,6 +31,7 @@
     <div class="row between"><h2>Sitzung</h2><span id="state" class="pill">–</span></div>
     <div class="row wrap">
       <label>Laufplan <select id="plan"></select></label>
+      <label id="simeng_l" class="hidden" title="Simulator: Sitzung im Speicher oder in Zeitscheiben (beschränkter Speicher, lange Sitzungen)">Simulator <select id="simeng" data-ctl><option value="batch">Datei (im Speicher)</option><option value="stream">Datenstrom</option></select></label>
       <label>Tempo <input id="speed" type="number" min="0.05" max="50" step="0.5" value="1"></label>
       <label class="chk"><input id="autoana" type="checkbox" checked> automatisch auswerten</label>
     </div>

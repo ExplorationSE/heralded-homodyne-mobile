@@ -226,6 +226,9 @@ class SimBackend:
     Simulation; jedes Gerät liest seinen Anteil aus einer eigenen Warteschlange.
     """
 
+    engine = "batch"
+    records_stream = False
+
     def __init__(self, base_config: str | Path | None = None, chunk_s: float = 0.1, speed: float = 1.0,
                  realtime: bool = True, time_scale: float | None = None):
         self.base_config = Path(base_config) if base_config else None
@@ -325,6 +328,94 @@ class SimBackend:
         return write_run(res, out_dir)
 
 
+class StreamSimBackend(SimBackend):
+    """Simulator im Datenstrom (``hhd.sim.streaming.StreamingSimulator``): jeder Lauf wird in Zeitscheiben von
+    ``chunk_s`` erzeugt und sofort ausgegeben; der Server schreibt die Dateien wie im Live-Betrieb mit
+    ``SessionRecorder``. Der Speicher hängt nicht von Lauf- oder Sitzungsdauer ab (``sim_engine = "stream"``).
+
+    Unterschiede zum Datei-Simulator (``SimBackend``): Laufmarken und Phasenreferenz-Marker fehlen, Records an
+    Scheibengrenzen entfallen, ``truth.h5`` dezimiert (``docs/SIMULATOR.md`` Abschnitt 7)."""
+
+    engine = "stream"
+    records_stream = True                  # Dateien schreibt der Server (SessionRecorder), nicht write_files
+
+    def prepare(self, cfg) -> list[RunSpec]:
+        from ..sim.streaming import StreamingSimulator
+        self.cfg = cfg
+        self.sim = StreamingSimulator(cfg, slice_s=self._slice_s(cfg))
+        runs = self.sim.setup()
+        self._attrs = self.sim.device_attrs
+        return [RunSpec(r.block_id, r.kind, r.duration_s, r.index, r.run_id, dict(r.extra)) for r in runs]
+
+    def _slice_s(self, cfg) -> float:
+        """Kleinste Scheibe ≥ ``chunk_s``, mit der Marker- und Periodenraster ganzzahlig aufgehen."""
+        rates = [cfg.markers.f_marker] + [b.periodic_rate for b in cfg.blocks
+                                          if b.kind in ("vacuum", "electronic", "free_running")]
+        for k in range(1, 1001):
+            sl = round(k * 0.001, 6)
+            if sl + 1e-12 >= self.chunk_s and all(abs(r * sl - round(r * sl)) < 1e-9 for r in rates):
+                return sl
+        raise DeviceError(f"keine passende Scheibenlänge für chunk_s = {self.chunk_s}")
+
+    @property
+    def device_attrs(self) -> dict:
+        return dict(self._attrs) if getattr(self, "sim", None) else {}
+
+    def session_meta(self) -> dict:
+        return dict(self.sim.meta, seed=self.cfg.session.seed)
+
+    def extra_manifest(self) -> dict:
+        return dict(self.sim.extra_manifest)
+
+    def start_run(self, idx: int) -> None:
+        import time
+        from ..io.ptu import T2Decoder
+        run = self.sim.runs[idx]
+        self._it = self.sim.iter_run(idx)
+        self._q = {"harp": [], "digitizer": []}
+        self._decoder = T2Decoder()
+        a = run.extra["attrs"]
+        self._roles = ({int(k): v for k, v in json.loads(a["harp_channel_roles"]).items()},
+                       {int(k): v for k, v in json.loads(a["harp_marker_roles"]).items()})
+        self._tu = self._attrs["time_unit_s"]
+        self._t_wall0 = time.monotonic()
+
+    def _pull(self) -> bool:
+        import time
+        from ..io.session import split_events
+        try:
+            info, hrec, dg = next(self._it)
+        except (StopIteration, TypeError):
+            return False
+        t1, last = info["t_run_end"], info["last"]
+        if self.realtime:
+            wait = self._t_wall0 + t1 / self.speed - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+        if "harp" in self.kinds:
+            hs = split_events(self._decoder.decode(hrec), *self._roles)
+            her, mk = hs.role_s("herald"), hs.role_s("sync_marker")
+            self._q["harp"].append(HarpData(t1, her, mk, len(her) + len(mk), last, records=hrec))
+        if "digitizer" in self.kinds:
+            tu = self._tu
+            ts, rs = dg.timestamp.astype(np.int64), dg.record_start.astype(np.int64)
+            raw = dict(timestamp=dg.timestamp, record_start=dg.record_start, trigger_source=dg.trigger_source,
+                       markers=dg.marker_ts, data_b=dg.data_b, marker_b=None)
+            self._rn = getattr(self, "_rn", 0) if info["slice"] else 0
+            rn = np.arange(self._rn, self._rn + len(ts), dtype=np.uint32)
+            self._rn += len(ts)
+            self._q["digitizer"].append(DigData(dg.data, dg.data_b, ts.astype(float) * tu, (ts + rs).astype(float) * tu,
+                                                np.sort(np.asarray(dg.marker_ts, np.int64)).astype(float) * tu, rn,
+                                                last, raw=raw))
+        return True
+
+    def write_files(self, out_dir: Path, n_done: int | None = None) -> dict:
+        """Nach ``SessionRecorder.close``: ``truth.h5`` der fertigen Läufe und Manifest-Ergänzungen."""
+        done = {r.block_id for r in self.sim.runs[: n_done if n_done is not None else len(self.sim.runs)]}
+        man = self.sim.write_truth(out_dir, run_ids=done)
+        return dict(man.get("files", {}))
+
+
 def short_plan(blocks: list) -> list:
     """Kurzer Laufplan aus dem vollen: erster K-V, Dunkellauf, K-H, A, B, A, letzter K-V (Reihenfolge bleibt)."""
     want = {"vacuum": 1, "electronic": 1, "herald_blocked": 1, "heralded": 2, "free_running": 1, "random": 1}
@@ -345,6 +436,15 @@ def short_plan(blocks: list) -> list:
 
 class _SimDevice(Device):
     mode = "sim"
+
+    def info(self) -> dict:
+        out = super().info()
+        eng = getattr(self.backend, "engine", None)
+        if self.mode == "sim" and eng:
+            out["sim_engine"] = eng
+            if eng == "stream":
+                out["model"] = self.model.replace("(simuliert)", "(simuliert, Datenstrom)")
+        return out
 
     def __init__(self, backend: SimBackend):
         super().__init__()
@@ -546,8 +646,21 @@ class ReplayDigitizer(_SimDevice):
     PARAMS = DIG_PARAMS
 
 
+def make_sim_backend(engine: str, base_config=None, chunk_s: float = 0.1, speed: float = 1.0, realtime: bool = True,
+                     time_scale: float | None = None) -> SimBackend:
+    """``engine``: ``batch`` (ganze Sitzung im Speicher, ``hhd.sim.engine``) oder ``stream`` (Zeitscheiben,
+    beschränkter Speicher, ``hhd.sim.streaming``)."""
+    if engine not in SIM_ENGINES:
+        raise DeviceError(f"sim_engine: {' | '.join(SIM_ENGINES)} (nicht {engine!r})")
+    cls = StreamSimBackend if engine == "stream" else SimBackend
+    return cls(base_config, chunk_s, speed, realtime, time_scale)
+
+
+SIM_ENGINES = ("batch", "stream")
+
+
 def make_devices(modes, base_config=None, replay_dir=None, chunk_s: float = 0.1, speed: float = 1.0,
-                 realtime: bool = True, time_scale: float | None = None, live_cfg=None):
+                 realtime: bool = True, time_scale: float | None = None, live_cfg=None, sim_engine: str = "batch"):
     """(backend, harp, digitizer) für ``modes`` = {"harp": m, "digitizer": m} mit m ∈ {live, sim, replay}
     (eine Zeichenkette gilt für beide Geräte).
 
@@ -563,7 +676,7 @@ def make_devices(modes, base_config=None, replay_dir=None, chunk_s: float = 0.1,
         raise DeviceError("sim und replay lassen sich nicht mischen (getrennte Zeitbasis); live mit sim oder replay ist möglich")
     be = None
     if "sim" in (hm, dm):
-        be = SimBackend(base_config, chunk_s, speed, realtime, time_scale)
+        be = make_sim_backend(sim_engine, base_config, chunk_s, speed, realtime, time_scale)
     elif "replay" in (hm, dm):
         if not replay_dir:
             raise DeviceError("replay: Verzeichnis der Sitzung fehlt (devices.replay_dir)")
