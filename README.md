@@ -6,11 +6,12 @@ von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasenge
 Phase θ als Option
 (ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExSE Harp GX Mobil.
 
-**Stand 0.7.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
+**Stand 0.8.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
 (`hhd.io.session`), **Synchronisation/Zuordnung** (`hhd.sync`; `docs/SYNC.md`) sowie die **Auswertung**:
 Normierung/Kalibrierung, Modenextraktion (parametrisch und PCA), phasengemittelte Rekonstruktion mit Bootstrap
-und Vergleich A/B (`hhd.calib`, `hhd.modes`, `hhd.recon`, `hhd.analysis`; `docs/ANALYSE.md`). Server und App
-folgen (siehe Gesamtplan v1.7).
+und Vergleich A/B (`hhd.calib`, `hhd.modes`, `hhd.recon`, `hhd.analysis`; `docs/ANALYSE.md`), ab 0.8 mit
+kampagnengeprüften Konfidenzintervallen (Abdeckung 68/95 %), Dunkellauf/η_el im Effizienzbudget, Nulltests (OP-5)
+und kalibrierten Driftschwellen (OP-6). Server und App folgen (siehe Gesamtplan v1.7).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
 K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als
@@ -22,7 +23,7 @@ CH2 ADQ32-Trigger-Kopie, CH3 reserviert, CH4 Hilfstrigger; M1 Laufmarke, M2 Phas
 **Optik (Defaults, Entscheidung 17.10.2026):** 1550 nm (Metadatum), Herald-Detektor **SNSPD** (Preset `snspd`;
 Alternative `ingaas_apd`, Vorlage `config/ingaas_apd.yaml`), Homodyn-Photodioden InGaAs (Quanteneffizienz 0,95),
 LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Default:** M1-Plan aus
-`config/laufplan_m1.yaml` (17 Läufe) im Zeitraffer 1/90.
+`config/laufplan_m1.yaml` (18 Läufe inkl. Dunkellauf) im Zeitraffer 1/90.
 
 > [!IMPORTANT]
 > **Hinweis – bitte zuerst lesen**
@@ -104,7 +105,7 @@ Manifest, HDF5-Attributen und PTU-Kopf (`UsrHHD_RunId`, `UsrHHD_SessionId`, `Usr
 | `truth.h5` | Ground Truth: wahre Zeiten, Moden, Quadraturen, Zuordnung Herald ↔ Record, Drift, Uhrphase |
 | `session.json` | Manifest: Sitzung, Kalibrierung, Läufe, Sollwerte, Konfiguration, SHA-256-Prüfsummen |
 
-Beispiel `config/standard.yaml` (M1-Laufplan im Zeitraffer: 17 Läufe, 8,0 s Messzeit, Seed 20261020; Rechenzeit ≈ 8 s):
+Beispiel `config/standard.yaml` (M1-Laufplan im Zeitraffer: 18 Läufe inkl. Dunkellauf, 8,1 s Messzeit, Seed 20261020; Rechenzeit ≈ 8 s):
 
 | Lauf | Art | Records | W(0,0) gemessen | Soll |
 |---|---|---|---|---|
@@ -145,7 +146,8 @@ hhd calibrate data/S001          # Quadraturen, Vakuum-/Elektronik-/LO-Kalibrier
 hhd compare data/S001            # Rekonstruktion + Vergleich A/B → data/S001/analysis/result.json, report.md
 hhd report data/S001             # Bericht ausgeben
 hhd validate-analysis data/S001  # nur Simulation: Pulls gegen truth.h5
-python tools/campaign_analysis.py data/K1 200 4 > studie.json   # Pulls/Bias/Abdeckung über eine Kampagne
+python tools/campaign_analysis.py data/K1 --n-boot 200 --procs 4 > studie.json   # Pulls/Bias/Abdeckung je KI-Methode
+python tools/drift_thresholds.py null.json drift.json 0.0027 > op6.json         # Driftschwellen (OP-6)
 ```
 
 ## 4 Tests

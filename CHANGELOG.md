@@ -1,5 +1,26 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.8.0.dev0 – 17.10.2026 (unveröffentlicht)
+
+Auftrag von Herrn Eilers („Bitte.“, Phase 1): Statistik nachschärfen (`docs/ANALYSE.md`, Abschnitt 11).
+
+- **Konfidenzintervalle** `hhd/recon/intervals.py`: Perzentil, basic, normal, biaskorrigiert-normal, BCa
+  (Beschleunigung aus Gruppen-Jackknife), studentisiert; alle in `ci_all`, Standard je Größe in `CI_DEFAULT`
+  (**normal**), Felder `*_ci68`, `*_ci95`, `*_ci_method`, `*_ci_params`.
+- **Kampagne 200 Sitzungen** (+ Neuauswertung der 64 aus 0.7): Abdeckung kombiniert W(0,0) 68,2/94,7 %,
+  η-Fit 68,2/93,6 %, Var x 67,0/96,6 % – Sollwert erreicht; die Unterdeckung in 0.7 war im Wesentlichen
+  Stichprobenstatistik der 64 Sitzungen. W(0,0)-Rest +0,0028 ± 0,0006 = Positivitätsrand des ML-Schätzers
+  (Erwartung +0,0018), Momente unverzerrt.
+- **OP-5** Nulltests A-A/B-B (`comparison.null_tests`): p-Werte gleichverteilt (KS p = 0,50/0,65), A-B in 100 %
+  getrennt; Warnungen bei |z| > drift_z bzw. p < drift_p.
+- **OP-6** Driftkampagnen (LO linear/Sprung 2 %, η linear −5 %/Sprung −10 %), `tools/drift_thresholds.py`
+  (Fehlalarm, Erkennung, Hochrechnung auf Echtzeit); Standards `lo_rel_warn = 0,5 %`, `drift_z = 3`, neu
+  `drift_p = 0,0027` (χ² der A-/B-Läufe, A-B-A, Nulltests).
+- **Dunkellauf** im M1-Laufplan (10 s, LO aus; 18 Läufe), Simulator/Planstatistik (`T_dark`, `rate_dark`,
+  `dark_end`, `sigma_var_el_rel`), η_el mit Fehler im Effizienzbudget.
+- Werkzeug `tools/campaign_analysis.py` neu (Abdeckung je Methode, Indikatoren, `--fast`, `--procs`).
+- Tests: Intervalle, KI-Standard, Nulltests, η_el-Fehler, Dunkellauf im Plan, Driftschwellen-Werkzeug.
+
 ## 0.7.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Auftrag von Herrn Eilers („Weitermachen“): Normierung/Kalibrierung, Modenextraktion, Rekonstruktion, Vergleich A/B

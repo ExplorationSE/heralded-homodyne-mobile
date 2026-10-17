@@ -169,7 +169,7 @@ Startzeit seit Sitzungsbeginn (`t_start_s`).
 
 Der **Standardablauf** (ab 0.5.0) ist der **M1-Laufplan** aus `config/laufplan_m1.yaml` (`M1_PLAN`:
 K-V 20 s @ 10 kHz am Anfang, nach jedem 3. Zyklus und am Ende, K-H 60 s, 6 Zyklen A 60 s / B 30 s @ 2 kHz,
-abschließender A; 17 Läufe) im **Zeitraffer 1/90** (`SIM_TIME_SCALE`, ≈ 8 s Messzeit), damit `hhd-sim run`
+abschließender A; ab 0.8 mit Dunkellauf nach dem ersten K-V: 18 Läufe) im **Zeitraffer 1/90** (`SIM_TIME_SCALE`, ≈ 8 s Messzeit), damit `hhd-sim run`
 schnell bleibt; die Vorlage selbst läuft in Echtzeit (12,1 min). Der Grundaufbau bleibt verschachtelt
 K-V → K-H → A → B → A … → K-V; Lauf B
 mit Zufallstrigger: `config/random_b.yaml`. Die
