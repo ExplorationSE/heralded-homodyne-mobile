@@ -51,6 +51,12 @@ def _params(a):
         p.allow_piecewise = False
     if a.delay_records:
         p.delay_max_records = a.delay_records
+    if getattr(a, "chunked_sync", None):
+        p.chunked = a.chunked_sync
+    if getattr(a, "segment_s", None):
+        p.segment_s = a.segment_s
+    if getattr(a, "chunked_min_s", None):
+        p.chunked_min_s = a.chunked_min_s
     return p
 
 
@@ -120,7 +126,9 @@ def cmd_sync(a) -> int:
 
 def cmd_validate(a) -> int:
     from .sim.sync_validate import validate_any
-    v = validate_any(a.path, _params(a))
+    prm = _params(a)
+    prm.chunked = "never"                       # Vergleich mit der Wahrheit braucht die Batch-Objekte je Lauf
+    v = validate_any(a.path, prm)
     if a.json:
         print(json.dumps({k: v[k] for k in ("summary",)}, indent=1, ensure_ascii=False, default=float))
     sessions = v["sessions"] if "sessions" in v else {"": v}
@@ -309,6 +317,10 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--no-refine", action="store_true", help="ohne Verfeinerung über Herald/Trigger-Paare")
         p.add_argument("--linear", action="store_true", help="nur lineare Uhrabbildung")
         p.add_argument("--delay-records", type=int, help="max. Records für Δ (Standard 20000)")
+        p.add_argument("--chunked-sync", choices=("auto", "always", "never"),
+                       help="Läufe in Segmenten synchronisieren (beschränkter Speicher; auto: ab --chunked-min-s)")
+        p.add_argument("--segment-s", type=float, help="Segmentlänge der segmentierten Synchronisation (Standard 30 s)")
+        p.add_argument("--chunked-min-s", type=float, help="auto: Läufe ab dieser Dauer segmentiert (Standard 600 s)")
 
     p = sp.add_parser("import", help="Import prüfen und Übersicht ausgeben"); p.add_argument("path")
     p.set_defaults(f=cmd_import)

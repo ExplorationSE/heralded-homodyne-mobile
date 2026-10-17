@@ -247,7 +247,7 @@ class StreamingSimulator:
         """Scheiben des Laufs ``i``: je Scheibe ``(info, harp_records, dg)`` mit ``harp_records`` als T2-Strom des
         Laufs (Zeit ab Laufbeginn, Überläufe fortlaufend) und ``dg`` den Digitizer-Records
         (``hhd.sim.digitizer.DigitizerBlock``). Die Wahrheit des Laufs wird erst nach der letzten Scheibe
-        festgehalten (abgebrochene Läufe zählen nicht)."""
+        festgehalten (mit der letzten Scheibe; abgebrochene Läufe zählen nicht)."""
         if i != self._next_run:
             raise RuntimeError(f"Läufe nur der Reihe nach (erwartet {self._next_run}, nicht {i})")
         self._next_run += 1
@@ -270,14 +270,18 @@ class StreamingSimulator:
             self.n_records += len(dg.timestamp)
             if self._path_used is not None:
                 self._path.sample(ts + dur / 2)
+            last = j == n_sl - 1 or (j + 1) * self.slice_s >= b.duration_s
             info = dict(block_id=b.id, kind=b.kind, index=i, slice=j, t_session=ts - se.start_s,
-                        t_run_end=j * self.slice_s + dur, last=j == n_sl - 1 or (j + 1) * self.slice_s >= b.duration_s)
+                        t_run_end=j * self.slice_s + dur, last=last)
+            if last:                                   # Wahrheit vor der letzten Scheibe (Leser hören dort auf)
+                t_mid = t0 + b.duration_s / 2
+                self.runs_truth.append(dict(id=b.id, run_id=rid, kind=b.kind, t_mid_s=t_mid - se.start_s,
+                                            lo_scale=float(lo_scale_fn(cfg, b, self._path_used)(t_mid)),
+                                            eta_state=eta_of_run(cfg, b, t_mid, self._path_used)))
             yield info, hrec, dg
             del br, dg
-        t_mid = t0 + b.duration_s / 2
-        self.runs_truth.append(dict(id=b.id, run_id=rid, kind=b.kind, t_mid_s=t_mid - se.start_s,
-                                    lo_scale=float(lo_scale_fn(cfg, b, self._path_used)(t_mid)),
-                                    eta_state=eta_of_run(cfg, b, t_mid, self._path_used)))
+            if last:
+                break
 
     def write_truth(self, out_dir: str | Path, man: dict | None = None, run_ids: set | None = None) -> dict:
         """``truth.h5`` (dezimiert, keine Ereignisse) schreiben und ``session.json`` ergänzen."""

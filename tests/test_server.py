@@ -243,3 +243,63 @@ def test_auth_token(tmp_path):
                 ws.receive_json()
         with c2.websocket_connect("/ws?token=ABCD2345") as ws:
             assert ws.receive_json()["type"] == "hello"
+
+
+def test_stream_sim_engine(tmp_path):
+    """Simulator im Datenstrom als Server-Gerät (sim_engine = stream): Dateien wie im Live-Betrieb geschrieben,
+    Wahrheit dezimiert, Auswertung läuft, Art in Status/Geräteinfo/Sitzung sichtbar, umschaltbar ohne Sitzung."""
+    import gc
+    import tracemalloc
+    from hhd.server.devices import StreamSimBackend
+    cfg = _cfg(tmp_path, sim_engine="stream")
+    svc = MeasurementService(cfg, tmp_path)
+    st = svc.status()
+    assert st["sim_engine"] == "stream" and isinstance(svc.backend, StreamSimBackend)
+    assert "Datenstrom" in st["devices"]["digitizer"]["model"] and st["devices"]["harp"]["sim_engine"] == "stream"
+    assert svc.handle("c", "x", True, "acquire_control", {})["ok"]
+    m = svc.handle("c", "x", True, "start_session", {"plan": "kurz"})
+    assert m["ok"], m
+    assert not svc.handle("c", "x", True, "set_display", {"sim_engine": "batch"})["ok"]     # nicht während der Messung
+    _wait(svc)
+    assert svc.state == "fertig", svc.msg
+    d = tmp_path / "data" / m["session_id"]
+    for f in ("session.json", "digitizer.h5", "harp_a_01.ptu", "truth.h5", "sync/sync.json", "analysis/result.json"):
+        assert (d / f).exists(), f
+    man = json.loads((d / "session.json").read_text(encoding="utf-8"))
+    assert man["streaming"]["generator"] == "hhd.sim.streaming" and len(man["truth"]) == 7 and "truth.h5" in man["files"]
+    assert json.loads((d / "server_session.json").read_text(encoding="utf-8"))["sim_engine"] == "stream"
+    from hhd.io.session import load_session
+    s = load_session(d)
+    assert not s.warnings and len(s.runs) == 7
+    j = list(svc.jobs.values())[0]
+    assert j.state == "fertig", j.error
+    runs = svc.live.snapshot()["runs"]
+    a = [r for r in runs if r["kind"] == "heralded"]
+    assert all(r["var"] > 0.8 for r in a) and all(r["sync"]["matched_frac"] > 0.95 for r in a)
+    # umschalten (ohne laufende Sitzung) und zurück
+    assert svc.handle("c", "x", True, "set_display", {"sim_engine": "batch"})["ok"]
+    assert svc.status()["sim_engine"] == "batch" and not isinstance(svc.backend, StreamSimBackend)
+    assert svc.harp.backend is svc.backend and svc.dig.backend is svc.backend
+    assert not svc.handle("c", "x", True, "set_display", {"sim_engine": "xyz"})["ok"]
+    assert svc.handle("c", "x", True, "set_display", {"sim_engine": "stream"})["ok"]
+    svc.close()
+
+    # Speicher: doppelte Laufdauer → gleiche Spitze (Batch-Simulator wächst)
+    def peak(engine, scale):
+        c = _cfg(tmp_path / f"{engine}{scale}", sim_engine=engine, time_scale=scale, auto_analyze=False)
+        sv = MeasurementService(c, tmp_path)
+        sv.handle("c", "x", True, "acquire_control", {})
+        gc.collect()
+        tracemalloc.start()
+        try:
+            sv.handle("c", "x", True, "start_session", {"plan": "kurz"})
+            _wait(sv)
+            assert sv.state == "fertig", sv.msg
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+            sv.close()
+    s1, s2 = peak("stream", 1.0), peak("stream", 2.0)
+    b2 = peak("batch", 2.0)
+    assert s2 < 1.2 * s1 + 3e6, (s1, s2)
+    assert s2 < 0.6 * b2, (s2, b2)
