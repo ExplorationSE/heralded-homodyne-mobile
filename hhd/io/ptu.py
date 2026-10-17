@@ -193,8 +193,8 @@ class PtuFile:
         return T2Decoder().decode(self.records)
 
 
-def read_ptu(path: str | Path) -> PtuFile:
-    data = Path(path).read_bytes()
+def _parse_header(data: bytes) -> tuple[dict[str, Any], int]:
+    """Liest die Tag-Liste; Rückgabe (Tags, Byte-Position des ersten Records)."""
     if data[:6] != b"PQTTTR":
         raise PtuError("keine PTU-Datei (Kennung PQTTTR fehlt)")
     pos = 16
@@ -226,6 +226,37 @@ def read_ptu(path: str | Path) -> PtuFile:
     rt = int(tags.get("TTResultFormat_TTTRRecType", -1)) & 0xFFFFFFFF
     if rt != REC_GENERIC_T2:
         raise PtuError(f"Record-Typ {rt:#010x} nicht unterstützt (erwartet Generic T2 0x00010207)")
+    return tags, pos
+
+
+def read_ptu_header(path: str | Path, max_bytes: int = 1 << 20) -> tuple[dict[str, Any], int]:
+    """Nur den Kopf lesen (für den Datenstrom-/Chunk-Import). Rückgabe (Tags, Offset der Records)."""
+    with open(path, "rb") as fh:
+        data = fh.read(max_bytes)
+    return _parse_header(data)
+
+
+def iter_ptu_records(path: str | Path, chunk_records: int = 1 << 20):
+    """Records einer PTU-Datei in Blöcken zu ``chunk_records`` (uint32), ohne die Datei ganz zu laden.
+
+    Zum Dekodieren über Blockgrenzen einen gemeinsamen :class:`T2Decoder` verwenden."""
+    tags, pos = read_ptu_header(path)
+    n = int(tags["TTResult_NumberOfRecords"])
+    done = 0
+    with open(path, "rb") as fh:
+        fh.seek(pos)
+        while done < n:
+            k = min(chunk_records, n - done)
+            rec = np.fromfile(fh, dtype="<u4", count=k)
+            if len(rec) < k:
+                raise PtuError("Datei kürzer als TTResult_NumberOfRecords")
+            done += k
+            yield rec
+
+
+def read_ptu(path: str | Path) -> PtuFile:
+    data = Path(path).read_bytes()
+    tags, pos = _parse_header(data)
     n = int(tags["TTResult_NumberOfRecords"])
     if pos + 4 * n > len(data):
         raise PtuError("Datei kürzer als TTResult_NumberOfRecords")
