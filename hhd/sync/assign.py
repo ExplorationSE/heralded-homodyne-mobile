@@ -108,7 +108,7 @@ def assign_heralds(tH: np.ndarray, cmap: ClockMap, trig: np.ndarray, first: np.n
     reason = np.full(n_h, REASON_NONE, np.int8)
     un = herald_class != HER_MATCHED
     if un.any():
-        busy_w = K.window_index(exp_trig, trig, last + rearm)
+        busy_w = K.window_index(exp_trig, trig, last + rearm + tol)     # Grenzfall innerhalb der Toleranz
         lo_ok, hi_ok = run_D[0] + pretrig_s, run_D[1] - post_s
         edge = (exp_trig < lo_ok) | (exp_trig > hi_ok)
         reason[un] = REASON_OTHER

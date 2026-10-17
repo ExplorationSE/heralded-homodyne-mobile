@@ -226,7 +226,7 @@ def sync_assign(rs: RunSync, p: SyncParams, mode_offset: float | None = None) ->
                 rs.assign_warnings.append(f"nur {nt}/{len(seg)} Records über CH4 gekennzeichnet")
         rs.timing["assign"] = time.perf_counter() - t0
         return
-    kw = dict(rearm=p.rearm_s, pretrig_s=pre, post_s=post, tol_min=p.tol_min_s, k_sigma=p.k_sigma, tags=tags,
+    kw = dict(rearm=p.rearm_s + 1.0 / run.fs, pretrig_s=pre, post_s=post, tol_min=p.tol_min_s, k_sigma=p.k_sigma, tags=tags,
               tag_class=tag_cls)
     rs.assignment = A.assign_heralds(tH, rs.cmap, trig, first, last, run_D, mode_offset=mode_offset, **kw)
     if p.refine and not rs.refine.get("applied"):
@@ -236,7 +236,8 @@ def sync_assign(rs: RunSync, p: SyncParams, mode_offset: float | None = None) ->
     a = rs.assignment
     c = a.counts()
     nseg = max(len(trig), 1); nh = max(len(tH), 1)
-    fm = c["segments"]["zugeordnet"] / nseg
+    n_tag = c["segments"]["zufallstrigger"] + c["segments"]["zustandstrigger"]
+    fm = c["segments"]["zugeordnet"] / max(nseg - n_tag, 1)
     if fm < p.warn_match_fraction and run.dataset_type == "heralded":
         rs.assign_warnings.append(f"nur {fm:.1%} der Records zugeordnet")
     if c["segments"]["mehrdeutig"] / nseg > p.warn_ambiguous_fraction:
