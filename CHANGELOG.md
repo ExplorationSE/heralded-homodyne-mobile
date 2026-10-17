@@ -1,5 +1,31 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.12.0.dev0 – 18.10.2026 (unveröffentlicht)
+
+Auftrag („Weitermachen“): Datenstrom-Simulator als Server-Gerät, segmentierte Synchronisation sehr langer
+Einzelläufe, Behebung der RuntimeWarning in `hhd/sync/delay.py`.
+
+- **Server, Simulator im Datenstrom** (`StreamSimBackend`, `sim_engine = batch | stream`):
+  - wählbar in `server.toml`, mit `--sim-engine` und in der Web-App (Auswahl „Simulator“, Abzeichen
+    „SIMULIERT · DATENSTROM“, Geräteinfo, Status, `server_session.json`);
+  - Dateien über `SessionRecorder`, `truth.h5` dezimiert;
+  - Speicher konstant: Standard-Laufplan ×4 85 MB gegen 841 MB im Batch.
+  - `StreamingSimulator` hat eine schrittweise Schnittstelle `setup` / `iter_run` / `write_truth`.
+- **Segmentierte Synchronisation** `hhd/sync/chunked.py` (`SyncParams.chunked = auto|always|never`, ab 600 s;
+  `hhd sync --chunked-sync`):
+  - Segment-Uhrfit, stückweise Korrektur, Verfeinerung über Paare;
+  - Segmentversatz über δ_HT angeglichen;
+  - Δ aus einer Reservoir-Stichprobe;
+  - `SegmentedClock` mit Überblendung;
+  - blockweises Schreiben von `sync.h5`.
+
+  Gegen Batch: 0 Fehlzuordnungen, gleiches Δ_T, Modenort rms ~0,1 ns. Speicher konstant.
+- `refine_clock` aus `_refine` herausgelöst; `write_sync` in Kopf- und Laufgruppen zerlegt. `sync_session` lädt
+  lazy.
+- **Fix:** Δ-Raster ohne `RuntimeWarning: Mean of empty slice` (`delay.col_mean`, Rasterpunkte außerhalb aller
+  Records sind NaN ohne Warnung).
+- **Tests:** `tests/test_sync_chunked.py` (5), `test_server.py::test_stream_sim_engine`.
+
 ## 0.11.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Auftrag: Wiedergabe und Auswertung langer Sitzungen mit beschränktem Speicher (`docs/ANALYSE.md` Abschnitt 12).

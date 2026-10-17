@@ -74,6 +74,7 @@ LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Defau
 | `hhd/analysis/driftmon.py` | Drift-Überwachung im Datenstrom (LO, Vakuumvarianz, η) mit konstantem Speicher |
 | `hhd/analysis/streaming.py` | Datenstrom-Auswertung langer Sitzungen (Histogramme, Momente, Bin-MaxLik, Poisson-Bootstrap) |
 | `hhd/analysis/replaydrift.py` | Drift über eine Wiedergabe (`hhd drift`) |
+| `hhd/sync/chunked.py` | segmentierte Synchronisation sehr langer Läufe (Segment-Uhrfit, Verfeinerung, Δ aus Stichprobe) |
 | `hhd/io/chunked.py` | Lesen in Zeitfenstern (PTU, Digitizer-Köpfe, Marker) für Wiedergabe und lange Läufe |
 | `hhd/server/` | Mess-Server (FastAPI): Geräteabstraktion live/sim/replay, Messablauf, Live-Vorschau/-Synchronisation, Auswertungsaufträge, Steuersperre, Befehlsprotokoll, Zugangscode, ED-8b; Web-App unter `hhd/server/web/` |
 | `docs/SERVER.md` | Mess-Server und Web-App: Start, Bedienung, Rechte, Schnittstelle |

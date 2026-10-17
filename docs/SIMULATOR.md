@@ -237,6 +237,10 @@ Gruppen der Ground Truth je Block in `truth.h5`:
 
 ## 7 Datenstrom-Modus
 
+Seit 0.12 gibt es eine schrittweise Schnittstelle: `setup()` liefert die Läufe, `iter_run(i)` die Scheiben und
+`write_truth()` die Wahrheit. Darüber läuft der Simulator auch als Server-Gerät (`sim_engine = "stream"`,
+`docs/SERVER.md` 7a). `run()` nutzt dieselbe Schnittstelle.
+
 `hhd.sim.stream.SimStream` spielt einen Lauf in Zeitscheiben ab, optional in Echtzeit oder beschleunigt. Ein
 Chunk enthält:
 

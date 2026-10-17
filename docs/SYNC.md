@@ -103,10 +103,46 @@ offenen Trigger werden verworfen. Stückweise Korrektur und Δ bleiben dem Batch
 
 ### 3.7 Lange Sitzungen (0.11)
 
+Ab 0.12 wird die Sitzung dabei lazy geladen (Köpfe erst je Lauf).
+
 `sync_session` gibt die Harp-Ereignisse und Digitizer-Köpfe jedes Laufs nach der Zuordnung wieder frei
 (`SyncParams.release_runs = True`, `RunData.release()`); sie werden bei Bedarf neu aus der Datei gelesen
 (`load_session(lazy=True)`). Der Spitzenspeicher hängt damit von der längsten Laufdauer ab, nicht von der
 Sitzungsdauer (×16-Sitzung, 280 244 Records: RSS 279 → 270 MB; Zuordnung, Uhrabbildung und Δ unverändert).
+
+### 3.8 Sehr lange Einzelläufe: segmentierte Synchronisation (0.12, `hhd.sync.chunked`)
+
+Für Läufe ab `SyncParams.chunked_min_s` (Standard 600 s; `chunked = auto | always | never`,
+`hhd sync --chunked-sync …`) werden PTU und `digitizer.h5` in Zeitfenstern gelesen, und der Lauf wird in
+Segmenten von `segment_s` (Standard 30 s, Digitizer-Zeit) bearbeitet. Der Speicher hängt nicht von der Laufdauer ab.
+
+1. **Durchgang 1** je Segment (Daten ± `overlap_s`, Standard 1 s):
+   - Marker paaren, Uhr anpassen (robuste Gerade plus stückweise Korrektur, W per Kreuzvalidierung);
+   - Heralds zuordnen, die Abbildung mit Herald/Trigger-Paaren verfeinern (auch stückweise), erneut zuordnen.
+   - Der Versatz jedes Segments wird über sein δ_HT auf das gepoolte δ_HT des Laufs gelegt. Die Marker liefern den
+     Versatz bei Markern am Marker-Eingang nur ns-genau, die Paare viel genauer.
+   - Saubere Records für Δ kommen per Reservoir-Stichprobe (höchstens `delay_max_records`) dazu.
+2. **Δ** sitzungsweit wie im Batch-Lauf.
+3. **Durchgang 2** mit der zusammengesetzten Abbildung `SegmentedClock`:
+   - je Segment eine `ClockMap`, an den Grenzen über `overlap_s` linear überblendet (stetig);
+   - endgültige Zuordnung mit Modenort Δ;
+   - blockweises Schreiben in `sync.h5`, gleiches Format.
+
+   Ein Record gehört dem Segment seines Triggers, ein Herald dem Segment seines erwarteten Triggers; gerechnet
+   wird mit Kontextrand (50 µs). Der Bericht hat `clock.model = "segmented"`; `clock.segmented` enthält die
+   Segmentabbildungen. Markerpaare werden nicht als Datensatz gespeichert.
+
+**Prüfung** (`tests/test_sync_chunked.py`, freie Uhr ε = 2 ppm mit Irrfahrt, Marker am Marker-Eingang):
+- Segmentiert (4 s) und Batch liefern die gleiche Zuordnung: 0 Abweichungen in allen Klassen- und Indexfeldern.
+- Δ_T ist bei gleicher Stichprobe gleich (< 1e-13 s).
+- Modenort (abgebildeter Herald + Δ): rms < 0,3 ns, max < 1,5 ns. Das ist von der Ordnung σ_HT und ≪ Toleranz 2 ns
+  bzw. Modenbreite 40 ns.
+- 60-s-Lauf (65 892 Paare, Segmente 10 s): Modenort rms 97 ps, max 0,70 ns; σ_Paar 153 ps.
+- Speicher ohne Δ (tracemalloc): 60-s- gegen 120-s-Lauf
+  - Batch 28 → 55 MB;
+  - segmentiert 13,6 → 15,7 MB, ab Leseblockgröße konstant.
+- Mit Δ ist der Speicher durch `delay_max_records` begrenzt (20 000 Records: ~150 MB, unabhängig von der Dauer).
+- `hhd validate` (Wahrheit) nutzt immer den Batch-Lauf.
 
 ## 4 Ausgabe `sync/sync.h5`
 
@@ -120,6 +156,7 @@ stückweiser Anteile). Lauf B/K-V: `seg_class`, `seg_n_heralds`.
 ```
 hhd import   <sitzung|kampagne>
 hhd sync     <sitzung|kampagne> [-o DIR] [--no-delay] [--no-refine] [--linear] [--gamma-ns 40] [--strict]
+             [--chunked-sync auto|always|never] [--segment-s 30] [--chunked-min-s 600]
 hhd validate <sitzung|kampagne>          # nur Simulation: Vergleich mit truth.h5
 hhd stream   <sitzung> [--run ID] [--chunk 1024]
 hhd bench    <sitzung> [--repeat N] [--no-delay]

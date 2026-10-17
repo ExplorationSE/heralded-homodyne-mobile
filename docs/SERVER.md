@@ -129,7 +129,26 @@ entfernt.
 * `tools/app_screenshots.py <url> <ordner>`: headless Chromium (Playwright), mobil (390×844, als entfernter
   Client) und Desktop (Mess-PC).
 
-## 7a Lange Sitzungen (0.11)
+## 7a Lange Sitzungen (0.11, 0.12)
+
+* **Simulator im Datenstrom** (0.12): `sim_engine = "stream"` (`server.toml`, `--sim-engine stream`, in der
+  Web-App „Simulator: Datenstrom“, umschaltbar ohne laufende Sitzung).
+  - Jeder Lauf wird in Zeitscheiben (≥ `chunk_s`, passend zu Marker- und Periodenraster) mit
+    `hhd.sim.streaming` erzeugt.
+  - Der Server schreibt die Dateien wie im Live-Betrieb (`SessionRecorder`), danach `truth.h5` (dezimiert) für
+    die fertigen Läufe.
+  - Die Betriebsart steht als Abzeichen „SIMULIERT · DATENSTROM“ in der Kopfzeile und an den Geräten, im Status
+    (`sim_engine`) und in `server_session.json`.
+  - Standard bleibt `batch` (ganze Sitzung im Speicher; alle Simulator-Merkmale).
+  - Messung (Standard-Laufplan, ohne Auswertung, tracemalloc):
+
+    | Simulator | ×1 | ×4 |
+    |---|---|---|
+    | batch | 261 MB | 841 MB |
+    | stream | 84 MB | 85 MB |
+
+  - Grenzen wie im Datenstrom-Simulator: keine Laufmarken und keine Phasenreferenz-Marker; Records an
+    Scheibengrenzen entfallen.
 
 * **Wiedergabe** (`ReplayBackend`): PTU (`hhd.io.chunked.iter_ptu_windows`), Digitizer-Köpfe und Marker werden in
   Zeitfenstern von `chunk_s` gelesen, Wellenformen je Fenster als zusammenhängender Ausschnitt. Der Speicher hängt
@@ -144,8 +163,7 @@ entfernt.
 * Echte Geräte: Treiber nach Handbuch, nur gegen Mock-Bibliotheken getestet; offene Punkte in
   `docs/HARDWARE.md` Abschnitt 6.
 * Gemischte Sitzungen werden nicht automatisch ausgewertet.
-* Server-Simulation: Die Sitzung wird zu Beginn vollständig im Speicher simuliert und dann laufweise abgespielt.
-  Für lange Läufe gibt es den speichersparenden `hhd.sim.streaming.StreamingSimulator` (`docs/SIMULATOR.md`
-  Abschnitt 7); er ist noch nicht als Server-Gerät eingebunden.
+* Server-Simulation `batch`: Die Sitzung wird zu Beginn vollständig im Speicher simuliert und dann laufweise
+  abgespielt. Für lange Sitzungen `sim_engine = "stream"` (Abschnitt 7a).
 * Die Live-Vorschau nutzt die nominelle Mode und Δ_T (Vorschau, nicht die Auswertung).
 * Kein Service-Worker (keine Offline-Nutzung), Grafiken als Canvas ohne Zoom.
