@@ -49,6 +49,7 @@ class ChunkParams:
     herald_margin_s: float = 20e-6  # Auswahl der Heralds um das abgebildete Fenster (|δ_HT| + Δ)
     coarse_s: float = 2.0          # Dauer für die grobe Startabbildung
     coarse_margin_s: float = 0.2   # Unsicherheit der groben Startabbildung (Harp-Zeit)
+    read_records: int = 1 << 16    # Leseblock PTU (Records) bzw. Digitizer-Köpfe/Marker (Einträge)
 
 
 # ---------------------------------------------------------------------------------------------- Abbildung
@@ -114,8 +115,8 @@ class SegmentedClock:
 class _HarpReader:
     """Harp-Ereignisse nach Rolle in einem gleitenden Puffer (Harp-Zeit, s); globale Indizes je Rolle."""
 
-    def __init__(self, run: RunData, read_s: float):
-        self.gen = CK.iter_ptu_windows(run.ptu_path, 0, int(round(read_s * 1e12)))
+    def __init__(self, run: RunData, read_s: float, chunk: int = 1 << 16):
+        self.gen = CK.iter_ptu_windows(run.ptu_path, 0, int(round(read_s * 1e12)), chunk)
         self.dec = P.T2Decoder()
         self.roles = (run.channel_roles, run.marker_roles)
         self.read_s = read_s
@@ -158,7 +159,7 @@ class _HarpReader:
 class _DigReader:
     """Digitizer-Köpfe (Trigger, erstes Sample, globaler Index) und SYNC-Marker in einem gleitenden Puffer."""
 
-    def __init__(self, run: RunData, read_s: float):
+    def __init__(self, run: RunData, read_s: float, chunk: int = 1 << 16):
         tu = run.time_unit
         with h5py.File(run.session.h5_path, "r") as f:
             g = f["blocks"][run.block_id]
@@ -170,8 +171,8 @@ class _DigReader:
         self.t0_tu = min(c) if c else 0
         self.tu = tu
         w = max(1, int(round(read_s / tu)))
-        self.rg = CK.iter_record_windows(run.session.h5_path, run.block_id, self.t0_tu, w)
-        self.mg = CK.iter_marker_windows(run.session.h5_path, run.block_id, self.t0_tu, w)
+        self.rg = CK.iter_record_windows(run.session.h5_path, run.block_id, self.t0_tu, w, chunk)
+        self.mg = CK.iter_marker_windows(run.session.h5_path, run.block_id, self.t0_tu, w, chunk)
         self.w_s = w * tu
         self.idx = np.empty(0, np.int64); self.trig = np.empty(0); self.first = np.empty(0)
         self.mk = np.empty(0)
@@ -306,7 +307,7 @@ class ChunkedRunSync:
         from .pipeline import _herald_triggered, refine_clock
         t0 = time.perf_counter()
         run, p, cp = self.run, self.p, self.cp
-        hr, dr = _HarpReader(run, cp.read_s), _DigReader(run, cp.read_s)
+        hr, dr = _HarpReader(run, cp.read_s, cp.read_records), _DigReader(run, cp.read_s, cp.read_records)
         herald_run = _herald_triggered(run)
         S, ov = cp.segment_s, cp.overlap_s
         T0 = dr.t0
@@ -408,7 +409,7 @@ class ChunkedRunSync:
         from .pipeline import _herald_triggered, _triggered
         t0 = time.perf_counter()
         run, p, cp = self.run, self.p, self.cp
-        hr, dr = _HarpReader(run, cp.read_s), _DigReader(run, cp.read_s)
+        hr, dr = _HarpReader(run, cp.read_s, cp.read_records), _DigReader(run, cp.read_s, cp.read_records)
         cmap = self.cmap
         herald_run = _herald_triggered(run)
         M = max(cp.context_s, 20 * run.record_length / run.fs)

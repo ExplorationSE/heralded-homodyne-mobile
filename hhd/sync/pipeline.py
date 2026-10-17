@@ -58,6 +58,7 @@ class SyncParams:
     chunked_min_s: float = 600.0
     segment_s: float = 30.0
     overlap_s: float = 1.0
+    chunk_read_records: int = 1 << 16
 
 
 def _herald_triggered(run: RunData) -> bool:
@@ -349,13 +350,13 @@ def sync_session(path: str | Path | SessionData, params: SyncParams | None = Non
                  write: bool = True) -> dict:
     p = params or SyncParams()
     t_all = time.perf_counter()
-    sess = path if isinstance(path, SessionData) else load_session(path)
+    sess = path if isinstance(path, SessionData) else load_session(path, lazy=True)   # Köpfe erst je Lauf
     syncs: dict = {}
     from .chunked import ChunkParams, ChunkedRunSync, Reservoir
     reservoir = Reservoir(p.delay_max_records, p.seed)
     for run in sess.runs:
         if use_chunked(run, p):
-            cs = ChunkedRunSync(run, p, ChunkParams(segment_s=p.segment_s, overlap_s=p.overlap_s))
+            cs = ChunkedRunSync(run, p, ChunkParams(segment_s=p.segment_s, overlap_s=p.overlap_s, read_records=p.chunk_read_records))
             cs.pass1(reservoir)
             syncs[cs.key] = cs
             continue
