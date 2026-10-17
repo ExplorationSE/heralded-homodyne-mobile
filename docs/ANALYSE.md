@@ -1,6 +1,6 @@
 # Auswertung: Normierung, Moden, Rekonstruktion, Vergleich A/B
 
-Stand 0.8.0.dev0 – Python/NumPy-Referenzimplementierung (Gesamtplan v1.7, Arbeitspakete Normierung/Kalibrierung,
+Stand 0.9.0.dev0 – Python/NumPy-Referenzimplementierung (Gesamtplan v1.7, Arbeitspakete Normierung/Kalibrierung,
 Modenextraktion, Rekonstruktion, Vergleich A/B). Eingang ist die Synchronisation (`sync/sync.h5`, `sync/sync.json`,
 siehe `docs/SYNC.md`); fehlt sie, wird sie erzeugt. **Die Auswertung liest die Wahrheitsdatei nie**
 (`truth.h5` ist im Import gesperrt; ein Test prüft die Quellen). Abgleich mit der Wahrheit nur im

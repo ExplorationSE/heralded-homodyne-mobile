@@ -1,5 +1,26 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.9.0.dev0 – 17.10.2026 (unveröffentlicht)
+
+Auftrag von Herrn Eilers („Bitte.“, Phase 2): Server und App nach GX-Vorbild (`docs/SERVER.md`).
+
+- **Mess-Server** `hhd/server/` (FastAPI, `python -m hhd.server` / `hhd-server`, `config/server.toml`):
+  Geräteabstraktion HydraHarp 500 und ADQ32 je **live** (Platzhalter mit SDK-Abbildung), **sim** (Simulator im
+  Datenstrom, Echtzeitfaktor) und **replay** (Sitzung aus Dateien, ohne `truth.h5`); **Messablauf** einer Sitzung
+  nach Laufplan (M1 Zeitraffer 18 Läufe, Kurzplan 7 Läufe) mit Stopp; Dateien wie `hhd.io.session`.
+- **Live-Synchronisation** (`StreamingSynchronizer` je Lauf) und **Live-Vorschau** (Quadraturhistogramm, Varianz je
+  Lauf normiert auf K-V, LO-Monitor mit Dunkelwert, Raten, Warnungen), Aufzeichnung `live_preview.json`.
+- **Offline-Auswertung per Auftrag** (eigener Prozess: Synchronisation + `analyze_session`), automatisch nach der
+  Sitzung oder auf Befehl; Ergebnis-Kurzfassung und Bericht über `/api`.
+- **Steuersperre**, **Befehlsprotokoll** `logs/commands.jsonl`, **Zugangscode** (Cookie/`?token=`,
+  Fehlversuchsgrenzen, Origin-Prüfung, Sicherheits-Header), **ED-8b**: kritische Parameter nur am Mess-PC oder mit
+  zweistufiger Bestätigung, Triggerausgänge nie aus der Ferne; Tunnelverbindungen gelten als entfernt.
+- **Web-App** (deutsch, mobil, ohne Fremdbibliotheken): Messung, Ergebnisse (Wigner-Funktion, W(r), p_n,
+  Vergleich A/B, Effizienzbudget, Bericht), Geräte, Protokoll; Kennzeichnung SIMULIERT.
+- `tools/start_online.sh` (cloudflared), `tools/app_screenshots.py` (Playwright).
+- Tests `tests/test_server.py` inkl. **Ende-zu-Ende** mit simulierten Geräten (Sitzung → Dateien → Sync →
+  Analyse → Ergebnis in der API der App), Stopp, Wiedergabe, Zugang.
+
 ## 0.8.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Auftrag von Herrn Eilers („Bitte.“, Phase 1): Statistik nachschärfen (`docs/ANALYSE.md`, Abschnitt 11).
