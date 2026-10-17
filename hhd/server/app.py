@@ -17,6 +17,7 @@ import json
 import logging
 import uuid
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
@@ -53,7 +54,7 @@ def create_app(cfg: ServerConfig, root: Path | None = None, service: Measurement
             tok = request.query_params.get("token")
             if tok is not None and not auth.blocked(ip):
                 if auth.check_code(tok):
-                    q = "&".join(f"{k}={v}" for k, v in request.query_params.items() if k != "token")
+                    q = urlencode([(k, v) for k, v in request.query_params.multi_items() if k != "token"])
                     resp = RedirectResponse(path + (f"?{q}" if q else ""), status_code=303)
                     resp.set_cookie(COOKIE, auth.session_value(), httponly=True, samesite="lax",
                                     secure=is_https(request.url.scheme, request.headers), path="/")
