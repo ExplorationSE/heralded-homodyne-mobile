@@ -38,3 +38,4 @@ adq_drain_ms = 200
 [analysis]
 auto_analyze = true
 n_boot = 100
+streaming_records = 200000      # Datenstrom-Auswertung (beschränkter Speicher) ab so vielen Records; 0 = nie

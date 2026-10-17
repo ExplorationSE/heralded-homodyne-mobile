@@ -64,6 +64,7 @@ class ServerConfig:
     lock_timeout_s: float = 300.0
     auto_analyze: bool = True
     n_boot: int = 100
+    streaming_records: int = 200000       # Datenstrom-Auswertung ab so vielen Records (0 = nie)
     status_hz: float = 2.0
     delta_T_ns: float = 76.1
     seed0: int = 20261100
@@ -85,16 +86,35 @@ def load_config(path: str | Path | None) -> ServerConfig:
     return cfg
 
 
-def run_analysis_job(session_dir: str, n_boot: int) -> dict:
-    """Auftrag: Synchronisation (falls nötig) und Auswertung; Rückgabe Kurzfassung."""
+def run_analysis_job(session_dir: str, n_boot: int, streaming_records: int = 0) -> dict:
+    """Auftrag: Synchronisation (falls nötig) und Auswertung; Rückgabe Kurzfassung.
+
+    Ab ``streaming_records`` Records (Summe über alle Läufe, 0 = nie) wird die Datenstrom-Auswertung
+    (``hhd.analysis.streaming``) mit beschränktem Speicher verwendet."""
     from ..analysis.pipeline import AnalysisParams, analyze_session
     from ..analysis.syncdata import ensure_sync
     from ..io.session import load_session
     t0 = time.time()
-    ensure_sync(load_session(session_dir))
+    s = load_session(session_dir, lazy=True)
+    n_rec = sum(r.n_records for r in s.runs)
+    streaming = bool(streaming_records) and n_rec >= streaming_records
+    if streaming:
+        from ..analysis.streaming import analyze_session_streaming
+        from ..sync.pipeline import sync_session
+        from pathlib import Path as _P
+        sd = _P(session_dir) / "sync"
+        if not ((sd / "sync.h5").exists() and (sd / "sync.json").exists()):
+            sync_session(s, None, sd)
+    else:
+        ensure_sync(load_session(session_dir))
+    del s
     t_sync = time.time() - t0
-    res = analyze_session(session_dir, AnalysisParams(n_boot=n_boot))
-    return dict(t_sync=round(t_sync, 2), t_total=round(time.time() - t0, 2), warnings=res.get("warnings", [])[:20])
+    if streaming:
+        res = analyze_session_streaming(session_dir, AnalysisParams(n_boot=n_boot))
+    else:
+        res = analyze_session(session_dir, AnalysisParams(n_boot=n_boot))
+    return dict(t_sync=round(t_sync, 2), t_total=round(time.time() - t0, 2), streaming=streaming,
+                n_records=n_rec, warnings=res.get("warnings", [])[:20])
 
 
 @dataclass
@@ -555,9 +575,9 @@ class MeasurementService:
             path = str(self.data_dir / j.session)
             nb = int(self.display.get("n_boot", self.cfg.n_boot))
             if self._pool is None:
-                j.info = run_analysis_job(path, nb)
+                j.info = run_analysis_job(path, nb, self.cfg.streaming_records)
             else:
-                j.info = self._pool.submit(run_analysis_job, path, nb).result()
+                j.info = self._pool.submit(run_analysis_job, path, nb, self.cfg.streaming_records).result()
             j.state = "fertig"
         except Exception as e:  # noqa: BLE001
             j.state, j.error = "fehler", f"{type(e).__name__}: {e}"

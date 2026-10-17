@@ -76,6 +76,7 @@ class DriftMonitor:
         self.lo_trace: list[tuple[float, float]] = []          # (t, LO relativ) je Fenster, begrenzt
         self.warnings: list[str] = []
         self._win = None
+        self.sub = 512                                         # Records je Projektion (Speicher)
 
     # ------------------------------------------------------------------ Lauf
     def begin_run(self, block_id: str, kind: str, t_start_s: float) -> None:
@@ -93,8 +94,9 @@ class DriftMonitor:
             self.offset = float(data.mean())
         if r.kind != "electronic":
             pos = (np.asarray(trig_D) + self.dT - np.asarray(first_D)) * self.fs
-            q, cov = project_records(data, pos, self.bank, self.offset or 0.0)
-            r.q.add(q[cov >= 0.99])
+            for i in range(0, len(pos), self.sub):                # Teilblöcke: Zwischenfelder (n, 2h+1) begrenzt
+                q, cov = project_records(data[i:i + self.sub], pos[i:i + self.sub], self.bank, self.offset or 0.0)
+                r.q.add(q[cov >= 0.99])
         if data_b is not None and len(data_b):
             mb = np.asarray(data_b, float).mean(axis=1)
             r.b_sum += float(mb.sum()); r.b_n += len(mb)

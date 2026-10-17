@@ -164,6 +164,14 @@ def cmd_stream(a) -> int:
     return int(rc)
 
 
+def cmd_drift(a) -> int:
+    from .analysis.replaydrift import drift_over_replay, render_drift
+    d = drift_over_replay(a.path, chunk_s=a.chunk_s, window_s=a.window_s,
+                          delta_T_s=a.delta_t_ns * 1e-9 if a.delta_t_ns else None)
+    print(json.dumps(d, indent=1, ensure_ascii=False, default=float) if a.json else render_drift(d))
+    return int(bool(d["warnings"]) and a.strict)
+
+
 def cmd_bench(a) -> int:
     from .io.session import load_session
     from .sync.pipeline import SyncParams, sync_session
@@ -208,8 +216,15 @@ def _run_analysis(a, stages):
     paths = sorted(p.parent for p in Path(a.path).glob("*/session.json")) if is_campaign(a.path) else [Path(a.path)]
     out = []
     for p in paths:
-        r = analyze_session(p, _aparams(a), out_dir=a.out if len(paths) == 1 else None,
-                            sync_params=_params(a), stages=stages)
+        if getattr(a, "streaming", False):
+            from .analysis.streaming import analyze_session_streaming
+            if stages != ("reconstruct", "compare"):
+                print("Hinweis: --streaming führt stets die vollständige Kette aus", file=sys.stderr)
+            r = analyze_session_streaming(p, _aparams(a), out_dir=a.out if len(paths) == 1 else None,
+                                          sync_params=_params(a), chunk=a.chunk)
+        else:
+            r = analyze_session(p, _aparams(a), out_dir=a.out if len(paths) == 1 else None,
+                                sync_params=_params(a), stages=stages)
         out.append(r)
     return out
 
@@ -307,6 +322,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sp.add_parser("stream", help="chunkweiser Synchronisierer gegen Batch"); p.add_argument("path")
     p.add_argument("--run"); p.add_argument("--chunk", type=int, default=1024)
     p.set_defaults(f=cmd_stream)
+    p = sp.add_parser("drift", help="Drift (LO, Vakuumvarianz, η) über eine Wiedergabe, beschränkter Speicher")
+    p.add_argument("path"); p.add_argument("--chunk-s", type=float, default=1.0)
+    p.add_argument("--window-s", type=float, default=5.0); p.add_argument("--delta-t-ns", type=float)
+    p.add_argument("--json", action="store_true"); p.add_argument("--strict", action="store_true")
+    p.set_defaults(f=cmd_drift)
+
     p = sp.add_parser("bench", help="Durchsatz messen"); p.add_argument("path")
     p.add_argument("--repeat", type=int, default=1); p.add_argument("--no-delay", action="store_true")
     p.set_defaults(f=cmd_bench)
@@ -323,6 +344,9 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--no-boot-vacuum", action="store_true", help="Vakuumnormierung im Bootstrap festhalten (alt)")
         p.add_argument("--dark-count-rate", type=float, help="Herald-Dunkelzählrate 1/s für ξ (Standard 100)")
         p.add_argument("--json", action="store_true"); p.add_argument("--strict", action="store_true")
+        p.add_argument("--streaming", action="store_true",
+                       help="Datenstrom-Auswertung mit beschränktem Speicher (lange Sitzungen)")
+        p.add_argument("--chunk", type=int, default=1024, help="Records je Block bei --streaming")
 
     p = sp.add_parser("calibrate", help="Quadraturen und Kalibrierung"); anal(p); p.set_defaults(f=cmd_calibrate)
     p = sp.add_parser("reconstruct", help="Kalibrierung + Rekonstruktion"); anal(p); p.set_defaults(f=cmd_reconstruct)
