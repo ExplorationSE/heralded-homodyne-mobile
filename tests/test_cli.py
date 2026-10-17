@@ -12,9 +12,12 @@ def test_cli_end_to_end(tmp_path, capsys):
     assert main(["run", str(ROOT / "config" / "standard.yaml"), "-o", str(out), "--scale-duration", "0.04", "--seed", "4"]) == 0
     assert main(["validate", str(out)]) == 0
     assert main(["check", str(out), "--boot", "5"]) == 0
+    assert main(["check", str(out), "--boot", "5", "--norm", "interpolated"]) == 0
+    assert main(["campaign", "--scale-duration", "0.02", "-n", "2", "-o", str(tmp_path / "kamp")]) == 0
+    assert (tmp_path / "kamp" / "campaign.json").exists()
     assert main(["stream", "--scale-duration", "0.02", "--no-realtime", "--max-chunks", "3"]) == 0
     txt = capsys.readouterr().out
-    assert "Vakuumnormierung" in txt and "heralded" in txt
+    assert "Vakuumnormierung" in txt and "heralded" in txt and "A − B" in txt and "Kampagne" in txt
     # Manipulation wird erkannt
     p = out / "harp_heralded_1.ptu"
     b = bytearray(p.read_bytes()); b[-1] ^= 0xFF; p.write_bytes(bytes(b))

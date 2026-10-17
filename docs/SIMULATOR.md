@@ -1,6 +1,6 @@
 # Simulator `hhd.sim` – Modelle, Formate, Grenzen
 
-Arbeitspaket AP2 des Gesamtplans v1.3. Der Simulator ist die Weiterentwicklung des Prototyps `sync_sim` aus dem
+Arbeitspaket AP2 des Gesamtplans v1.4. Der Simulator ist die Weiterentwicklung des Prototyps `sync_sim` aus dem
 Vorbericht Synchronisation. Er erzeugt dieselben Dateien, die später die echten Geräte liefern:
 **HydraHarp 500** (PTU, T2) und **ADQ32-PCIe** (HDF5-Schema v1). Zusätzlich schreibt er eine **Ground Truth**.
 Damit lassen sich Import, Synchronisation, Kalibrierung und Rekonstruktion (AP3–AP7) ohne Hardware entwickeln
@@ -21,7 +21,7 @@ Festlegung dieses Projekts, [unsicher] = noch am Gerät zu prüfen. Alle Zahlenw
   - an die Harp über einen regulären Timing-Kanal (ED-7, Streuung 5 ps) oder über einen Marker-Eingang. Am
     Marker-Eingang gilt **[Spez.]** ein Zeitfehler < 100 ns; das Modell ist gaußförmig mit 30 ns und wird bei
     100 ns abgeschnitten.
-- Der Zusammenhang Harp-Zeit → Digitizer-Zeit je Block steht als `mapping` in `run.json`.
+- Der Zusammenhang Harp-Zeit → Digitizer-Zeit je Lauf steht als `mapping` in `session.json`.
 
 ## 2 Quelle und Zustände
 
@@ -97,34 +97,56 @@ Signal am Analogeingang:
 
 - Die Quadraturen der Moden werden mit der Modenfunktion als Wellenform eingeprägt.
 - Dazu kommen Vakuumrauschen, elektronisches Rauschen, ADC-Offset und Quantisierung.
+- Analogbandbreite (ED-14: **BW1G0**, 1 GHz) als Tiefpass 1. Ordnung mit −3 dB bei 1 GHz [Annahme; die
+  Filterform ist nicht spezifiziert]. Er färbt das Rauschen je Sample (Varianz × 0,75 bei 2,5 GS/s), wirkt aber
+  nicht auf die 40-ns-Mode; BW2G5 liegt über der Nyquist-Frequenz und filtert nicht.
 - Optional wird Trigger-Übersprechen nachgebildet (Fehlerbild R10). Es erscheint am Modenort und wird von der
   Kontrolle K-H erkannt; siehe `config/crosstalk.yaml`.
 
 Records sind 5000 Samples (2 µs) lang, davon 2000 Pretrigger. Sie enthalten damit **Off-Herald-Fenster**
 vor und nach der Mode für die laufende Vakuumreferenz.
 
-## 5 Messablauf (Blöcke)
+## 5 Messablauf: Sitzung aus getrennten Läufen (ED-12)
+
+Ein Eintrag in `blocks` ist ein **Messlauf**: eigene PTU-Datei, eigene Gruppe in `digitizer.h5`, eigene Lauf-ID
+(`<session.id>-R<nn>` oder `run_id`). Alle Läufe einer **Sitzung** teilen eine Kalibrierung (`calibration_id` =
+`<Kampagne>-<Sitzung>-cal`); mehrere Sitzungen bilden eine **Kampagne** (`hhd-sim campaign`, `campaign.json`).
+Jeder Lauf trägt seine Rolle im Vergleich (`comparison_role`: heralded, unheralded, control, test_state) und seine
+Startzeit seit Sitzungsbeginn (`t_start_s`).
 
 | kind | dataset_type | Trigger | Signal |
 |---|---|---|---|
-| `heralded` | heralded | Herald, eingestreut Zufallstrigger | alle SPDC-Moden |
+| `heralded` | heralded | Herald; optional eingestreut Zufallstrigger (`random_rate`) | alle SPDC-Moden |
 | `random` | random_trigger | Zufallstrigger (Poisson) | alle SPDC-Moden (unbedingter Zustand) |
+| `free_running` | free_running | periodisch intern (freilaufend) | alle SPDC-Moden (unbedingter Zustand) |
 | `herald_blocked` | herald_blocked | Herald | Signal blockiert (Kontrolle K-H) |
 | `vacuum` | vacuum | periodisch intern | Signal blockiert (Kontrolle K-V) |
 | `electronic` | electronic | periodisch intern | LO aus |
 | `state` | prepared_state | Zustandstrigger | Testzustand (kohärent, thermisch, Fock, Katze) |
 
-Der Standardablauf ist K-V → K-H → geheraldet → Zufallsfenster → K-V. Alle Blöcke eines Laufs tragen dieselbe
-`calibration_id`, damit sie vergleichbar bleiben.
+Der Standardablauf ist **K-V → K-H → A (heralded) → B (ohne Herald) → A → K-V** (verschachtelt A-B-A). Die
+Heralds laufen auch im B-Lauf mit und werden in der PTU-Datei aufgezeichnet, triggern aber den Digitizer nicht.
+Die frühere Variante mit eingestreuten Zufallstriggern ist als Option erhalten (`config/offherald_option.yaml`).
+
+### Drift zwischen Läufen
+
+`drift` simuliert, was getrennte Läufe gefährdet [Vorschlag, Gesamtplan v1.4 R15]:
+
+- **LO-Leistung** P_LO(t) = lo_scale·(1 + a·t): optisches Signal und Vakuumrauschen skalieren mit √P_LO, das
+  elektronische Rauschen nicht (die Clearance wird S·P_LO);
+- **Effizienz** η(t) = η·eta_scale·(1 + b·t), je Lauf zur Laufmitte;
+- **LO-Monitor**: Photodiode mit 10 Hz und 0,1 % Rauschen, gespeichert unter `/blocks/<id>/monitor`.
+
+Die Sollwerte je Lauf gelten für eine Normierung mit der Vakuumskala dieses Laufs.
 
 ## 6 Dateien eines Laufs
 
 | Datei | Inhalt |
 |---|---|
-| `harp_<block>.ptu` | T2-Records je Block |
-| `digitizer.h5` | Schema v1, siehe Modulkopf von `hhd/io/schema.py` |
+| `harp_<lauf>.ptu` | T2-Records je Lauf; Kopf mit `UsrHHD_RunId`, `UsrHHD_SessionId`, `UsrHHD_CampaignId`, `UsrHHD_CalibrationId`, `UsrHHD_ComparisonRole` |
+| `digitizer.h5` | Schema v1.1, siehe Modulkopf von `hhd/io/schema.py` |
 | `truth.h5` | Ground Truth je Block (s. u.) und Uhrphase `clock/` |
-| `run.json` | Manifest mit Blöcken, Sollwerten, `mapping`, Konfiguration, SHA-256 aller Dateien |
+| `session.json` | Manifest mit Sitzung, Kalibrierung, Läufen, Sollwerten, `mapping`, Konfiguration, SHA-256 aller Dateien |
 
 Gruppen der Ground Truth je Block in `truth.h5`:
 
@@ -138,9 +160,9 @@ Gruppen der Ground Truth je Block in `truth.h5`:
 
 `hhd-sim validate` prüft:
 
-- Schema v1;
+- Schema v1.1, eine `calibration_id` je Sitzung, eindeutige Lauf-IDs;
 - Prüfsummen;
-- PTU-Köpfe: Record-Typ, Anzahl, Auflösung.
+- PTU-Köpfe: Record-Typ, Anzahl, Auflösung, Lauf-, Sitzungs- und Kalibrierungs-ID.
 
 ## 7 Datenstrom-Modus
 
@@ -163,7 +185,22 @@ die simulierten Geräte (AP17) und der Server auf. Die Daten sind bitgleich zum 
 3. EM-Schätzung von ρ_nn und daraus W(0,0) = Σ(−1)ⁿρ_nn/π, mit Bootstrap-Fehlern;
 4. bei bekannter Phase ein Fit ⟨x⟩(θ) = A·cos(θ − φ).
 
-Records eines Blocks werden nach Triggerart getrennt ausgewertet; `heralded/random` sind die eingestreuten
+Vakuumnormierung (`--norm`): `pooled` (gemeinsame Kalibrierung, Standard), `interpolated` (Vakuumvarianz
+zeitlich linear zwischen den K-V-Läufen) oder `monitor` (gemeinsame Kalibrierung, je Lauf mit √P_LO aus dem
+Monitor skaliert; vernachlässigt den elektronischen Anteil 1/S).
+
+Der **Vergleich** fasst alle A-Läufe und alle B-Läufe zusammen (W(0,0), Var x, Differenz A − B mit z-Wert) und
+meldet **Driftindikatoren** mit Warnung:
+
+- A-B-A: erster gegen letzten A-Lauf (> 3σ);
+- K-V: Vakuumvarianz erster gegen letzten K-V-Lauf (> 3σ);
+- LO-Monitor: Änderung > 1 %.
+
+Befund der Tests: Eine LO-Drift zeigen K-V und Monitor; `interpolated` und `monitor` korrigieren sie. Eine
+Effizienzdrift sieht K-V nicht, nur A-B-A; bei linearer Drift ist das Mittel der A-Läufe trotzdem unverzerrt
+gegenüber B.
+
+Records eines Laufs werden nach Triggerart getrennt ausgewertet; `heralded/random` sind die eingestreuten
 Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 
 - geheraldetes W(0,0) negativ und innerhalb 4σ vom Sollwert;
@@ -173,12 +210,14 @@ Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 - Fock |2⟩ und Katze im Sollbereich;
 - Übersprechen wird über K-H erkannt.
 
-## 9 Grenzen (Stand 0.1.0.dev0)
+## 9 Grenzen (Stand 0.2.0.dev0)
 
 - Die Referenzauswertung braucht die Ground Truth. Die Zuordnung Herald ↔ Record allein aus Markern folgt in
   AP4 (Synchronisation), Kalibrierung und Rekonstruktion in AP5–AP7.
 - Der Sollwert berücksichtigt keine überlappenden Nachbarmoden; bei R_h = 1 kHz und 1/γ = 40 ns ist das
   vernachlässigbar. `records/n_modes` zählt sie.
+- Drift ist nur linear bzw. als Sprung je Lauf modelliert; keine LO-Phasen- oder Polarisationsdrift, kein
+  Drift des Herald-Arms (η_h, Dunkelrate).
 - Nicht modelliert sind:
   - Detektorbandbreite und -nachschwingen, LO-Intensitätsrauschen, 1/f-Rauschen;
   - FIFO-Überlauf bei hohen Raten;

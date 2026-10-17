@@ -1,0 +1,10 @@
+# Option nach ED-12 (nicht Standard): ein Lauf mit Herald-Trigger und eingestreuten Zufallstriggern
+# (Off-Herald-/Zufallsfenster im selben Lauf), dazu ein Zufallsfenster-Lauf. Pflichtkontrollen K-V/K-H bleiben.
+session:
+  id: offherald
+blocks:
+  - {id: kv_start, kind: vacuum, duration_s: 0.5, periodic_rate: 4000}
+  - {id: kh, kind: herald_blocked, duration_s: 1.0}
+  - {id: heralded, kind: heralded, duration_s: 5.0, random_rate: 200}
+  - {id: random, kind: random, duration_s: 1.0, random_rate: 2000}
+  - {id: kv_end, kind: vacuum, duration_s: 0.5, periodic_rate: 4000}

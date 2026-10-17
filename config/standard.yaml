@@ -1,4 +1,6 @@
 # Standardkonfiguration des Simulators (alle Parameter, Defaults aus hhd/sim/config.py).
+# Messablauf ED-12: getrennte Läufe K-V → K-H → A (Herald) → B (ohne Herald) → A → K-V, gemeinsame Kalibrierung.
+# Geräte: HydraHarp 500 S (4 Kanäle), ADQ32-PCIe S2G5 (2,5 GS/s), BW1G0 (1 GHz).
 # Bedeutung, Einheit, Status und Quelle jedes Parameters: docs/PARAMETER.md
 session:
   id: S001
