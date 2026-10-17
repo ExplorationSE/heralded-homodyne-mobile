@@ -81,6 +81,7 @@ class RunSync:
     assign_warnings: list = field(default_factory=list)   # Zuordnung/CH2 (je Durchgang neu)
     timing: dict = field(default_factory=dict)
     n_events: int = 0
+    marker_map: ClockMap | None = None                     # Abbildung nur aus Markern (vor der Verfeinerung)
 
     @property
     def key(self) -> str:
@@ -100,6 +101,7 @@ class RunSync:
                             residual_rms_s=float(np.std(res[used])) if used.sum() > 1 else float("nan"),
                             residual_max_s=float(np.max(np.abs(res[used]))) if used.any() else float("nan"),
                             sigma_r_linear=self.fit["sigma_r_linear"], W_s=self.fit.get("W")),
+                 clock_markers_only=(self.marker_map or self.cmap).to_dict(),
                  refine=self.refine, copy_check=self.copy_check,
                  free_running={k: v for k, v in self.free.items() if not k.startswith('_')}, delta=self.delta,
                  warnings=self.warnings + self.assign_warnings, timing_s=self.timing)
@@ -141,12 +143,19 @@ def _refine(rs: RunSync, p: SyncParams, tH: np.ndarray, trig: np.ndarray) -> Non
     lin = K.robust_linear(x, r, clip=5.0, floor=1e-12)
     med = float(np.median(r[lin["used"]]))
     cm = rs.cmap
+    rs.marker_map = ClockMap.from_dict(cm.to_dict())
     old_sigma_a0 = float(np.sqrt(cm.cov[0, 0]))
     sigma_r_before = float(np.std(r[lin["used"]] - med))
-    cm.a0 = cm.a0 + lin["a0"] + lin["b"] * (cm.x0 - lin["x0"]) - med
-    cm.b = cm.b + lin["b"]
-    cm.cov = np.array([[cm.cov[0, 0], 0.0], [0.0, lin["cov"][1, 1]]])
-    res = r - (lin["a0"] + lin["b"] * (x - lin["x0"]) - med) - med
+    # Steigung: inverse-varianzgewichtete Kombination Marker ⊕ Paare (Paare enthalten die Steigungsabweichung
+    # gegenüber der Markerabbildung als lin["b"])
+    vm, vp = float(cm.cov[1, 1]), float(lin["cov"][1, 1])
+    w = vm / (vm + vp) if (vm + vp) > 0 else 0.0
+    db = w * lin["b"]
+    corr = lambda X: lin["a0"] + db * (X - lin["x0"])
+    cm.a0 = cm.a0 + lin["a0"] + db * (cm.x0 - lin["x0"]) - med
+    cm.b = cm.b + db
+    cm.cov = np.array([[cm.cov[0, 0], 0.0], [0.0, vm * vp / (vm + vp) if (vm + vp) > 0 else 0.0]])
+    res = r - corr(x)
     piece = None
     if p.allow_piecewise:
         piece, _ = fit_piecewise_auto(x[lin["used"]], res[lin["used"]], source="herald_pairs")
@@ -155,7 +164,7 @@ def _refine(rs: RunSync, p: SyncParams, tH: np.ndarray, trig: np.ndarray) -> Non
             res = res - piece(x)
     used = lin["used"]
     rs.refine = dict(applied=True, n_pairs=int(m.sum()), n_used=int(used.sum()), offset_removed_s=med,
-                     slope_correction=lin["b"], sigma_before_s=sigma_r_before,
+                     slope_correction=db, slope_weight=w, sigma_before_s=sigma_r_before,
                      sigma_after_s=float(np.std(res[used])), piecewise=piece is not None,
                      W_s=piece.W if piece is not None else None, sigma_a0_markers_s=old_sigma_a0)
 
