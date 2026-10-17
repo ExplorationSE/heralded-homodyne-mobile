@@ -35,8 +35,8 @@ NORMS = ("pooled", "interpolated", "monitor", "monitor_record")
 class CalibParams:
     norm: str = "pooled"
     clearance_dB: float | None = None
-    drift_z: float = 3.0
-    lo_rel_warn: float = 0.01
+    drift_z: float = 3.0                     # OP-6: |z| > 3 ⇒ Fehlalarm je Indikator 0,3 % (Kampagne: ≤ 0,5 %)
+    lo_rel_warn: float = 0.005               # OP-6: LO-Monitor ±0,5 % (Nullrauschen ≈ 0,01 %; 2-%-Drift sicher erkannt)
     crosstalk_z: float = 5.0
     crosstalk_bin: int = 10                  # Samples je Bin für die Wellenformprüfung (4 ns)
 

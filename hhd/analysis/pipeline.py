@@ -46,7 +46,8 @@ class AnalysisParams:
     jackknife_groups: int = 20              # Gruppen-Jackknife für die BCa-Beschleunigung (0 = aus)
     seed: int = 1
     dark_count_rate: float = 100.0          # Herald-Dunkelzählrate (1/s) für ξ im Effizienzbudget
-    drift_z: float = 3.0
+    drift_z: float = 3.0                    # OP-6: Driftschwelle |z| (A-Hälften, Nulltests; A-B-A: drift_z + 0,5)
+    drift_p: float = 0.0027                 # OP-6: p-Schwelle (χ² der Läufe, A-B-A, KS der Nulltests) ≙ 3σ
     hist_bins: int = 60
     hist_lim: float = 5.0
 
@@ -162,8 +163,10 @@ CI_QUANT = ("var_x", "W00", "W00_moments", "eta_fit", "eta_var")
 SE_KEY = {"var_x": ("var_x_se", "var_err"), "eta_var": ("var_x_se", "var_err"),
           "W00_moments": ("W00_moments_se", "W00_moments_err"), "eta_fit": ("eta_fit_se", "eta_fit_err_fisher")}
 # Standardmethode je Größe (Kampagnenstudie 0.8.0, docs/ANALYSE.md Abschnitt 4)
-CI_DEFAULT = {"var_x": "studentized", "eta_var": "studentized", "eta_fit": "studentized",
-              "W00": "bca", "W00_moments": "studentized"}
+# Standard-KI je Größe (0.8.0, Kampagne 264 Sitzungen = 200 neu + 64 aus 0.7, n_boot 200): die symmetrische
+# Normal-Näherung θ̂ ± z·sd(θ*) trifft 68/95 % am besten (W(0,0): 68,2/94,7 %, η_Fit: 68,2/93,6 %, Var x: 67,0/96,6 %);
+# BCa/Perzentil liegen gleichauf bzw. bei 95 % etwas darunter, studentisiert überdeckt (Var x 87/99,6 %).
+CI_DEFAULT = {"var_x": "normal", "eta_var": "normal", "eta_fit": "normal", "W00": "normal", "W00_moments": "normal"}
 
 
 def jackknife_values(norm: Normalizer, key: str, point: dict, ap: AnalysisParams, rng) -> dict:
@@ -259,7 +262,12 @@ def drift_ab(session, norm: Normalizer, ap: AnalysisParams) -> dict:
         if len(ps) >= 2:
             mu, _ = pooled(ps)
             chi2 = float(sum((p["var_x"] - mu) ** 2 / p["var_err"] ** 2 for p in ps))
-            out[f"chi2_runs_{name}"] = dict(chi2=chi2, ndof=len(ps) - 1)
+            from scipy.stats import chi2 as _chi2
+            pv = float(_chi2.sf(chi2, len(ps) - 1))
+            out[f"chi2_runs_{name}"] = dict(chi2=chi2, ndof=len(ps) - 1, p=pv)
+            if pv < ap.drift_p:
+                out["flags"].append(f"{name}-Läufe: Varianzen streuen mehr als statistisch erwartet "
+                                    f"(χ² = {chi2:.1f}/{len(ps) - 1}, p = {pv:.1e})")
     if len(A) >= 2:
         h = len(A) // 2
         first, second = A[:h], A[len(A) - h:] if len(A) % 2 == 0 else A[h + 1:]
@@ -286,8 +294,10 @@ def drift_ab(session, norm: Normalizer, ap: AnalysisParams) -> dict:
     out["ABA"] = aba
     if aba:
         zz = np.array([a["z"] for a in aba])
-        out["ABA_chi2"] = dict(chi2=float(np.sum(zz ** 2)), ndof=len(zz), max_abs_z=float(np.max(np.abs(zz))))
-        if np.max(np.abs(zz)) > ap.drift_z + 0.5:
+        from scipy.stats import chi2 as _chi2
+        pa = float(_chi2.sf(np.sum(zz ** 2), len(zz)))
+        out["ABA_chi2"] = dict(chi2=float(np.sum(zz ** 2)), ndof=len(zz), max_abs_z=float(np.max(np.abs(zz))), p=pa)
+        if np.max(np.abs(zz)) > ap.drift_z + 0.5 or pa < ap.drift_p:
             out["flags"].append(f"A-B-A: A-Varianz ändert sich über ein B hinweg (max |z| = {np.max(np.abs(zz)):.1f})")
     return out
 
@@ -413,6 +423,10 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
             t = time.time()
             comp = compare_ab(norm.x("A"), norm.x("B"), point["A"], point["B"], boot, ap)
             comp["null_tests"] = null_tests(norm)
+            for nk, nt in comp["null_tests"].items():
+                if abs(nt["var_z"]) > ap.drift_z or nt["ks_p"] < ap.drift_p:
+                    warnings.append(f"Nulltest {nk}: Lauf-Hälften unterscheiden sich (Var z = {nt['var_z']:+.1f}, "
+                                    f"KS p = {nt['ks_p']:.1e})")
             result["comparison"] = comp
             timing["compare"] = time.time() - t
         result["efficiency_budget"] = efficiency_budget(session, sd, cal, res_groups, pca, comp, ap)

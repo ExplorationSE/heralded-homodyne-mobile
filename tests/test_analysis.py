@@ -274,3 +274,88 @@ def test_crosstalk_detected(tmp_path):
 
 def test_crosstalk_null(ana_std):
     assert ana_std[1]["crosstalk"]["waveform"]["max_abs_z"] < 5
+
+
+# ------------------------------------------------------------------ 0.8: Intervalle, Nulltests, η_el, Driftschwellen
+def test_interval_methods_gaussian():
+    from hhd.recon.intervals import METHODS, intervals
+    rng = np.random.default_rng(5)
+    boot = rng.normal(1.0, 0.1, 4000)
+    se = np.full(4000, 0.1)
+    ci = intervals(1.0, boot, se_boot=se, se_point=0.1, jack=rng.normal(0, 0.01, 20))
+    for m in METHODS:
+        lo, hi = ci[m]["68"]
+        assert lo == pytest.approx(0.9, abs=0.01) and hi == pytest.approx(1.1, abs=0.01), m
+        lo, hi = ci[m]["95"]
+        assert lo == pytest.approx(0.804, abs=0.015) and hi == pytest.approx(1.196, abs=0.015), m
+    # verschobene Bootstrap-Verteilung: basic/bc_normal spiegeln den Bias, percentile nicht
+    ci2 = intervals(1.0, boot + 0.05)
+    assert np.mean(ci2["percentile"]["68"]) == pytest.approx(1.05, abs=0.01)
+    assert np.mean(ci2["basic"]["68"]) == pytest.approx(0.95, abs=0.01)
+    assert np.mean(ci2["bc_normal"]["68"]) == pytest.approx(0.95, abs=0.01)
+    assert np.mean(ci2["normal"]["68"]) == pytest.approx(1.0, abs=0.01)
+    assert ci2["_params"]["bias"] == pytest.approx(0.05, abs=0.01)
+
+
+def test_ci_defaults_and_fields(ana_std):
+    from hhd.analysis.pipeline import CI_DEFAULT
+    assert set(CI_DEFAULT.values()) == {"normal"}           # 0.8: Kampagne 264 Sitzungen
+    d, r = ana_std
+    A = r["reconstruction"]["A"]
+    for q in ("var_x", "W00", "eta_fit"):
+        lo, hi = A[f"{q}_ci68"]
+        lo95, hi95 = A[f"{q}_ci95"]
+        assert lo95 < lo < A[q] < hi < hi95 and A[f"{q}_ci_method"] == "normal"
+        assert {"percentile", "bca", "normal"} <= set(A["ci_all"][q])
+
+
+def test_null_tests_and_flags(ana_el):
+    d, r = ana_el                                   # zwei A-Läufe: A-A-Nulltest a1 ↔ a2
+    nt = r["comparison"]["null_tests"]
+    assert "AA" in nt and 0 <= nt["AA"]["ks_p"] <= 1 and np.isfinite(nt["AA"]["var_z"])
+    assert set(nt["AA"]["runs_1"]).isdisjoint(nt["AA"]["runs_2"])
+    for k in ("A", "B"):
+        c = r["drift_AB"].get(f"chi2_runs_{k}")
+        if c:
+            assert 0 <= c["p"] <= 1
+    assert AnalysisParams().drift_p == pytest.approx(0.0027) and CalibParams().lo_rel_warn == 0.005
+
+
+def test_eta_el_error_and_budget(ana_el):
+    d, r = ana_el
+    cal = r["calibration"]
+    assert 0.9 < cal["eta_el"] < 1 and cal["eta_el_err"] > 0
+    f_el = 1 - cal["eta_el"]
+    assert cal["eta_el_err"] == pytest.approx(f_el * np.sqrt(2 / cal["n_el"] + 2 / cal["n_kv"]), rel=1e-6)
+    eb = r["efficiency_budget"]
+    assert eb["eta_el_err"] == pytest.approx(cal["eta_el_err"])
+
+
+def test_m1_plan_has_dark_run():
+    from hhd.sim.config import M1_PLAN, SimConfig
+    assert M1_PLAN["T_dark"] == 10.0
+    cfg = SimConfig.load(ROOT / "config" / "laufplan_m1.yaml")
+    kinds = [b.kind for b in cfg.blocks]
+    assert kinds[:3] == ["vacuum", "electronic", "herald_blocked"] and len(kinds) == 18
+    dark = [b for b in cfg.blocks if b.kind == "electronic"][0]
+    assert dark.duration_s == pytest.approx(10.0) and dark.periodic_rate == pytest.approx(10000.0)
+
+
+def test_drift_thresholds_tool(tmp_path):
+    import subprocess, sys
+    rng = np.random.default_rng(1)
+    def sess(scen, shift):
+        ind = {k: float(rng.normal(shift, 1)) for k in ("kv_z", "kv_slope_z", "halves_z", "AA_var_z", "BB_var_z")}
+        ind.update({k: float(rng.uniform()) for k in ("aba_chi2_p", "runs_A_chi2_p", "AA_ks_p")})
+        ind.update(aba_max_z=float(abs(rng.normal(0, 1.3))), lo_dev=float(rng.normal(0, 1e-4)))
+        return dict(dir=f"/x/{scen}/s{rng.integers(1e6)}", ind=ind)
+    null = dict(sessions=[sess("null", 0) for _ in range(300)])
+    drift = dict(sessions=[sess("gross", 6) for _ in range(30)])
+    (tmp_path / "n.json").write_text(json.dumps(null)); (tmp_path / "d.json").write_text(json.dumps(drift))
+    out = subprocess.run([sys.executable, str(ROOT / "tools" / "drift_thresholds.py"), str(tmp_path / "n.json"),
+                          str(tmp_path / "d.json"), "0.0027", "4"], capture_output=True, text=True, check=True).stdout
+    o = json.loads(out)
+    kv = o["indicators"]["kv_z"]
+    assert kv["threshold"] == pytest.approx(3.0, abs=0.01) and kv["false_alarm"] < 0.03
+    assert kv["detection"]["gross"] > 0.9 and kv["sensitivity"]["gross"]["mean_z"] == pytest.approx(6, abs=0.6)
+    assert o["session_false_alarm"] < 0.1
