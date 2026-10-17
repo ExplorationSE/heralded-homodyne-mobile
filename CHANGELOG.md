@@ -1,5 +1,23 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.5.0.dev0 – 17.10.2026 (unveröffentlicht)
+
+Entscheidungen von Herrn Eilers zum Vorschlag M1: 1550 nm, LO-Monitor PDA05CF2 + 10 dB, Herald-Detektor SNSPD
+(Alternative InGaAs-APD), Laufplan und Laufmarke wie vorgeschlagen.
+
+- **Abschnitt `optics`:** `wavelength_nm` 1550 (Metadatum in PTU-Kopf, Manifest, HDF5), `herald_detector`
+  (`snspd` | `ingaas_apd` | `custom`), `homodyne_pd` InGaAs-PIN, `eta_hd_qe` 0,95 (Prüfung η ≤ eta_hd_qe).
+- **Herald-Presets:** SNSPD η_det 0,85, R_d 100 /s, Jitter 40 ps FWHM, Totzeit 30 ns; InGaAs-APD 0,20,
+  3 kHz, 150 ps, 10 µs. Neue Quellparameter `det_eff`, `herald_arm_T` (0,6), `det_dead_s`; η_h wird abgeleitet
+  (0,51). Presets füllen nur nicht angegebene Felder.
+- **Totzeit des Herald-Detektors** (nicht-paralysierbar) in der Engine; Warnung bei Totzeit·Rate > 5 %.
+- **LO-Monitor-Kette** `lo_monitor_levels`: PDA05CF2 (1,0 A/W, 5 kV/A, 2 mV rms), Dämpfer 10 dB, Abgriff 150 µW,
+  DC-Offset −0,2 V → Kanal-B-Pegel; Prüfung gegen Abs. Max. ±1,75 V und DC-Offset ±0,25 V.
+- **Default-Laufplan = M1-Plan** (`M1_PLAN`, wie `config/laufplan_m1.yaml`) im Zeitraffer 1/90, 17 Läufe;
+  Statistik in `plan.py` mit R_d 100 /s.
+- Vorlage `config/ingaas_apd.yaml` (30 kHz Herald-Rate); Tests `tests/test_optics.py`; Drifttests in
+  `test_session.py` nutzen die frühere kurze Sitzung.
+
 ## 0.4.0.dev0 – 17.10.2026 (unveröffentlicht)
 
 Vorschlag M1 (Laufplan, LO-Photodiode, Laufmarke) für Herrn Eilers.

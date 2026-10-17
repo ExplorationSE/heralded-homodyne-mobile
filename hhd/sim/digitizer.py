@@ -116,7 +116,10 @@ class ADQ32:
                     channel_b_record_length=c.lo_b_record_length if c.lo_b_enabled else 0,
                     channel_b_horizontal_offset=-c.lo_b_pretrigger if c.lo_b_enabled else 0,
                     lo_monitor_dark_lsb=c.lo_monitor.dark_lsb, lo_monitor_lsb_nominal=c.lo_monitor.lsb_nominal,
-                    trigger_copy_port="GPIO", pulse_generator_step_s=c.pulse_gen_step)
+                    trigger_copy_port="GPIO", pulse_generator_step_s=c.pulse_gen_step,
+                    wavelength_nm=c.optics.wavelength_nm, herald_detector=c.optics.herald_detector,
+                    lo_monitor_pd=c.lo_monitor.pd_model, lo_monitor_attenuator_dB=c.lo_monitor.attenuator_dB,
+                    lo_monitor_dc_offset_V=c.lo_monitor.dc_offset_V)
 
     def periodic_grid(self, t0: float, duration: float, rate: float) -> np.ndarray:
         """Digitizer-Zeiten der internen periodischen Trigger im Lauf (Sample-Auflösung [Annahme])."""

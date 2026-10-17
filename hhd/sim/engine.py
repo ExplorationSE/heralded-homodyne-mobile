@@ -45,7 +45,7 @@ from .clock import DigitizerClock
 from .config import BlockCfg, SimConfig
 from .drift import DriftPath
 from .digitizer import ADQ32, TRIG_HERALD, TRIG_RANDOM, TRIG_STATE, TriggerInput
-from .harp import HydraHarp500
+from .harp import HydraHarp500, apply_dead_time
 from .phase import PhaseModel
 from .states import make_state
 
@@ -146,6 +146,13 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     is_dark = np.concatenate([np.zeros(herald_of_pair.sum(), bool), np.ones(len(t_dark), bool)])
     pair_of_h = np.concatenate([np.flatnonzero(herald_of_pair), -np.ones(len(t_dark), np.int64)])
     o = np.argsort(t_h); t_h, is_dark, pair_of_h = t_h[o], is_dark[o], pair_of_h[o]
+    if src.det_dead_s > 0 and len(t_h) > 1:            # Totzeit des Herald-Detektors (SNSPD ~30 ns, APD µs)
+        keep = apply_dead_time(t_h, src.det_dead_s)
+        if not keep.all():
+            lost = np.flatnonzero(~keep & ~is_dark)
+            herald_of_pair = herald_of_pair.copy()
+            herald_of_pair[pair_of_h[lost]] = False       # verlorene Heralds: Signalphoton bleibt ungeheraldet
+            t_h, is_dark, pair_of_h = t_h[keep], is_dark[keep], pair_of_h[keep]
     t_det = t_h + r_src.normal(0, src.sigma_spd, len(t_h))
 
     # ---------------------------------------------------------------- Moden am Analogeingang
@@ -350,6 +357,8 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
                                 "UsrHHD_SessionId": (P.TY_ANSI, res.session_id),
                                 "UsrHHD_CampaignId": (P.TY_ANSI, res.campaign_id),
                                 "UsrHHD_ComparisonRole": (P.TY_ANSI, br.attrs["comparison_role"]),
+                                "UsrHHD_Wavelength_nm": (P.TY_FLOAT8, float(cfg.optics.wavelength_nm)),
+                                "UsrHHD_HeraldDetector": (P.TY_ANSI, cfg.optics.herald_detector),
                                 "UsrHHD_DatasetType": (P.TY_ANSI, br.dataset_type),
                                 "UsrHHD_ChannelRoles": (P.TY_ANSI, br.attrs["harp_channel_roles"]),
                                 "UsrHHD_MarkerRoles": (P.TY_ANSI, br.attrs["harp_marker_roles"]),
@@ -390,6 +399,8 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
     files["truth.h5"] = "truth"
     manifest = dict(format="hhd-session", schema_version=S.SCHEMA_VERSION, software=f"hhd {__version__}",
                     simulated=True, session_id=res.session_id, campaign_id=res.campaign_id, seed=cfg.session.seed,
+                    optics=dict(wavelength_nm=cfg.optics.wavelength_nm, herald_detector=cfg.optics.herald_detector,
+                                homodyne_pd=cfg.optics.homodyne_pd, lo_monitor_pd=cfg.lo_monitor.pd_model),
                     calibration=dict(calibration_id=res.calibration_id, mode="shared",
                                      vacuum_runs=[b.run_id for b in res.blocks if b.dataset_type == "vacuum"]),
                     runs=[dict(run_id=b.run_id, id=b.cfg.id, index=b.index, kind=b.cfg.kind, dataset_type=b.dataset_type,

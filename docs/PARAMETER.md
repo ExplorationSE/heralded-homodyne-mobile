@@ -10,13 +10,16 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `session.start_s` | 0.25 | s | Vorschlag |  | wahre Startzeit des ersten Laufs (Digitizer-Zähler läuft ab clock.t_arm_s) |
 | `session.gap_s` | 0.5 | s | Vorschlag |  | Pause zwischen Läufen (Umbau, z. B. Blocker, Triggerquelle umschalten) |
 | `source.R_herald` | 1000 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Rate echter Heralds (CW, Poisson) |
-| `source.R_dark` | 20 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Dunkelzählrate des Herald-Detektors (falsche Heralds, Vakuum) |
-| `source.eta_herald` | 0.5 |  | Annahme | Analyse Vergleich | Nachweiswahrscheinlichkeit im Herald-Arm; bestimmt die Rate ungeheraldeter Signalphotonen R_herald·(1/η_h − 1) |
-| `source.eta` | 0.7 |  | Annahme | Vorbericht Synchronisation, Parameter | Zustandseffizienz (Optik·Photodiode·Modenanpassung) vor elektronischem Rauschen |
+| `source.R_dark` | 100 | 1/s | **Spez.** | ID Quantique ID281 (Produktseite); Single Quantum Eos, Broschüre 2026/03 | Dunkelzählrate des Herald-Detektors (falsche Heralds, Vakuum); Preset SNSPD: obere Grenze ID281 Standard bei 1300–1600 nm |
+| `source.det_eff` | 0.85 |  | **Spez.** | ID Quantique ID281 (Produktseite); Single Quantum Eos, Broschüre 2026/03 | Systemeffizienz des Herald-Detektors (Preset SNSPD 0,85; InGaAs-APD 0,20) |
+| `source.herald_arm_T` | 0.6 |  | Annahme |  | Transmission des Herald-Arms vor dem Detektor (Filter, Fasereinkopplung) |
+| `source.det_dead_s` | 3e-08 | s | **Spez.** | ID Quantique ID281 (Produktseite); ID Quantique ID Qube NIR Free-Running (Broschüre) | Totzeit/Erholzeit des Herald-Detektors (SNSPD typ. < 30 ns; InGaAs-APD 0,1–80 µs einstellbar, Preset 10 µs); Nachpulse nicht simuliert |
+| `source.eta_herald` | 0.51 |  | Annahme | Analyse Vergleich | Nachweiswahrscheinlichkeit im Herald-Arm = det_eff · herald_arm_T (ohne Angabe neu berechnet); bestimmt die Rate ungeheraldeter Signalphotonen R_herald·(1/η_h − 1) |
+| `source.eta` | 0.7 |  | Annahme | Vorbericht Synchronisation, Parameter | Zustandseffizienz η = η_QE(InGaAs, optics.eta_hd_qe) · η_Rest (Optik, Modenanpassung, Visibility²) vor elektronischem Rauschen |
 | `source.heralded_state` | fock1 |  | Vorschlag |  | Zustand der geheraldeten Mode (fock1; fock2 nur als Test) |
 | `source.mode_shape` | double_exponential |  | Vorschlag |  | Temporale Mode: double_exponential f(t)=√γ·e^(−γ\|t\|) (CW-SPDC) oder gauss |
 | `source.gamma` | 2.5e+07 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Abklingrate der Mode (1/γ = 40 ns); bei gauss: 1/σ |
-| `source.sigma_spd` | 5e-11 | s | Annahme | Vorbericht Synchronisation, Parameter | Jitter des Herald-Detektors (SNSPD), gemeinsam für Harp und TRIG |
+| `source.sigma_spd` | 1.6986e-11 | s | **Spez.** | ID Quantique ID281 (Produktseite); ID Quantique ID Qube NIR Free-Running (Broschüre) | Jitter des Herald-Detektors (rms), gemeinsam für Harp und TRIG; Preset SNSPD 40 ps FWHM (ID281 Standard; Eos ≤ 15 ps), InGaAs-APD 150 ps FWHM |
 | `phase.mode` | random |  | Vorschlag |  | random (phasengemittelt), fixed, ramp (Sägezahn), steps |
 | `phase.theta0` | 0 | rad | Vorschlag |  | Phase bei fixed bzw. Startphase von ramp/steps |
 | `phase.ramp_Hz` | 10 | Hz | Annahme |  | Sägezahnfrequenz der Phasenrampe (2π je Periode) |
@@ -36,7 +39,7 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `harp.state_tag_channel` | 4 |  | Vorschlag | Gesamtplan v1.5, Kanalbelegung | CH4 (Hilfskanal): Trigger getriggerter Testzustände (nie im selben Lauf wie Zufallstrigger) |
 | `harp.marker_timing_channel` | 0 |  | Vorschlag | HydraHarp 500 Manual, Kap. 6.3 (T2) | Timing-Kanal der Sync-Marker, falls markers.on_timing_channel: 0 = Sync-Eingang (in T2 vollwertiger Zeitstempelkanal, Teiler aus) |
 | `harp.sync_divider` | 1 |  | **Spez.** | HydraHarp 500 Manual, Kap. 6.3 (T2) | Sync-Teiler; in T2 bei Nutzung des Sync-Eingangs als Kanal 1 ("None") [Spez.] |
-| `harp.run_marker_bit` | 1 |  | Vorschlag | Gesamtplan v1.5, Kanalbelegung | Marker-Eingang M1 (Bit 1): Laufmarke bei Laufbeginn und -ende (Quelle [offen]); 0 = aus |
+| `harp.run_marker_bit` | 1 |  | Vorschlag | Gesamtplan v1.6, Entscheidung 17.10.2026 | Marker-Eingang M1 (Bit 1): Laufmarke bei Laufbeginn und -ende (v1.0 per Software; optional ADQ32-GPIOC0 → 3,3-V-Puffer → M1); 0 = aus |
 | `harp.d_TC` | 3e-08 | s | Annahme |  | Laufzeit ADQ32-GPIO → Harp CH2 (Kabel, Abschwächer) |
 | `harp.channel_offsets` | {} | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Eingangs-Offsets je Kanal {Kanal: s}, Bereich ±100 ns |
 | `harp.d_H` | 8.53e-08 | s | Annahme | Vorbericht Synchronisation, Parameter | Laufzeit Herald-Detektor → Harp |
@@ -101,11 +104,23 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `drift.monitor_noise_rel` | 0.001 |  | Annahme |  | relatives Rauschen des externen LO-Leistungsmessers |
 | `lo_monitor.source` | adq32_b |  | Vorschlag | Entscheidung Herr Eilers (v1.5) | adq32_b (Photodiode an Kanal B) oder off |
 | `lo_monitor.skip_factor` | 25 |  | Vorschlag | ADQ3 User Guide 21-2539, Kap. 5.2 | Sample Skip für Kanal B (2,5 GS/s → 100 MS/s); Fenster wie Kanal A |
-| `lo_monitor.lsb_nominal` | 1000 | LSB | Annahme |  | Signal der Photodiode bei nominaler LO-Leistung über dem Dunkelwert (Eingangsbereich 0,5 Vpp, DC-Offset programmierbar) |
-| `lo_monitor.dark_lsb` | 20 | LSB | Annahme |  | Dunkelwert (Photodiode ohne Licht + ADC-Offset); im Labor mit LO aus messen |
-| `lo_monitor.noise_lsb` | 3 | LSB | Annahme |  | Rauschen je Sample (Photodiode + Verstärker + ADC) |
+| `lo_monitor.lsb_nominal` | 1942.9 | LSB | Annahme |  | Signal bei nominaler LO-Leistung über dem Dunkelwert; abgeleitet aus Photodiode, Dämpfer und LSB = 0,5 V/4096 (ohne Angabe in der Konfiguration neu berechnet) |
+| `lo_monitor.dark_lsb` | -1625.4 | LSB | Annahme |  | Dunkelwert (Photodiode ohne Licht + DC-Offset); abgeleitet; im Labor mit LO aus messen |
+| `lo_monitor.noise_lsb` | 5.99 | LSB | Annahme |  | Rauschen je Sample (Photodiode über Dämpfer ⊕ 3 LSB ADC [Annahme]); abgeleitet |
 | `lo_monitor.rin_rel` | 0.001 |  | Annahme |  | relatives Intensitätsrauschen des LO je Record |
+| `lo_monitor.pd_model` | PDA05CF2 |  | Vorschlag | Entscheidung Herr Eilers (Gesamtplan v1.6) | Photodiode des LO-Monitors (InGaAs, DC–150 MHz) mit 10-dB-Dämpfer vor Kanal B; Auskopplung TN1550R1A1 (99:1, Faser) bzw. BSF10-C (frei) |
+| `lo_monitor.pd_responsivity_A_W` | 1 | A/W | Annahme | Thorlabs PDA05CF2, Bedienungsanleitung TTN134810-D02 | Responsivität bei 1550 nm (Datenblatt: Spitze 1,04 A/W bei 1590 nm; Wert bei 1550 nm aus der Kurve geschätzt) |
+| `lo_monitor.pd_gain_V_A` | 5000 | V/A | **Spez.** | Thorlabs PDA05CF2, Bedienungsanleitung TTN134810-D02 | Transimpedanz an 50 Ω (10 kV/A an Hi-Z) |
+| `lo_monitor.attenuator_dB` | 10 | dB | Vorschlag | Entscheidung Herr Eilers (Gesamtplan v1.6); ADQ32 Datenblatt 20-2378 | SMA-Dämpfer vor Kanal B: PDA-Ausgang bis 5 V an 50 Ω, ADQ32-Eingang Abs. Max. ±1,75 V |
+| `lo_monitor.p_tap_W` | 0.00015 | W | Annahme |  | optische Leistung auf der Photodiode bei nominaler LO-Leistung (z. B. 1 % von 15 mW) |
+| `lo_monitor.pd_dark_V` | 0.005 | V | Annahme | Thorlabs PDA05CF2, Bedienungsanleitung TTN134810-D02 | Dunkeloffset der Photodiode am Ausgang (Spez. ±20 mV) |
+| `lo_monitor.pd_noise_V` | 0.002 | V | **Spez.** | Thorlabs PDA05CF2, Bedienungsanleitung TTN134810-D02 | Rauschen der Photodiode (rms, 50 Ω, volle Bandbreite) |
+| `lo_monitor.dc_offset_V` | -0.2 | V | Vorschlag | ADQ32 Datenblatt 20-2378 | programmierbarer DC-Offset von Kanal B (±0,25 V), nutzt den unipolaren Bereich |
 | `lo_monitor.gain_rw_per_sqrt_s` | 0 | 1/√s | Annahme | Vorschlag M1 Laufplan | Irrfahrt der Monitor-Verstärkung (Teilerverhältnis, Polarisation, Photodiode); verfälscht die Normierung mit dem Monitor; 0 = aus |
+| `optics.wavelength_nm` | 1550 | nm | Vorschlag | Entscheidung Herr Eilers (Gesamtplan v1.6) | Wellenlänge (Telekom-C-Band); Metadatum in session.json, digitizer.h5, PTU-Kopf |
+| `optics.herald_detector` | snspd |  | Vorschlag | Entscheidung Herr Eilers (Gesamtplan v1.6) | Preset des Herald-Detektors: snspd (Standard), ingaas_apd (Alternative) oder custom; setzt source.det_eff, R_dark, sigma_spd, det_dead_s, sofern dort nicht ausdrücklich angegeben |
+| `optics.homodyne_pd` | InGaAs-PIN |  | Vorschlag | Entscheidung Herr Eilers (Gesamtplan v1.6) | Photodioden des balancierten Homodyndetektors |
+| `optics.eta_hd_qe` | 0.95 |  | Annahme | PRL 117, 110801 (2016); Opt. Express 30, 7, 10.1364/OE.447091 | Quanteneffizienz der InGaAs-Homodyn-Photodioden; Literatur bis 99,5 % (Vahlbruch 2016) bzw. > 98 % bei 1510–1575 nm (Opt. Express 2022); source.eta = η_QE · η_Rest muss ≤ η_QE sein |
 | `blocks[].id` | heralded |  | Vorschlag |  | eindeutiger Blockname |
 | `blocks[].kind` | heralded |  | Vorschlag |  | heralded \| random \| free_running \| vacuum \| herald_blocked \| electronic \| state |
 | `blocks[].duration_s` | 5 | s | Vorschlag |  | Messdauer des Laufs |
@@ -123,9 +138,20 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 
 | id | kind | duration_s | random_rate | periodic_rate |
 |---|---|---|---|---|
-| kv_start | vacuum | 0.5 | 0 | 4000 |
-| kh | herald_blocked | 1 | 0 | 2000 |
-| heralded_1 | heralded | 2.5 | 0 | 2000 |
-| unheralded | free_running | 1 | 0 | 2000 |
-| heralded_2 | heralded | 2.5 | 0 | 2000 |
-| kv_end | vacuum | 0.5 | 0 | 4000 |
+| kv_00 | vacuum | 0.222222 | 0 | 10000 |
+| kh_start | herald_blocked | 0.666667 | 0 | 2000 |
+| a_01 | heralded | 0.666667 | 0 | 2000 |
+| b_01 | free_running | 0.333333 | 0 | 2000 |
+| a_02 | heralded | 0.666667 | 0 | 2000 |
+| b_02 | free_running | 0.333333 | 0 | 2000 |
+| a_03 | heralded | 0.666667 | 0 | 2000 |
+| b_03 | free_running | 0.333333 | 0 | 2000 |
+| kv_03 | vacuum | 0.222222 | 0 | 10000 |
+| a_04 | heralded | 0.666667 | 0 | 2000 |
+| b_04 | free_running | 0.333333 | 0 | 2000 |
+| a_05 | heralded | 0.666667 | 0 | 2000 |
+| b_05 | free_running | 0.333333 | 0 | 2000 |
+| a_06 | heralded | 0.666667 | 0 | 2000 |
+| b_06 | free_running | 0.333333 | 0 | 2000 |
+| a_07 | heralded | 0.666667 | 0 | 2000 |
+| kv_end | vacuum | 0.222222 | 0 | 10000 |

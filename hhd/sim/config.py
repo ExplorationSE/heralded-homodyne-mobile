@@ -24,6 +24,42 @@ HH500_T2 = "HydraHarp 500 Manual, Kap. 6.3 (T2)"
 ADQ32_DS = "ADQ32 Datenblatt 20-2378"
 ADQ3_UG = "ADQ3 User Guide 21-2539"
 SYNC_REP = "Vorbericht Synchronisation, Parameter"
+DEC_16 = "Entscheidung Herr Eilers (Gesamtplan v1.6)"
+SQ_EOS = "Single Quantum Eos, Broschüre 2026/03"
+IDQ_281 = "ID Quantique ID281 (Produktseite)"
+IDQ_QUBE = "ID Quantique ID Qube NIR Free-Running (Broschüre)"
+PDA05 = "Thorlabs PDA05CF2, Bedienungsanleitung TTN134810-D02"
+
+# Herald-Detektor-Presets (Gesamtplan v1.6). Typische Herstellerwerte bei 1550 nm, konservativ gewählt:
+# SNSPD: Systemeffizienz ≥ 80–90 % (IDQ ID281), ≥ 90 % (Single Quantum Eos); Jitter < 40 ps FWHM (ID281 Standard),
+# ≤ 15 ps (Eos); Dunkelrate < 100 cps (ID281 Standard 1300–1600 nm), ≤ 1 cps (Eos); Erholzeit typ. < 30 ns
+# (ID281, 50 %-Erholung). InGaAs-APD frei laufend (ID Qube NIR FR): 10/15/20(/25) % Effizienz, Jitter typ. 150 ps
+# FWHM (max. 200 ps), Dunkelrate max. 3 kHz (LN) bzw. 6 kHz (STD) bei 20 %, Totzeit 0,1–80 µs einstellbar.
+FWHM = 2.0 * (2.0 * 0.6931471805599453) ** 0.5
+HERALD_PRESETS = {
+    "snspd": dict(det_eff=0.85, R_dark=100.0, sigma_spd=40e-12 / FWHM, det_dead_s=30e-9),
+    "ingaas_apd": dict(det_eff=0.20, R_dark=3000.0, sigma_spd=150e-12 / FWHM, det_dead_s=10e-6),
+}
+HERALD_ARM_T = 0.6          # Transmission Herald-Arm (Filter, Kopplung) [Annahme]
+
+
+def lo_monitor_levels(responsivity_A_W: float, gain_V_A: float, attenuator_dB: float, p_tap_W: float,
+                      dark_V: float, noise_V: float, dc_offset_V: float, adc_noise_lsb: float = 3.0,
+                      vpp: float = 0.5, bits: int = 12) -> dict:
+    """Pegel der LO-Monitor-Photodiode an ADQ32-Kanal B (Kette Photodiode → Dämpfer → 50-Ω-Eingang).
+
+    Code = (U + DC-Offset)/LSB mit LSB = Vpp/2^bits; Rückgabe in LSB und Volt."""
+    a = 10 ** (-attenuator_dB / 20)
+    lsb = vpp / 2 ** bits
+    v_sig = p_tap_W * responsivity_A_W * gain_V_A * a
+    return dict(lsb_V=lsb, v_signal=v_sig, v_dark=dark_V * a, v_max_at_adc=5.0 * a,
+                lsb_nominal=round(v_sig / lsb, 1), dark_lsb=round((dark_V * a + dc_offset_V) / lsb, 1),
+                noise_lsb=round(float(((noise_V * a / lsb) ** 2 + adc_noise_lsb ** 2) ** 0.5), 2))
+
+
+_PD = dict(responsivity_A_W=1.0, gain_V_A=5000.0, attenuator_dB=10.0, p_tap_W=150e-6, dark_V=0.005, noise_V=2e-3,
+           dc_offset_V=-0.2)
+_PD_LEVELS = lo_monitor_levels(**_PD)
 
 
 def P(default, unit="", status="Annahme", source="", doc=""):
@@ -65,6 +101,15 @@ class DriftCfg:
 
 
 @dataclass
+class OpticsCfg:
+    """Wellenlänge und Detektoren (Entscheidung Herr Eilers zu Gesamtplan v1.6)."""
+    wavelength_nm: float = P(1550.0, "nm", doc="Wellenlänge (Telekom-C-Band); Metadatum in session.json, digitizer.h5, PTU-Kopf", status="Vorschlag", source=DEC_16)
+    herald_detector: str = P("snspd", doc="Preset des Herald-Detektors: snspd (Standard), ingaas_apd (Alternative) oder custom; setzt source.det_eff, R_dark, sigma_spd, det_dead_s, sofern dort nicht ausdrücklich angegeben", status="Vorschlag", source=DEC_16)
+    homodyne_pd: str = P("InGaAs-PIN", doc="Photodioden des balancierten Homodyndetektors", status="Vorschlag", source=DEC_16)
+    eta_hd_qe: float = P(0.95, "", doc="Quanteneffizienz der InGaAs-Homodyn-Photodioden; Literatur bis 99,5 % (Vahlbruch 2016) bzw. > 98 % bei 1510–1575 nm (Opt. Express 2022); source.eta = η_QE · η_Rest muss ≤ η_QE sein", status="Annahme", source="PRL 117, 110801 (2016); Opt. Express 30, 7, 10.1364/OE.447091")
+
+
+@dataclass
 class LoMonitorCfg:
     """LO-Leistungsmonitor: Photodiode (Strahlteiler am LO) an ADQ32-Kanal B (Entscheidung zu Gesamtplan v1.4).
 
@@ -74,23 +119,34 @@ class LoMonitorCfg:
     """
     source: str = P("adq32_b", doc="adq32_b (Photodiode an Kanal B) oder off", status="Vorschlag", source="Entscheidung Herr Eilers (v1.5)")
     skip_factor: int = P(25, "", doc="Sample Skip für Kanal B (2,5 GS/s → 100 MS/s); Fenster wie Kanal A", status="Vorschlag", source=ADQ3_UG + ", Kap. 5.2")
-    lsb_nominal: float = P(1000.0, "LSB", doc="Signal der Photodiode bei nominaler LO-Leistung über dem Dunkelwert (Eingangsbereich 0,5 Vpp, DC-Offset programmierbar)", status="Annahme")
-    dark_lsb: float = P(20.0, "LSB", doc="Dunkelwert (Photodiode ohne Licht + ADC-Offset); im Labor mit LO aus messen", status="Annahme")
-    noise_lsb: float = P(3.0, "LSB", doc="Rauschen je Sample (Photodiode + Verstärker + ADC)", status="Annahme")
+    lsb_nominal: float = P(_PD_LEVELS["lsb_nominal"], "LSB", doc="Signal bei nominaler LO-Leistung über dem Dunkelwert; abgeleitet aus Photodiode, Dämpfer und LSB = 0,5 V/4096 (ohne Angabe in der Konfiguration neu berechnet)", status="Annahme")
+    dark_lsb: float = P(_PD_LEVELS["dark_lsb"], "LSB", doc="Dunkelwert (Photodiode ohne Licht + DC-Offset); abgeleitet; im Labor mit LO aus messen", status="Annahme")
+    noise_lsb: float = P(_PD_LEVELS["noise_lsb"], "LSB", doc="Rauschen je Sample (Photodiode über Dämpfer ⊕ 3 LSB ADC [Annahme]); abgeleitet", status="Annahme")
     rin_rel: float = P(1e-3, "", doc="relatives Intensitätsrauschen des LO je Record", status="Annahme")
+    pd_model: str = P("PDA05CF2", doc="Photodiode des LO-Monitors (InGaAs, DC–150 MHz) mit 10-dB-Dämpfer vor Kanal B; Auskopplung TN1550R1A1 (99:1, Faser) bzw. BSF10-C (frei)", status="Vorschlag", source=DEC_16)
+    pd_responsivity_A_W: float = P(_PD["responsivity_A_W"], "A/W", doc="Responsivität bei 1550 nm (Datenblatt: Spitze 1,04 A/W bei 1590 nm; Wert bei 1550 nm aus der Kurve geschätzt)", status="Annahme", source=PDA05)
+    pd_gain_V_A: float = P(_PD["gain_V_A"], "V/A", doc="Transimpedanz an 50 Ω (10 kV/A an Hi-Z)", status="Spez.", source=PDA05)
+    attenuator_dB: float = P(_PD["attenuator_dB"], "dB", doc="SMA-Dämpfer vor Kanal B: PDA-Ausgang bis 5 V an 50 Ω, ADQ32-Eingang Abs. Max. ±1,75 V", status="Vorschlag", source=DEC_16 + "; " + ADQ32_DS)
+    p_tap_W: float = P(_PD["p_tap_W"], "W", doc="optische Leistung auf der Photodiode bei nominaler LO-Leistung (z. B. 1 % von 15 mW)", status="Annahme")
+    pd_dark_V: float = P(_PD["dark_V"], "V", doc="Dunkeloffset der Photodiode am Ausgang (Spez. ±20 mV)", status="Annahme", source=PDA05)
+    pd_noise_V: float = P(_PD["noise_V"], "V", doc="Rauschen der Photodiode (rms, 50 Ω, volle Bandbreite)", status="Spez.", source=PDA05)
+    dc_offset_V: float = P(_PD["dc_offset_V"], "V", doc="programmierbarer DC-Offset von Kanal B (±0,25 V), nutzt den unipolaren Bereich", status="Vorschlag", source=ADQ32_DS)
     gain_rw_per_sqrt_s: float = P(0.0, "1/√s", doc="Irrfahrt der Monitor-Verstärkung (Teilerverhältnis, Polarisation, Photodiode); verfälscht die Normierung mit dem Monitor; 0 = aus", status="Annahme", source="Vorschlag M1 Laufplan")
 
 
 @dataclass
 class SourceCfg:
     R_herald: float = P(1000.0, "1/s", doc="Rate echter Heralds (CW, Poisson)", source=SYNC_REP)
-    R_dark: float = P(20.0, "1/s", doc="Dunkelzählrate des Herald-Detektors (falsche Heralds, Vakuum)", source=SYNC_REP)
-    eta_herald: float = P(0.5, "", doc="Nachweiswahrscheinlichkeit im Herald-Arm; bestimmt die Rate ungeheraldeter Signalphotonen R_herald·(1/η_h − 1)", source="Analyse Vergleich")
-    eta: float = P(0.70, "", doc="Zustandseffizienz (Optik·Photodiode·Modenanpassung) vor elektronischem Rauschen", source=SYNC_REP)
+    R_dark: float = P(HERALD_PRESETS["snspd"]["R_dark"], "1/s", doc="Dunkelzählrate des Herald-Detektors (falsche Heralds, Vakuum); Preset SNSPD: obere Grenze ID281 Standard bei 1300–1600 nm", status="Spez.", source=IDQ_281 + "; " + SQ_EOS)
+    det_eff: float = P(HERALD_PRESETS["snspd"]["det_eff"], "", doc="Systemeffizienz des Herald-Detektors (Preset SNSPD 0,85; InGaAs-APD 0,20)", status="Spez.", source=IDQ_281 + "; " + SQ_EOS)
+    herald_arm_T: float = P(HERALD_ARM_T, "", doc="Transmission des Herald-Arms vor dem Detektor (Filter, Fasereinkopplung)", status="Annahme")
+    det_dead_s: float = P(HERALD_PRESETS["snspd"]["det_dead_s"], "s", doc="Totzeit/Erholzeit des Herald-Detektors (SNSPD typ. < 30 ns; InGaAs-APD 0,1–80 µs einstellbar, Preset 10 µs); Nachpulse nicht simuliert", status="Spez.", source=IDQ_281 + "; " + IDQ_QUBE)
+    eta_herald: float = P(round(HERALD_PRESETS["snspd"]["det_eff"] * HERALD_ARM_T, 4), "", doc="Nachweiswahrscheinlichkeit im Herald-Arm = det_eff · herald_arm_T (ohne Angabe neu berechnet); bestimmt die Rate ungeheraldeter Signalphotonen R_herald·(1/η_h − 1)", source="Analyse Vergleich")
+    eta: float = P(0.70, "", doc="Zustandseffizienz η = η_QE(InGaAs, optics.eta_hd_qe) · η_Rest (Optik, Modenanpassung, Visibility²) vor elektronischem Rauschen", source=SYNC_REP)
     heralded_state: str = P("fock1", doc="Zustand der geheraldeten Mode (fock1; fock2 nur als Test)", status="Vorschlag")
     mode_shape: str = P("double_exponential", doc="Temporale Mode: double_exponential f(t)=√γ·e^(−γ|t|) (CW-SPDC) oder gauss", status="Vorschlag")
     gamma: float = P(1 / 40e-9, "1/s", doc="Abklingrate der Mode (1/γ = 40 ns); bei gauss: 1/σ", source=SYNC_REP)
-    sigma_spd: float = P(50e-12, "s", doc="Jitter des Herald-Detektors (SNSPD), gemeinsam für Harp und TRIG", source=SYNC_REP)
+    sigma_spd: float = P(round(HERALD_PRESETS["snspd"]["sigma_spd"], 15), "s", doc="Jitter des Herald-Detektors (rms), gemeinsam für Harp und TRIG; Preset SNSPD 40 ps FWHM (ID281 Standard; Eos ≤ 15 ps), InGaAs-APD 150 ps FWHM", status="Spez.", source=IDQ_281 + "; " + IDQ_QUBE)
 
 
 @dataclass
@@ -118,7 +174,7 @@ class HarpCfg:
     state_tag_channel: int = P(4, "", doc="CH4 (Hilfskanal): Trigger getriggerter Testzustände (nie im selben Lauf wie Zufallstrigger)", status="Vorschlag", source="Gesamtplan v1.5, Kanalbelegung")
     marker_timing_channel: int = P(0, "", doc="Timing-Kanal der Sync-Marker, falls markers.on_timing_channel: 0 = Sync-Eingang (in T2 vollwertiger Zeitstempelkanal, Teiler aus)", status="Vorschlag", source=HH500_T2)
     sync_divider: int = P(1, "", doc="Sync-Teiler; in T2 bei Nutzung des Sync-Eingangs als Kanal 1 (\"None\") [Spez.]", status="Spez.", source=HH500_T2)
-    run_marker_bit: int = P(1, "", doc="Marker-Eingang M1 (Bit 1): Laufmarke bei Laufbeginn und -ende (Quelle [offen]); 0 = aus", status="Vorschlag", source="Gesamtplan v1.5, Kanalbelegung")
+    run_marker_bit: int = P(1, "", doc="Marker-Eingang M1 (Bit 1): Laufmarke bei Laufbeginn und -ende (v1.0 per Software; optional ADQ32-GPIOC0 → 3,3-V-Puffer → M1); 0 = aus", status="Vorschlag", source="Gesamtplan v1.6, Entscheidung 17.10.2026")
     d_TC: float = P(30e-9, "s", doc="Laufzeit ADQ32-GPIO → Harp CH2 (Kabel, Abschwächer)", status="Annahme")
     channel_offsets: dict = P({}, "s", doc="Eingangs-Offsets je Kanal {Kanal: s}, Bereich ±100 ns", status="Spez.", source=HH500_MANUAL)
     d_H: float = P(85.3e-9, "s", doc="Laufzeit Herald-Detektor → Harp", source=SYNC_REP)
@@ -199,21 +255,25 @@ class BlockCfg:
     eta_scale: float = P(1.0, "", doc="Faktor auf η in diesem Lauf (Sprung; zusätzlich zu drift.eta_rel_per_s)", status="Vorschlag")
 
 
-def default_blocks() -> list[dict]:
-    """Standard-Messablauf ED-12 (Gesamtplan v1.5, AP18): getrennte Läufe, verschachtelt A-B-A.
+# Laufplan M1 (Vorschlag „Vorschläge M1“, übernommen als Default in Gesamtplan v1.6), Echtzeit bei 1 kHz Herald:
+# K-V 20 s @ 10 kHz (Anfang, nach jedem 3. Zyklus, Ende), K-H 60 s, 6 × (A 60 s, B 30 s @ 2 kHz) + A.
+M1_PLAN = dict(T_A=60.0, T_B=30.0, n_cycles=6, T_KV=20.0, kv_every=3, T_KH=60.0, kh_end=False, rate_B=2000.0,
+               rate_KV=10000.0)
+SIM_TIME_SCALE = 1 / 90     # Standardsitzung im Zeitraffer (≈ 8 s statt 12 min); Echtzeit: config/laufplan_m1.yaml
 
-    K-V → K-H → A (Herald-Trigger) → B (ohne Herald, **freilaufender** interner Trigger) → A → K-V. Alle Läufe
-    einer Sitzung teilen eine Kalibrierung (calibration_id). Lauf B mit Zufallstrigger (config/random_b.yaml),
-    Off-Herald-Fenster und eingestreute Zufallstrigger bleiben Optionen.
+
+def default_blocks(time_scale: float = SIM_TIME_SCALE) -> list[dict]:
+    """Standard-Messablauf = Laufplan M1 (ED-12, Gesamtplan v1.6) mit allen Dauern × ``time_scale``.
+
+    K-V → K-H → A → B → … (K-V nach jedem 3. Zyklus) → A → K-V; B freilaufend (2 kHz), K-V periodisch (10 kHz).
+    Die Echtzeitfassung steht in ``config/laufplan_m1.yaml`` (``hhd-sim plan``); Lauf B mit Zufallstrigger
+    (config/random_b.yaml), Off-Herald-Fenster und eingestreute Zufallstrigger bleiben Optionen.
     """
-    return [
-        dict(id="kv_start", kind="vacuum", duration_s=0.5, periodic_rate=4000.0),
-        dict(id="kh", kind="herald_blocked", duration_s=1.0),
-        dict(id="heralded_1", kind="heralded", duration_s=2.5),
-        dict(id="unheralded", kind="free_running", duration_s=1.0, periodic_rate=2000.0),
-        dict(id="heralded_2", kind="heralded", duration_s=2.5),
-        dict(id="kv_end", kind="vacuum", duration_s=0.5, periodic_rate=4000.0),
-    ]
+    from .plan import make_plan
+    blocks = make_plan(M1_PLAN)
+    for b in blocks:
+        b["duration_s"] = round(b["duration_s"] * time_scale, 6)
+    return blocks
 
 
 BLOCK_KINDS = ("heralded", "random", "free_running", "vacuum", "herald_blocked", "electronic", "state")
@@ -231,6 +291,7 @@ class SimConfig:
     markers: MarkerCfg = field(default_factory=MarkerCfg)
     drift: DriftCfg = field(default_factory=DriftCfg)
     lo_monitor: LoMonitorCfg = field(default_factory=LoMonitorCfg)
+    optics: OpticsCfg = field(default_factory=OpticsCfg)
     blocks: list[BlockCfg] = field(default_factory=lambda: [BlockCfg(**b) for b in default_blocks()])
 
     # ---------------------------------------------------------------- abgeleitete Größen (ADQ32)
@@ -426,6 +487,27 @@ class SimConfig:
             w.append("digitizer.form_factor=USB: max. 1,9 GByte/s; Architektur B mit voller Rate nicht möglich")
         if not 0 < s.eta <= 1 or not 0 < s.eta_herald <= 1:
             e.append("source.eta, eta_herald in (0, 1]")
+        o = self.optics
+        if o.herald_detector not in (*HERALD_PRESETS, "custom"):
+            e.append("optics.herald_detector: snspd, ingaas_apd oder custom")
+        if not 800 <= o.wavelength_nm <= 1700:
+            w.append("optics.wavelength_nm außerhalb 800–1700 nm (InGaAs-Komponenten des Defaults)")
+        if not 0 < o.eta_hd_qe <= 1 or s.eta > o.eta_hd_qe + 1e-12:
+            e.append("source.eta ≤ optics.eta_hd_qe ≤ 1 (η enthält die Quanteneffizienz der Homodyn-Photodioden)")
+        if not 0 < s.det_eff <= 1 or not 0 < s.herald_arm_T <= 1 or s.det_dead_s < 0:
+            e.append("source.det_eff, herald_arm_T in (0, 1], det_dead_s ≥ 0")
+        if s.det_dead_s * (s.R_herald + s.R_dark) > 0.05:
+            w.append("Herald-Detektor: Totzeit·Rate > 5 % – Verluste und Nachpulse beachten (InGaAs-APD)")
+        if self.lo_b_enabled:
+            lev = lo_monitor_levels(lm.pd_responsivity_A_W, lm.pd_gain_V_A, lm.attenuator_dB, lm.p_tap_W, lm.pd_dark_V,
+                                    lm.pd_noise_V, lm.dc_offset_V, bits=d.adc_bits)
+            if lev["v_max_at_adc"] > 1.75:
+                e.append(f"lo_monitor: Photodiode kann {lev['v_max_at_adc']:.2f} V an Kanal B liefern > Abs. Max. ±1,75 V "
+                         "(Dämpfer ≥ 10 dB)")
+            if abs(lm.dc_offset_V) > 0.25:
+                e.append("lo_monitor.dc_offset_V: ±0,25 V")
+            if lm.dark_lsb - 5 * lm.noise_lsb < -2 ** (d.adc_bits - 1):
+                w.append("lo_monitor: Dunkelwert unter dem Messbereich (DC-Offset anpassen)")
         if s.heralded_state not in ("fock1", "fock2"):
             e.append("source.heralded_state: fock1 oder fock2")
         if s.mode_shape not in ("double_exponential", "gauss"):
@@ -493,7 +575,27 @@ class SimConfig:
                 kw["blocks"] = [_build(BlockCfg, b, f"blocks[{i}]") for i, b in enumerate(d["blocks"])]
             else:
                 kw[name] = _build(f.default_factory().__class__, d[name], name)  # type: ignore[misc]
-        return cls(**kw)
+        cfg = cls(**kw)
+        cfg._apply_derived(d)
+        return cfg
+
+    def _apply_derived(self, d: dict) -> None:
+        """Presets und abgeleitete Größen: nur Felder, die in ``d`` nicht ausdrücklich stehen."""
+        src_given = set((d.get("source") or {}).keys())
+        lm_given = set((d.get("lo_monitor") or {}).keys())
+        pre = HERALD_PRESETS.get(self.optics.herald_detector)
+        if pre:
+            for k, v in pre.items():
+                if k not in src_given:
+                    setattr(self.source, k, float(v))
+        if "eta_herald" not in src_given:
+            self.source.eta_herald = round(self.source.det_eff * self.source.herald_arm_T, 4)
+        lm = self.lo_monitor
+        lev = lo_monitor_levels(lm.pd_responsivity_A_W, lm.pd_gain_V_A, lm.attenuator_dB, lm.p_tap_W, lm.pd_dark_V,
+                                lm.pd_noise_V, lm.dc_offset_V, vpp=0.5, bits=self.digitizer.adc_bits)
+        for k in ("lsb_nominal", "dark_lsb", "noise_lsb"):
+            if k not in lm_given:
+                setattr(lm, k, lev[k])
 
     @classmethod
     def load(cls, path: str | Path) -> "SimConfig":
@@ -541,7 +643,7 @@ def _build(klass, data: dict | None, where: str):
 def parameter_rows(cfg: SimConfig | None = None) -> list[dict]:
     cfg = cfg or SimConfig()
     rows = []
-    for gname in ("session", "source", "phase", "harp", "digitizer", "clock", "markers", "drift", "lo_monitor"):
+    for gname in ("session", "source", "phase", "harp", "digitizer", "clock", "markers", "drift", "lo_monitor", "optics"):
         grp = getattr(cfg, gname)
         for f in fields(grp):
             md = f.metadata

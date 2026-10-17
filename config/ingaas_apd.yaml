@@ -1,0 +1,11 @@
+# Alternative Herald-Detektor: InGaAs-APD (freilaufend) statt SNSPD, 1550 nm.
+# Preset "ingaas_apd": η_det 0,20, Dunkelrate 3 kHz, Jitter 150 ps FWHM, Totzeit 10 µs
+# (typische Herstellerwerte ID Qube NIR Free-Running; Nachpulsen nicht modelliert).
+# Dunkelzählungen verlangen eine Herald-Rate ≫ Dunkelrate: bei 1 kHz wäre ξ = 0,25 und W(0,0) > 0.
+# Hier 30 kHz (ξ ≈ 0,9); die Totzeit kostet dann ≈ 25 % der Heralds (Warnung der Prüfung erwartet).
+optics:
+  herald_detector: ingaas_apd
+source:
+  R_herald: 30000.0
+# Beispiel (Seed 20261020): A W(0,0) = −0,069 ± 0,002 bei Soll −0,074; die Abweichung (≈ 3σ) kommt von
+# überlappenden Nachbarmoden bei hoher Rate, die der Sollwert nicht enthält. Rechenzeit ≈ 2,5 min.

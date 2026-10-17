@@ -6,8 +6,8 @@ von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasenge
 Phase θ als Option
 (ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExSE Harp GX Mobil.
 
-**Stand 0.4.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`) und die Dateiformate (`hhd.io`). Import, Analyse,
-Server und App folgen (AP3 ff., siehe Gesamtplan v1.5).
+**Stand 0.5.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`) und die Dateiformate (`hhd.io`). Import, Analyse,
+Server und App folgen (AP3 ff., siehe Gesamtplan v1.6).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
 K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als
@@ -16,6 +16,10 @@ Off-Herald-Fenster und eingestreute Zufallstrigger bleiben als Option (`config/o
 **Geräte (Defaults):** HydraHarp 500 S mit Sync-Eingang + 4 Kanälen (Sync-Marker am Sync-Eingang, CH1 Herald,
 CH2 ADQ32-Trigger-Kopie, CH3 reserviert, CH4 Hilfstrigger; M1 Laufmarke, M2 Phasenreferenz); ADQ32-PCIe S2G5
 (2,5 GS/s), BW1G0 (1 GHz), Kanal A Homodyn, Kanal B LO-Monitor-Photodiode.
+**Optik (Defaults, Entscheidung 17.10.2026):** 1550 nm (Metadatum), Herald-Detektor **SNSPD** (Preset `snspd`;
+Alternative `ingaas_apd`, Vorlage `config/ingaas_apd.yaml`), Homodyn-Photodioden InGaAs (Quanteneffizienz 0,95),
+LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Default:** M1-Plan aus
+`config/laufplan_m1.yaml` (17 Läufe) im Zeitraffer 1/90.
 
 > [!IMPORTANT]
 > **Hinweis – bitte zuerst lesen**
@@ -92,20 +96,23 @@ Manifest, HDF5-Attributen und PTU-Kopf (`UsrHHD_RunId`, `UsrHHD_SessionId`, `Usr
 | `truth.h5` | Ground Truth: wahre Zeiten, Moden, Quadraturen, Zuordnung Herald ↔ Record, Drift, Uhrphase |
 | `session.json` | Manifest: Sitzung, Kalibrierung, Läufe, Sollwerte, Konfiguration, SHA-256-Prüfsummen |
 
-Beispiel `config/standard.yaml` (8 s Messzeit in 6 Läufen, Seed 20261020; Rechenzeit ≈ 5 s):
+Beispiel `config/standard.yaml` (M1-Laufplan im Zeitraffer: 17 Läufe, 8,0 s Messzeit, Seed 20261020; Rechenzeit ≈ 8 s):
 
 | Lauf | Art | Records | W(0,0) gemessen | Soll |
 |---|---|---|---|---|
-| `S001-R01` `kv_start` | Vakuum (K-V) | 2000 | +0,317 ± 0,005 | +0,318 |
-| `S001-R02` `kh` | Herald, Signal blockiert (K-H) | 1006 | +0,287 ± 0,017 | +0,318 |
-| `S001-R03` `heralded_1` | A: Herald-Trigger | 2520 | −0,111 ± 0,012 | −0,105 |
-| `S001-R04` `unheralded` | B: freilaufender Trigger | 2000 | +0,318 ± 0,004 | +0,318 |
-| `S001-R05` `heralded_2` | A: Herald-Trigger | 2533 | −0,095 ± 0,011 | −0,105 |
-| `S001-R06` `kv_end` | Vakuum (K-V) | 2000 | +0,318 ± 0,003 | +0,318 |
-| A gesamt | | 5053 | **−0,104 ± 0,007** | −0,105 |
-| A − B | | | **−0,422 ± 0,009** (z = −49) | |
+| `S001-R01` `kv_00` | Vakuum (K-V) | 2222 | +0,317 ± 0,006 | +0,318 |
+| `S001-R02` `kh_start` | Herald, Signal blockiert (K-H) | 720 | +0,318 ± 0,005 | +0,318 |
+| `S001-R03` `a_01` | A: Herald-Trigger | 709 | −0,058 ± 0,027 | −0,074 |
+| `S001-R04` `b_01` | B: freilaufender Trigger | 665 | +0,318 ± 0,010 | +0,318 |
+| … | a_02 … a_07, b_02 … b_06, kv_03 | | | |
+| `S001-R17` `kv_end` | Vakuum (K-V) | 2221 | +0,315 ± 0,007 | +0,318 |
+| A gesamt (7 Läufe) | | 5147 | **−0,072 ± 0,008** | −0,074 |
+| B gesamt (6 Läufe) | | 3993 | +0,318 ± 0,002 | +0,318 |
+| A − B | | | **−0,390 ± 0,008** (z = −46) | |
 
-Driftindikatoren dieses Laufs: A-B-A z = +1,0 (W(0,0)), K-V-Varianz −1,9 % (z = −0,4), LO-Monitor (Kanal B) ±0,00 % – keine Warnung.
+Der Sollwert −0,074 enthält η = 0,7, die Clearance 15 dB und den Anteil falscher Heralds (SNSPD-Dunkelrate
+100 /s bei 1 kHz Herald-Rate, ξ = 0,909).
+Driftindikatoren dieses Laufs: A-B-A z = +0,1 (W(0,0)), K-V-Varianz +0,4 % (z = +0,1), LO-Monitor (Kanal B) ±0,00 % – keine Warnung.
 Mit `config/drift.yaml` zeigen K-V und LO-Monitor (Kanal B) die LO-Drift, die Effizienzdrift nur der A-B-A-Vergleich.
 
 Die Auswertung in `hhd.sim.check` nutzt die **wahren** Modenpositionen aus `truth.h5`; sie prüft den Simulator,

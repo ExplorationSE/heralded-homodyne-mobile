@@ -79,7 +79,7 @@ def test_make_plan_structure_and_statistics():
     SimConfig.from_dict({"blocks": bl}).validate()
     st = statistics(bl, R_herald=1000.0)
     assert st["N"]["heralded"] == pytest.approx(5 * 60 * st["R_accepted"])
-    assert st["sigma_eta"] == pytest.approx(sigma_eta(0.7 * 1000 / 1020, st["N"]["heralded"], st["N"]["vacuum"]))
+    assert st["sigma_eta"] == pytest.approx(sigma_eta(0.7 * 1000 / 1100, st["N"]["heralded"], st["N"]["vacuum"]))
     # Momente von |1⟩ nach Verlust
     x = sample_fock1(np.random.default_rng(0), 0.7, 400000)
     m2, m4 = moments_fock1(0.7)

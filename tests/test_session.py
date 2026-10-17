@@ -1,5 +1,6 @@
 """ED-12: getrennte Messläufe, Sitzung/Kampagne, gemeinsame Kalibrierung, Drift und Gegenmaßnahmen."""
 import json
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -13,9 +14,20 @@ from hhd.sim.config import BlockCfg, ConfigError, SimConfig
 from hhd.sim.engine import run, run_campaign
 
 
+# kurze ED-12-Sitzung (Default bis 0.4): Drift- und Strukturtests sind auf diese ≈ 10-s-Sitzung abgestimmt
+ED12_SHORT = [
+    dict(id="kv_start", kind="vacuum", duration_s=0.5, periodic_rate=4000.0),
+    dict(id="kh", kind="herald_blocked", duration_s=1.0),
+    dict(id="heralded_1", kind="heralded", duration_s=2.5),
+    dict(id="unheralded", kind="free_running", duration_s=1.0, periodic_rate=2000.0),
+    dict(id="heralded_2", kind="heralded", duration_s=2.5),
+    dict(id="kv_end", kind="vacuum", duration_s=0.5, periodic_rate=4000.0),
+]
+
+
 def _sess(tmp_path_factory, name, seed, patch=None):
     d = tmp_path_factory.mktemp(name)
-    cfg = SimConfig.from_dict(patch or {})
+    cfg = SimConfig.from_dict({"blocks": ED12_SHORT, **(patch or {})})
     cfg.session.seed = seed
     return run(cfg, d), d
 
@@ -46,9 +58,21 @@ def test_defaults_follow_decisions():
     assert c.harp.model == "HydraHarp 500 S" and c.harp.n_channels == 4
     assert c.digitizer.form_factor == "PCIe" and c.digitizer.clock_option == "S2G5" and c.fs == 2.5e9
     assert c.digitizer.bandwidth_option == "BW1G0" and c.bandwidth == 1e9
-    assert [b.kind for b in c.blocks] == ["vacuum", "herald_blocked", "heralded", "free_running", "heralded", "vacuum"]
+    # Default-Laufplan M1 (Gesamtplan v1.6) im Zeitraffer: K-V, K-H, 6 × (A, B) mit K-V nach Zyklus 3, A, K-V
+    kinds = [b.kind for b in c.blocks]
+    assert kinds[:4] == ["vacuum", "herald_blocked", "heralded", "free_running"] and kinds[-2:] == ["heralded", "vacuum"]
+    assert kinds.count("heralded") == 7 and kinds.count("free_running") == 6 and kinds.count("vacuum") == 3
+    assert [b.id for b in c.blocks if b.kind == "vacuum"] == ["kv_00", "kv_03", "kv_end"]
+    assert c.block("a_01").duration_s == pytest.approx(60 / 90) and c.block("kv_00").periodic_rate == 10000
     assert all(b.random_rate == 0 for b in c.blocks if b.kind == "heralded")    # kein Einstreuen (Option)
-    assert c.run_ids() == [f"S001-R{i:02d}" for i in range(1, 7)]
+    assert c.run_ids() == [f"S001-R{i:02d}" for i in range(1, 18)]
+    # Echtzeitfassung = config/laufplan_m1.yaml (gleiche Folge, Dauern × 90)
+    m1 = SimConfig.load(Path(__file__).resolve().parents[1] / "config" / "laufplan_m1.yaml")
+    assert [b.id for b in m1.blocks] == [b.id for b in c.blocks]
+    assert [b.duration_s for b in m1.blocks] == pytest.approx([90 * b.duration_s for b in c.blocks], rel=1e-5)
+    # 1550 nm, SNSPD, PDA05CF2 mit 10-dB-Dämpfer
+    assert c.optics.wavelength_nm == 1550 and c.optics.herald_detector == "snspd"
+    assert c.lo_monitor.pd_model == "PDA05CF2" and c.lo_monitor.attenuator_dB == 10
 
 
 @pytest.mark.parametrize("patch, msg", [

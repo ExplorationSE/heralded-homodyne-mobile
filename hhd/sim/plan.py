@@ -116,7 +116,7 @@ def sample_fock1(rng: np.random.Generator, eta, n: int) -> np.ndarray:
     return np.sqrt(eta) * x1 + np.sqrt(1 - eta) * rng.normal(0, np.sqrt(VAC), n)
 
 
-def statistics(blocks: list[dict], R_herald: float = 1000.0, R_dark: float = 20.0, eta: float = 0.7,
+def statistics(blocks: list[dict], R_herald: float = 1000.0, R_dark: float = 100.0, eta: float = 0.7,
                record_length: int = 5000, pretrigger: int = 2000, fs: float = 2.5e9, skip_b: int = 25,
                c_W: float = 0.66, gap_s: float = 0.5) -> dict:
     """Segmentzahlen, Zeiten, Datenmenge und statistische Fehler eines Laufplans."""

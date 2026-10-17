@@ -28,13 +28,31 @@ Festlegung dieses Projekts, [unsicher] = noch am Gerät zu prüfen. Alle Zahlenw
 - **SPDC-Paare (CW)**, Poisson-verteilt. Herald-Rate R_h, Nachweiswahrscheinlichkeit im Herald-Arm η_h.
   - Ungeheraldete Signalphotonen kommen mit der Rate R_h(1/η_h − 1).
   - Dunkelzählungen R_d erzeugen falsche Heralds, die Vakuum tragen.
+- **Optik (Entscheidung 17.10.2026, Abschnitt `optics`):** Standard-Wellenlänge **1550 nm** (nur Metadatum:
+  PTU-Kopf `UsrHHD_Wavelength_nm`, `UsrHHD_HeraldDetector`, Manifest `optics`, HDF5-Geräteattribute);
+  Homodyn-Photodioden InGaAs-PIN mit `eta_hd_qe` = 0,95 [Annahme; Literatur > 98 % bei 1510–1575 nm,
+  Opt. Express 2022, doi:10.1364/OE.447091]. Geprüft wird η ≤ eta_hd_qe ≤ 1.
+- **Herald-Detektor als Preset** (`optics.herald_detector`); ein Preset setzt nur die Quellparameter, die nicht
+  ausdrücklich angegeben sind, `custom` setzt keine:
+
+  | Preset | η_det | R_d | Jitter (FWHM → σ) | Totzeit | Grundlage |
+  |---|---|---|---|---|---|
+  | `snspd` (Standard) | 0,85 | 100 /s | 40 ps → 17 ps | 30 ns | typische Herstellerwerte Single Quantum Eos, IDQ ID281 bei 1550 nm (konservativ gewählt) |
+  | `ingaas_apd` | 0,20 | 3000 /s | 150 ps → 64 ps | 10 µs | ID Qube NIR Free-Running (20 %, Dunkelrate max. 3–6 kHz, Jitter typ. 150 ps, Totzeit 0,1–80 µs) |
+
+  η_h = η_det · `herald_arm_T` (Kopplung und Filter im Herald-Arm, 0,6 [Annahme]); SNSPD: η_h = 0,51.
+  Die **Totzeit** wird nicht-paralysierbar auf alle Herald-Ereignisse (echt und dunkel) angewandt; verlorene
+  Heralds bleiben als ungeheraldete Signalphotonen im Signal. Warnung bei Totzeit·Rate > 5 %. **Nachpulsen**
+  (InGaAs-APD) ist nicht modelliert. Wegen der Dunkelrate braucht die APD eine Herald-Rate ≫ 3 kHz
+  (Vorlage `config/ingaas_apd.yaml` mit 30 kHz).
 - **Temporale Mode:** f(t) = √γ·e^(−γ|t|) mit 1/γ = 40 ns, alternativ gaußförmig.
 - **Verluste** werden exakt als Strahlteiler mit Vakuum modelliert: x = √η·x + √(1−η)·v.
 - **Elektronisches Rauschen** (Clearance S) ist nach der Vakuumnormierung gleichwertig zu einem Verlust
   η_el = 1/(1 + 1/S).
 - **Sollwerte** des geheraldeten Zustands:
   - W(0,0) = ξ·W₁(η·η_el) + (1 − ξ)/π, mit ξ = R_h/(R_h + R_d) und W₁(η) = (1 − 2η)/π;
-  - Standardwerte η = 0,7, S = 15 dB: η_eff = 0,665, W(0,0) = −0,105.
+  - Standardwerte η = 0,7, S = 15 dB: η_eff = 0,678, W₁ = −0,114; mit R_h = 1 kHz und R_d = 100 /s (SNSPD)
+    ist ξ = 0,909 und W(0,0) = −0,074.
 - **Zustände** (`hhd/sim/states.py`):
   - Vakuum, kohärent |α⟩, thermisch (n̄), Fock |1⟩;
   - als Erweiterungspunkt Fock |n⟩ und Katzenzustände |α⟩ ± |−α⟩.
@@ -108,6 +126,11 @@ Kanäle und Anschlüsse (Gesamtplan v1.5):
 - **Kanal A:** Homodyndetektor. **Kanal B:** LO-Monitor-Photodiode, gleicher Trigger, eigener Sample Skip
   (Standard 25 → 100 MS/s, 200 Samples je Record) **[Spez.: Recordlänge, Offset, Skip je Kanal einstellbar]**;
   Modell: Dunkelwert + Signal ∝ P_LO, Intensitätsrauschen je Record, Rauschen je Sample [Annahme].
+  **Pegel aus der Photodiodenkette** (Standard Thorlabs **PDA05CF2**, ≈ 1,0 A/W bei 1550 nm [Annahme, Peak
+  1,04 A/W bei 1590 nm], 5 kV/A an 50 Ω, Rauschen 2 mV rms, **10-dB-Dämpfer**, Abgriff 150 µW, DC-Offset
+  −0,2 V): Code = (V + Offset)/LSB mit LSB = 0,5 V/4096 → `lsb_nominal` 1943, `dark_lsb` −1625, `noise_lsb` 6,0.
+  Die Prüfung meldet einen Fehler, wenn der Höchstpegel der Diode (5 V an 50 Ω) nach dem Dämpfer die
+  **Abs. Max. ±1,75 V** überschreitet (also bei < 10 dB) oder |Offset| > 0,25 V.
   Gespeichert als `records/data_b`.
 - **GPIO:** Ausgang eines Pulsgenerators mit der Triggerquelle des Laufs (TRIG-Port bzw. periodisch) → Harp CH2.
   Der Pulsgenerator gibt jedes Ereignis der Quelle aus, nicht nur angenommene Trigger **[Spez., UG Kap. 7.2]**.
@@ -144,7 +167,11 @@ Startzeit seit Sitzungsbeginn (`t_start_s`).
 | `electronic` | electronic | periodisch intern | LO aus |
 | `state` | prepared_state | Zustandstrigger | Testzustand (kohärent, thermisch, Fock, Katze) |
 
-Der Standardablauf ist **K-V → K-H → A (heralded) → B (freilaufend) → A → K-V** (verschachtelt A-B-A); Lauf B
+Der **Standardablauf** (ab 0.5.0) ist der **M1-Laufplan** aus `config/laufplan_m1.yaml` (`M1_PLAN`:
+K-V 20 s @ 10 kHz am Anfang, nach jedem 3. Zyklus und am Ende, K-H 60 s, 6 Zyklen A 60 s / B 30 s @ 2 kHz,
+abschließender A; 17 Läufe) im **Zeitraffer 1/90** (`SIM_TIME_SCALE`, ≈ 8 s Messzeit), damit `hhd-sim run`
+schnell bleibt; die Vorlage selbst läuft in Echtzeit (12,1 min). Der Grundaufbau bleibt verschachtelt
+K-V → K-H → A → B → A … → K-V; Lauf B
 mit Zufallstrigger: `config/random_b.yaml`. Die
 Heralds laufen auch im B-Lauf mit und werden in der PTU-Datei aufgezeichnet, triggern aber den Digitizer nicht.
 Die frühere Variante mit eingestreuten Zufallstriggern ist als Option erhalten (`config/offherald_option.yaml`).
@@ -254,7 +281,7 @@ Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 - Fock |2⟩ und Katze im Sollbereich;
 - Übersprechen wird über K-H erkannt.
 
-## 9 Grenzen (Stand 0.4.0.dev0)
+## 9 Grenzen (Stand 0.5.0.dev0)
 
 - Die Referenzauswertung braucht die Ground Truth. Die Zuordnung Herald ↔ Record allein aus Markern folgt in
   AP4 (Synchronisation), Kalibrierung und Rekonstruktion in AP5–AP7.
@@ -265,6 +292,8 @@ Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 - Nicht modelliert sind:
   - Detektorbandbreite und -nachschwingen, LO-Intensitätsrauschen, 1/f-Rauschen;
   - FIFO-Überlauf bei hohen Raten;
+  - Nachpulsen und Zeitabhängigkeit der Effizienz nach der Totzeit (InGaAs-APD), Wellenlängenabhängigkeit
+    (die Wellenlänge ist nur Metadatum);
   - Architektur B (kontinuierliches Streaming), die nach ED-2b erst nach Release 1.0 kommt.
 - Vom Gerät zu bestätigen [unsicher]:
   - `time_unit` des ADQ32;
