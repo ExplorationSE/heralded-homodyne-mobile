@@ -1,10 +1,11 @@
-# Getrennte Läufe mit freilaufendem (periodischem, internem) Trigger für den Lauf ohne Herald (statt Zufallstrigger).
+# Alternative zum Standard: Lauf B mit Zufallstrigger (Poisson, Generator nötig; Kennung über Harp-CH4) statt
+# freilaufendem internem Trigger. Sinnvoll, wenn eine Korrelation mit der Laserpulsfolge ausgeschlossen werden muss.
 session:
-  id: free_running
+  id: random_b
 blocks:
   - {id: kv_start, kind: vacuum, duration_s: 0.5, periodic_rate: 4000}
   - {id: kh, kind: herald_blocked, duration_s: 1.0}
   - {id: heralded_1, kind: heralded, duration_s: 2.5}
-  - {id: unheralded, kind: free_running, duration_s: 1.0, periodic_rate: 2000}
+  - {id: unheralded, kind: random, duration_s: 1.0, random_rate: 2000}
   - {id: heralded_2, kind: heralded, duration_s: 2.5}
   - {id: kv_end, kind: vacuum, duration_s: 0.5, periodic_rate: 4000}

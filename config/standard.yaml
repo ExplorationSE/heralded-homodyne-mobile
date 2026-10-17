@@ -1,6 +1,6 @@
 # Standardkonfiguration des Simulators (alle Parameter, Defaults aus hhd/sim/config.py).
-# Messablauf ED-12: getrennte Läufe K-V → K-H → A (Herald) → B (ohne Herald) → A → K-V, gemeinsame Kalibrierung.
-# Geräte: HydraHarp 500 S (4 Kanäle), ADQ32-PCIe S2G5 (2,5 GS/s), BW1G0 (1 GHz).
+# Messablauf ED-12: getrennte Läufe K-V → K-H → A (Herald) → B (freilaufend) → A → K-V, gemeinsame Kalibrierung.
+# Geräte: HydraHarp 500 S (Sync + 4 Kanäle), ADQ32-PCIe S2G5 (2,5 GS/s), BW1G0 (1 GHz); LO-Monitor an Kanal B.
 # Bedeutung, Einheit, Status und Quelle jedes Parameters: docs/PARAMETER.md
 session:
   id: S001
@@ -36,13 +36,18 @@ harp:
   trigger: ETR
   tdead: 0.0
   herald_channel: 1
-  random_tag_channel: 2
-  state_tag_channel: 3
-  marker_timing_channel: 4
+  trigger_copy_channel: 2
+  herald2_channel: 3
+  random_tag_channel: 4
+  state_tag_channel: 4
+  marker_timing_channel: 0
+  sync_divider: 1
+  run_marker_bit: 1
+  d_TC: 3.0e-08
   channel_offsets: {}
   d_H: 8.53e-08
   d_RH: 1.0e-08
-  marker_bit: 1
+  marker_bit: 4
   marker_error_rms: 3.0e-08
   marker_offset: 2.0e-08
   marker_error_max: 1.0e-07
@@ -76,6 +81,8 @@ digitizer:
   header_reports_trigger_source: false
   crosstalk_amp: 0.0
   crosstalk_tau: 1.5e-08
+  trigger_copy_latency: 1.0e-08
+  pulse_gen_granularity: 32
   crosstalk_delay: 7.73e-08
 clock:
   eps: 2.0e-06
@@ -92,9 +99,16 @@ markers:
 drift:
   lo_rel_per_s: 0.0
   eta_rel_per_s: 0.0
-  monitor: true
+  monitor: false
   monitor_rate_Hz: 10.0
   monitor_noise_rel: 0.001
+lo_monitor:
+  source: adq32_b
+  skip_factor: 25
+  lsb_nominal: 1000.0
+  dark_lsb: 20.0
+  noise_lsb: 3.0
+  rin_rel: 0.001
 blocks:
 - id: kv_start
   kind: vacuum
@@ -133,10 +147,10 @@ blocks:
   lo_scale: 1.0
   eta_scale: 1.0
 - id: unheralded
-  kind: random
+  kind: free_running
   duration_s: 1.0
   run_id: ''
-  random_rate: 2000.0
+  random_rate: 0.0
   periodic_rate: 2000.0
   state: {}
   state_rate: 1000.0

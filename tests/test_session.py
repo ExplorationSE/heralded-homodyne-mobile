@@ -46,7 +46,7 @@ def test_defaults_follow_decisions():
     assert c.harp.model == "HydraHarp 500 S" and c.harp.n_channels == 4
     assert c.digitizer.form_factor == "PCIe" and c.digitizer.clock_option == "S2G5" and c.fs == 2.5e9
     assert c.digitizer.bandwidth_option == "BW1G0" and c.bandwidth == 1e9
-    assert [b.kind for b in c.blocks] == ["vacuum", "herald_blocked", "heralded", "random", "heralded", "vacuum"]
+    assert [b.kind for b in c.blocks] == ["vacuum", "herald_blocked", "heralded", "free_running", "heralded", "vacuum"]
     assert all(b.random_rate == 0 for b in c.blocks if b.kind == "heralded")    # kein Einstreuen (Option)
     assert c.run_ids() == [f"S001-R{i:02d}" for i in range(1, 7)]
 
@@ -74,7 +74,7 @@ def test_ids_and_shared_calibration(sep_run):
     assert [r["comparison_role"] for r in man["runs"]] == ["control", "control", "heralded", "unheralded", "heralded", "control"]
     with h5py.File(d / "digitizer.h5") as f:
         assert f.attrs["session_id"] == "S001" and f.attrs["calibration_id"] == cal
-        assert f.attrs["schema_version"] == "1.1"
+        assert f.attrs["schema_version"] == "1.2"
         for r in man["runs"]:
             g = f[f"blocks/{r['id']}"]
             assert g.attrs["run_id"] == r["run_id"] and g.attrs["calibration_id"] == cal
@@ -102,9 +102,12 @@ def test_separate_runs_trigger_content(sep_run):
         k = br.digitizer.rec_kind
         if br.cfg.kind == "heralded":
             assert np.all(k == 0) and len(br.truth["random"]["t_true"]) == 0
-        elif br.cfg.kind == "random":
-            assert np.all(k == 1) and len(br.truth["heralds"]["t_true"]) > 0     # Heralds laufen mit, triggern aber nicht
-    assert all(abs(b.monitor["lo_power_rel"].mean() - 1) < 0.002 for b in res.blocks)
+        elif br.cfg.kind == "free_running":
+            assert np.all(k == 2) and len(br.truth["heralds"]["t_true"]) > 0     # Heralds laufen mit, triggern aber nicht
+    for b in res.blocks:                                                         # LO-Monitor an Kanal B
+        lm = res.cfg.lo_monitor
+        assert b.monitor is None and b.digitizer.data_b.shape == (len(b.digitizer.timestamp), 200)
+        assert (b.digitizer.data_b.mean() - lm.dark_lsb) / lm.lsb_nominal == pytest.approx(1.0, abs=0.002)
 
 
 # ------------------------------------------------------------------ Vergleich A/B ohne Drift

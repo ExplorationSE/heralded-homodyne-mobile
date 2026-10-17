@@ -1,12 +1,16 @@
-"""Simulation einer Messsitzung aus mehreren getrennten Messläufen (Messablauf laut Gesamtplan v1.4, AP18).
+"""Simulation einer Messsitzung aus mehreren getrennten Messläufen (Messablauf laut Gesamtplan v1.5, AP18).
 
 Struktur (ED-12): **Kampagne** → **Sitzung** (gemeinsame Kalibrierung ``calibration_id``) → **Läufe**
 (Blöcke in ``blocks``; je Lauf eine Lauf-ID, eine eigene PTU-Datei der HydraHarp 500 und eine Gruppe in der
 Digitizer-Datei). Eine Sitzung schreibt die PTU-Dateien (Strom 1), eine Digitizer-Datei im HDF5-Schema v1.1
 (Strom 2), eine getrennte Wahrheitsdatei und das Manifest ``session.json``.
 
-Standard ist die Folge K-V → K-H → A (Herald-Trigger) → B (ohne Herald) → A → K-V; optional simuliert
+Standard ist die Folge K-V → K-H → A (Herald-Trigger) → B (freilaufender Trigger) → A → K-V; optional simuliert
 ``drift`` eine Drift von LO-Leistung und Effizienz über die Sitzung (Prüfung der Gegenmaßnahmen).
+
+Kanalbelegung (Gesamtplan v1.5): HydraHarp 500 S – Sync-Eingang = Sync-Marker, CH1 Herald, CH2 Kopie der
+ADQ32-Trigger (Pulsgenerator am GPIO), CH3 reserviert (zweiter Herald/PNR), CH4 Hilfstrigger (Zustands- bzw.
+Zufallstrigger), M1 Laufmarke, M2 Phasenreferenz (Option). ADQ32 – Kanal A Homodyn, Kanal B LO-Monitor.
 
 Laufarten (``BlockCfg.kind``) und Physik:
 
@@ -161,9 +165,25 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     t_m = t0 + (0.5 + k_all[sent]) / mk.f_marker
     t_ref = phase.reference_times()
 
+    # ---------------------------------------------------------------- Kopie der ADQ32-Trigger (GPIO → Harp CH2)
+    periodic = b.periodic_rate if kind in ("vacuum", "electronic", "free_running") else 0.0
+    trig_src_true = []                     # Ereignisse am TRIG-Port (wahre Zeit am Eingang)
+    if kind in ("heralded", "herald_blocked"):
+        trig_src_true.append(t_det + d.d_T)
+    if len(t_rand):
+        trig_src_true.append(t_rand + d.d_RT)
+    if len(t_state):
+        trig_src_true.append(t_state + d.d_RT)
+    t_copy = (adq.trigger_copy(r_misc, t0, T, cat(trig_src_true, float), periodic)
+              if h.trigger_copy_channel else np.empty(0))
+    # Laufmarke (M1) bei Laufbeginn und -ende
+    t_run_mark = np.array([t0 + 1e-3, t0 + T - 1e-3]) if h.run_marker_bit else np.empty(0)
+
     # ---------------------------------------------------------------- Strom 1: HydraHarp 500
     rel = lambda t: t - t0
     inputs = {h.herald_channel: rel(t_det + h.d_H)}
+    if len(t_copy):
+        inputs[h.trigger_copy_channel] = rel(t_copy + h.d_TC)
     if len(t_rand):
         inputs[h.random_tag_channel] = rel(t_rand + h.d_RH)
     if len(t_state):
@@ -175,6 +195,8 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         markers[h.marker_bit] = rel(t_m + mk.d_MH)
     if pcfg.marker_bit and len(t_ref):
         markers[pcfg.marker_bit] = rel(t_ref)
+    if len(t_run_mark):
+        markers[h.run_marker_bit] = rel(t_run_mark)
     hr = harp.record(r_harp, T, inputs, markers)
     warnings += hr.warnings
     recs, rec_t = P.encode_t2(hr.times_ps, hr.kinds, hr.codes)
@@ -188,7 +210,6 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     if len(t_state):
         trig_t.append(t_state + d.d_RT); trig_k.append(np.full(len(t_state), TRIG_STATE)); trig_i.append(np.arange(len(t_state)))
     trig = TriggerInput(cat(trig_t, float), cat(trig_k, np.int8), cat(trig_i, np.int64))
-    periodic = b.periodic_rate if kind in ("vacuum", "electronic", "free_running") else 0.0
     xt_amp = d.crosstalk_amp if b.crosstalk_amp is None else b.crosstalk_amp
     dig = adq.acquire(r_dig, t0, T, trig, periodic, mode_t, mode_x, t_m + d.d_MD,
                       t_det + d.d_T, xt_amp, lo_on=lo_on, lo_scale_fn=lo_fn)
@@ -221,6 +242,9 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         markers=dict(t_true=t_m, harp_ps=(hr.per_input_ps.get(h.marker_timing_channel) if mk.on_timing_channel
                                           else hr.per_marker_ps.get(h.marker_bit)), recorded_by_digitizer=dig.marker_recorded),
         phase_ref=dict(t_true=t_ref),
+        trigger_copy=dict(t_true=t_copy, harp_ps=hr.per_input_ps.get(h.trigger_copy_channel, np.empty(0, np.int64))),
+        run_marker=dict(t_true=t_run_mark),
+        lo_monitor=dict(lo_rel_true=dig.lo_rel_true if dig.lo_rel_true is not None else np.empty(0)),
         drift=dict(lo_scale_mid=np.array([lo_mid]), eta_run=np.array([eta_run])),
         records=dict(kind=dig.rec_kind, source_index=dig.rec_index, trigger_true=dig.rec_trigger_true,
                      n_modes=dig.n_modes_in_record),
@@ -256,7 +280,10 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
                  comparison_role=KIND_TO_ROLE[kind], t_start_s=t0 - cfg.session.start_s,
                  signal_blocked=signal_blocked, lo_on=lo_on, duration_s=T, ptu_file=f"harp_{b.id}.ptu",
                  random_rate=b.random_rate, periodic_rate=periodic, crosstalk_amp=xt_amp,
-                 state=json.dumps(test_state.describe()) if test_state else "", **phase.metadata())
+                 state=json.dumps(test_state.describe()) if test_state else "",
+                 harp_channel_roles=json.dumps(cfg.channel_roles(kind)), harp_marker_roles=json.dumps(cfg.marker_roles()),
+                 adq32_trigger_source="TRIG" if kind in ("heralded", "herald_blocked", "random", "state") else "PERIODIC",
+                 **phase.metadata())
     br = BlockResult(b, index, t0, T, KIND_TO_DATASET[kind], run_id, attrs, recs, rec_t, dig, truth, expected, warnings)
     br.monitor = monitor
     return br
@@ -298,9 +325,6 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
     cfg = res.cfg
     files: dict[str, str] = {}
     hh = cfg.harp
-    chan_roles = {"herald": hh.herald_channel, "random_tag": hh.random_tag_channel, "state_tag": hh.state_tag_channel}
-    if cfg.markers.on_timing_channel:
-        chan_roles["sync_marker"] = hh.marker_timing_channel
     for br in res.blocks:
         name = br.attrs["ptu_file"]
         P.write_ptu(out / name, br.harp_records, comment=f"SIMULATED ExSE Harp ADQ32 HHD Mobil – Block {br.cfg.id} ({br.dataset_type})",
@@ -312,9 +336,8 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
                                 "UsrHHD_CampaignId": (P.TY_ANSI, res.campaign_id),
                                 "UsrHHD_ComparisonRole": (P.TY_ANSI, br.attrs["comparison_role"]),
                                 "UsrHHD_DatasetType": (P.TY_ANSI, br.dataset_type),
-                                "UsrHHD_ChannelRoles": (P.TY_ANSI, json.dumps(chan_roles)),
-                                "UsrHHD_MarkerBits": (P.TY_ANSI, json.dumps({"sync": 0 if cfg.markers.on_timing_channel else hh.marker_bit,
-                                                                             "phase_ref": int(br.attrs["phase_marker_bit"])})),
+                                "UsrHHD_ChannelRoles": (P.TY_ANSI, br.attrs["harp_channel_roles"]),
+                                "UsrHHD_MarkerRoles": (P.TY_ANSI, br.attrs["harp_marker_roles"]),
                                 "UsrHHD_CalibrationId": (P.TY_ANSI, res.calibration_id)})
         files[name] = "harp"
     root_attrs = dict(simulated=True, software=f"hhd {__version__}", created=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -323,7 +346,7 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
         for br in res.blocks:
             dg = br.digitizer
             S.write_block(f, br.cfg.id, br.attrs, dg.data, dg.timestamp, dg.record_start, dg.trigger_source, dg.marker_ts,
-                          monitor=br.monitor)
+                          monitor=br.monitor, data_b=dg.data_b)
         cal = f.create_group("calibration")
         cal.attrs["calibration_id"] = res.calibration_id
         cal.attrs["mode"] = "shared"                       # eine Kalibrierung für alle Läufe der Sitzung (ED-12)

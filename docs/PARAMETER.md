@@ -24,19 +24,24 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `phase.dwell_s` | 0.25 | s | Vorschlag |  | Verweildauer je Phasenstufe |
 | `phase.marker_bit` | 2 |  | Vorschlag |  | Harp-Marker-Bitmaske für Rampen-/Stufenbeginn (0 = aus) |
 | `harp.model` | HydraHarp 500 S |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | HydraHarp 500 S (4–8 Kanäle) oder M (8–16 Kanäle); Festlegung: S |
-| `harp.n_channels` | 4 |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Anzahl Eingangskanäle (S: 4..8, M: 8..16); HHD braucht 4 |
+| `harp.n_channels` | 4 |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Anzahl Eingangskanäle CH1..CHn (S: 4..8, M: 8..16), zusätzlich der Sync-Eingang (Kanal 0) |
 | `harp.resolution` | 1e-12 | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | T2-Auflösung (fest 1 ps) |
 | `harp.jitter_rms` | 2.5e-12 | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Einzelmessungs-Zeitunsicherheit typ. (rms) |
 | `harp.trigger` | ETR |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Eingangstrigger ETR (Totzeit < 680 ps) oder CFD (< 6,8 ns) |
 | `harp.tdead` | 0 | s | **Spez.** | HydraHarp 500 Manual, Kap. 6.1 | programmierbare Zusatz-Totzeit (0 = native Totzeit) |
-| `harp.herald_channel` | 1 |  | Vorschlag |  | Eingang des Herald-Detektors |
-| `harp.random_tag_channel` | 2 |  | Vorschlag |  | Eingang mit der Kopie des Zufallstriggers (Kennung, Analyse Kap. 6) |
-| `harp.state_tag_channel` | 3 |  | Vorschlag |  | Eingang mit dem Trigger getriggerter Testzustände |
-| `harp.marker_timing_channel` | 4 |  | Vorschlag |  | Eingang für Sync-Marker, falls markers.on_timing_channel |
+| `harp.herald_channel` | 1 |  | Vorschlag | Gesamtplan v1.5, Kanalbelegung | CH1: Herald-Detektor (Kopie über Fan-out an ADQ32 TRIG) |
+| `harp.trigger_copy_channel` | 2 |  | Vorschlag | Gesamtplan v1.5, Kanalbelegung | CH2: Kopie der ADQ32-Triggerereignisse (Pulsgenerator an ADQ32-GPIO); 0 = aus |
+| `harp.herald2_channel` | 3 |  | Vorschlag | Gesamtplan v1.5, Kanalbelegung | CH3: reserviert für zweiten Herald-Detektor bzw. PNR (nicht simuliert); 0 = keine Reservierung |
+| `harp.random_tag_channel` | 4 |  | Vorschlag | Gesamtplan v1.5, Kanalbelegung | CH4 (Hilfskanal): Kopie des Zufallstriggers (Lauf random, Option AP20) |
+| `harp.state_tag_channel` | 4 |  | Vorschlag | Gesamtplan v1.5, Kanalbelegung | CH4 (Hilfskanal): Trigger getriggerter Testzustände (nie im selben Lauf wie Zufallstrigger) |
+| `harp.marker_timing_channel` | 0 |  | Vorschlag | HydraHarp 500 Manual, Kap. 6.3 (T2) | Timing-Kanal der Sync-Marker, falls markers.on_timing_channel: 0 = Sync-Eingang (in T2 vollwertiger Zeitstempelkanal, Teiler aus) |
+| `harp.sync_divider` | 1 |  | **Spez.** | HydraHarp 500 Manual, Kap. 6.3 (T2) | Sync-Teiler; in T2 bei Nutzung des Sync-Eingangs als Kanal 1 ("None") [Spez.] |
+| `harp.run_marker_bit` | 1 |  | Vorschlag | Gesamtplan v1.5, Kanalbelegung | Marker-Eingang M1 (Bit 1): Laufmarke bei Laufbeginn und -ende (Quelle [offen]); 0 = aus |
+| `harp.d_TC` | 3e-08 | s | Annahme |  | Laufzeit ADQ32-GPIO → Harp CH2 (Kabel, Abschwächer) |
 | `harp.channel_offsets` | {} | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Eingangs-Offsets je Kanal {Kanal: s}, Bereich ±100 ns |
 | `harp.d_H` | 8.53e-08 | s | Annahme | Vorbericht Synchronisation, Parameter | Laufzeit Herald-Detektor → Harp |
 | `harp.d_RH` | 1e-08 | s | Annahme |  | Laufzeit Zufalls-/Zustandstrigger-Generator → Harp |
-| `harp.marker_bit` | 1 |  | Vorschlag |  | Marker-Bitmaske der Sync-Marker (Marker-Eingang 1) |
+| `harp.marker_bit` | 4 |  | Vorschlag |  | Marker-Eingang M3 (Bit 4) für Sync-Marker, nur falls nicht auf einem Timing-Kanal (Rückfall); Störmarker-Modell |
 | `harp.marker_error_rms` | 3e-08 | s | Annahme | Vorbericht Synchronisation, Parameter | Streuung des Marker-Zeitfehlers (Spez.: Fehler < 100 ns in T2; Gaußmodell = Annahme) |
 | `harp.marker_offset` | 2e-08 | s | Annahme | Vorbericht Synchronisation, Parameter | konstante Marker-Latenz |
 | `harp.marker_error_max` | 1e-07 | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Grenze des Marker-Zeitfehlers in T2 (Modell wird hier abgeschnitten) |
@@ -69,6 +74,8 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `digitizer.header_reports_trigger_source` | False |  | Annahme |  | meldet der Record-Header den auslösenden Eingang? (unbekannt → false; Kennung über Harp) |
 | `digitizer.crosstalk_amp` | 0 | Vakuum-σ | Vorschlag |  | Amplitude eines Trigger-Übersprechens auf den Analogkanal (Fehlerbild R10) |
 | `digitizer.crosstalk_tau` | 1.5e-08 | s | Annahme |  | Abklingzeit des Übersprechens |
+| `digitizer.trigger_copy_latency` | 1e-08 | s | Annahme |  | Latenz Triggerereignis → Pulsgenerator-Ausgang (GPIO) |
+| `digitizer.pulse_gen_granularity` | 32 | Samples | **Spez.** | ADQ3 User Guide 21-2539, Kap. 7.2 (Beispiel ADQ32) | Zeitraster des Pulsgenerators in Samples der Basisabtastrate (5 GHz bei S2G5 → 6,4 ns) |
 | `digitizer.crosstalk_delay` | 7.73e-08 | s | Annahme |  | Verzögerung des Übersprechens nach dem TRIG-Puls (Default d_S − d_T: am Modenort, ungünstigster Fall) |
 | `clock.eps` | 2e-06 |  | Annahme | Vorbericht Synchronisation, Parameter | relative Frequenzabweichung Digitizer gegen Harp (ADQ32 intern ±3 ppm Spez.; HydraHarp OCXO ±300 ppb) |
 | `clock.t_arm_s` | 0.137 | s | Annahme | Vorbericht Synchronisation, Parameter | wahre Zeit, zu der der Digitizer-Zähler startet |
@@ -77,14 +84,20 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `clock.grid_dt` | 0.001 | s | Vorschlag |  | Stützstellenabstand der Irrfahrt |
 | `markers.f_marker` | 1000 | Hz | Annahme | Vorbericht Synchronisation, Parameter | Rate der Sync-Marker |
 | `markers.p_omit` | 0.1 |  | Annahme | Vorbericht Synchronisation, Parameter | pseudozufällige Auslassung (Muster für die Zuordnung) |
-| `markers.on_timing_channel` | True |  | Vorschlag | ED-7 | Marker auf regulärem Timing-Kanal statt Marker-Eingang (ED-7) |
+| `markers.on_timing_channel` | True |  | Vorschlag | ED-7; HydraHarp 500 Manual, Kap. 6.3 (T2) | Sync-Marker auf einem Timing-Kanal (Standard: Sync-Eingang, 1 ps) statt auf einem Marker-Eingang (< 100 ns) |
 | `markers.sigma_tc` | 5e-12 | s | Annahme | Vorbericht Synchronisation, Parameter | Streuung, wenn der Marker auf einem Timing-Kanal liegt |
 | `markers.d_MH` | 1.5e-08 | s | Annahme | Vorbericht Synchronisation, Parameter | Laufzeit Markerquelle → Harp |
 | `drift.lo_rel_per_s` | 0 | 1/s | Vorschlag | Gesamtplan v1.4, R15 | lineare relative Drift der LO-Leistung ab Sitzungsbeginn (0 = aus); Vakuumrauschen ∝ √P_LO, elektronisches Rauschen fest |
 | `drift.eta_rel_per_s` | 0 | 1/s | Vorschlag | Gesamtplan v1.4, R15 | lineare relative Drift der Zustandseffizienz η je Lauf (Modenanpassung, Justage) |
-| `drift.monitor` | True |  | Vorschlag |  | LO-Leistungsmonitor (Photodiode) mitschreiben: /blocks/<id>/monitor |
-| `drift.monitor_rate_Hz` | 10 | Hz | Annahme |  | Abtastrate des LO-Monitors |
-| `drift.monitor_noise_rel` | 0.001 |  | Annahme |  | relatives Rauschen des LO-Monitors |
+| `drift.monitor` | False |  | Vorschlag |  | zusätzlich externer, langsamer LO-Leistungsmesser (/blocks/<id>/monitor); Standard ist die Photodiode an ADQ32-Kanal B (lo_monitor) |
+| `drift.monitor_rate_Hz` | 10 | Hz | Annahme |  | Abtastrate des externen LO-Leistungsmessers |
+| `drift.monitor_noise_rel` | 0.001 |  | Annahme |  | relatives Rauschen des externen LO-Leistungsmessers |
+| `lo_monitor.source` | adq32_b |  | Vorschlag | Entscheidung Herr Eilers (v1.5) | adq32_b (Photodiode an Kanal B) oder off |
+| `lo_monitor.skip_factor` | 25 |  | Vorschlag | ADQ3 User Guide 21-2539, Kap. 5.2 | Sample Skip für Kanal B (2,5 GS/s → 100 MS/s); Fenster wie Kanal A |
+| `lo_monitor.lsb_nominal` | 1000 | LSB | Annahme |  | Signal der Photodiode bei nominaler LO-Leistung über dem Dunkelwert (Eingangsbereich 0,5 Vpp, DC-Offset programmierbar) |
+| `lo_monitor.dark_lsb` | 20 | LSB | Annahme |  | Dunkelwert (Photodiode ohne Licht + ADC-Offset); im Labor mit LO aus messen |
+| `lo_monitor.noise_lsb` | 3 | LSB | Annahme |  | Rauschen je Sample (Photodiode + Verstärker + ADC) |
+| `lo_monitor.rin_rel` | 0.001 |  | Annahme |  | relatives Intensitätsrauschen des LO je Record |
 | `blocks[].id` | heralded |  | Vorschlag |  | eindeutiger Blockname |
 | `blocks[].kind` | heralded |  | Vorschlag |  | heralded \| random \| free_running \| vacuum \| herald_blocked \| electronic \| state |
 | `blocks[].duration_s` | 5 | s | Vorschlag |  | Messdauer des Laufs |
@@ -105,6 +118,6 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | kv_start | vacuum | 0.5 | 0 | 4000 |
 | kh | herald_blocked | 1 | 0 | 2000 |
 | heralded_1 | heralded | 2.5 | 0 | 2000 |
-| unheralded | random | 1 | 2000 | 2000 |
+| unheralded | free_running | 1 | 0 | 2000 |
 | heralded_2 | heralded | 2.5 | 0 | 2000 |
 | kv_end | vacuum | 0.5 | 0 | 4000 |

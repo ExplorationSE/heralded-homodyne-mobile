@@ -9,7 +9,8 @@ Vakuumnormierung (Gegenmaßnahmen gegen Drift zwischen getrennten Läufen, Gesam
 
 * ``pooled``       – gemeinsame Kalibrierung aller K-V-Läufe der Sitzung (Standard);
 * ``interpolated`` – Vakuumvarianz zeitlich linear zwischen den K-V-Läufen interpoliert;
-* ``monitor``      – gemeinsame Kalibrierung, je Lauf mit dem LO-Leistungsmonitor skaliert (σ ∝ √P_LO;
+* ``monitor``      – gemeinsame Kalibrierung, je Lauf mit dem LO-Monitor (ADQ32-Kanal B, sonst externer
+  Leistungsmesser) skaliert (σ ∝ √P_LO;
   der elektronische Rauschanteil 1/S wird dabei vernachlässigt).
 
 Der Vergleich ``comparison`` fasst die Läufe mit Herald-Trigger (A) und ohne Herald (B) zusammen und
@@ -78,8 +79,21 @@ class SessionReader:
         a = self.attrs(bid)
         return float(a["t_start_s"]) + 0.5 * float(a["duration_s"])
 
+    def lo_dark_b(self) -> float:
+        """Dunkelwert von Kanal B: aus Läufen mit LO aus (electronic), sonst der nominelle Wert der Gerätedatei."""
+        if not hasattr(self, "_dark_b"):
+            dark = [self.dig[f"blocks/{b}/records/data_b"][:].mean() for b in self.blocks()
+                    if self.attrs(b)["dataset_type"] == "electronic" and "data_b" in self.dig[f"blocks/{b}/records"]
+                    and self.dig[f"blocks/{b}/records/data_b"].shape[0]]
+            self._dark_b = float(np.mean(dark)) if dark else float(self.dig["device"].attrs.get("lo_monitor_dark_lsb", 0.0))
+        return self._dark_b
+
     def lo_monitor(self, bid) -> float:
+        """mittlere LO-Leistung im Lauf (relativ): Kanal B (Photodiode) bevorzugt, sonst externer Leistungsmesser."""
         g = self.dig[f"blocks/{bid}"]
+        if "data_b" in g["records"] and g["records/data_b"].shape[0]:
+            nom = float(self.dig["device"].attrs.get("lo_monitor_lsb_nominal", 1.0))
+            return float((g["records/data_b"][:].mean() - self.lo_dark_b()) / nom)
         return float(g["monitor/lo_power_rel"][:].mean()) if "monitor" in g else float("nan")
 
     def expected(self, bid):

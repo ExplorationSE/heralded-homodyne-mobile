@@ -1,6 +1,6 @@
 # Simulator `hhd.sim` – Modelle, Formate, Grenzen
 
-Arbeitspaket AP2 des Gesamtplans v1.4. Der Simulator ist die Weiterentwicklung des Prototyps `sync_sim` aus dem
+Arbeitspaket AP2 des Gesamtplans v1.5. Der Simulator ist die Weiterentwicklung des Prototyps `sync_sim` aus dem
 Vorbericht Synchronisation. Er erzeugt dieselben Dateien, die später die echten Geräte liefern:
 **HydraHarp 500** (PTU, T2) und **ADQ32-PCIe** (HDF5-Schema v1). Zusätzlich schreibt er eine **Ground Truth**.
 Damit lassen sich Import, Synchronisation, Kalibrierung und Rekonstruktion (AP3–AP7) ohne Hardware entwickeln
@@ -18,9 +18,9 @@ Festlegung dieses Projekts, [unsicher] = noch am Gerät zu prüfen. Alle Zahlenw
   freie Uhr mit ε = 2 ppm und Irrfahrt.
 - Sync-Marker laufen mit 1 kHz und pseudozufälligen Auslassungen (10 %) an beide Geräte:
   - an den Digitizer über SYNC;
-  - an die Harp über einen regulären Timing-Kanal (ED-7, Streuung 5 ps) oder über einen Marker-Eingang. Am
-    Marker-Eingang gilt **[Spez.]** ein Zeitfehler < 100 ns; das Modell ist gaußförmig mit 30 ns und wird bei
-    100 ns abgeschnitten.
+  - an die Harp standardmäßig über den **Sync-Eingang** (in T2 ein vollwertiger Zeitstempelkanal mit 1 ps,
+    Teiler „None“ **[Spez., Manual Kap. 6.3.2]**; Streuung 5 ps). Rückfall: Marker-Eingang M3 mit
+    **[Spez.]** Zeitfehler < 100 ns (gaußförmig 30 ns, bei 100 ns abgeschnitten; `config/free_clock.yaml`).
 - Der Zusammenhang Harp-Zeit → Digitizer-Zeit je Lauf steht als `mapping` in `session.json`.
 
 ## 2 Quelle und Zustände
@@ -55,20 +55,30 @@ Festlegung dieses Projekts, [unsicher] = noch am Gerät zu prüfen. Alle Zahlenw
 - T2-Auflösung 1 ps; Zeitunsicherheit typ. 2,5 ps rms.
 - Totzeit je Kanal < 680 ps (ETR) bzw. < 6,8 ns (CFD), modelliert als nicht verlängernd; Zusatz-Totzeit
   einstellbar.
-- Eingänge: 4–8 beim Modell S, 8–16 beim Modell M; Eingangs-Offset ±100 ns.
-- 4 Marker-Eingänge mit Hold-off.
+- Eingänge: 4–8 beim Modell S, 8–16 beim Modell M, **zusätzlich** der Sync-Eingang; Eingangs-Offset ±100 ns.
+- In T2 sind alle Eingänge einschließlich Sync gleichwertig; Sync-Ereignisse stehen als Special-Record mit
+  Kanal 0 im Datenstrom (wie im Demo `tttrmode.py` des HH500Lib).
+- 4 Marker-Eingänge (LVTTL am CTRL-Stecker, Pins 1–4) mit Hold-off; sie belegen **keinen** Eingangskanal,
+  Marker stehen als Special-Record mit Bitmaske 1..15 im Datenstrom.
 
-Kanalbelegung [Vorschlag]:
+Kanalbelegung (Gesamtplan v1.5):
 
 | Eingang | Signal |
 |---|---|
-| 1 | Herald-Detektor |
-| 2 | Kopie des Zufallstriggers (Kennung der Zufallsfenster) |
-| 3 | Trigger getriggerter Testzustände |
-| 4 | Sync-Marker (ED-7) |
+| Sync (Kanal 0) | Sync-Marker (Pulsgenerator, 10-MHz-synchron, 1 kHz) |
+| CH1 | Herald-Detektor |
+| CH2 | Kopie der ADQ32-Triggerereignisse (Pulsgenerator am ADQ32-GPIO; Raster 6,4 ns) |
+| CH3 | reserviert: zweiter Herald-Detektor bzw. PNR (nicht simuliert) |
+| CH4 | Hilfstrigger: Zustandstrigger (Testzustände) bzw. Zufallstrigger-Kennung (Lauf `random`, Option AP20) |
+| M1 | Laufmarke bei Laufbeginn und -ende (Quelle offen) |
+| M2 | Phasenreferenz (Option θ) |
+| M3 | Rückfall für Sync-Marker; sonst frei |
+| M4 | frei |
+
+Die Rollen stehen je Lauf im PTU-Kopf (`UsrHHD_ChannelRoles`, `UsrHHD_MarkerRoles`) und in den HDF5-Attributen.
 
 Ausgabe: PTU **Generic T2** (0x00010207) mit Überlauf-Records (Wrap 2^25). Der Gerätename im Kopf lautet
-„HydraHarp 500 M (SIMULATED)“. Dass das echte Gerät diesen Record-Typ schreibt, ist am Gerät noch zu prüfen
+„HydraHarp 500 S (SIMULATED)“. Dass das echte Gerät diesen Record-Typ schreibt, ist am Gerät noch zu prüfen
 [unsicher].
 
 Zusatz-Tags im Kopf:
@@ -91,7 +101,17 @@ Modellannahmen:
 
 - `time_unit` = 1/(8·f_ADC); das ergibt 50 ps bei 2,5 GS/s und ist nicht dokumentiert.
 - Der Record-Header meldet den auslösenden Eingang nicht (`trigger_source` = 255). Die Kennung, ob ein Record
-  aus einem Herald oder einem Zufallstrigger stammt, kommt deshalb über Harp-Eingang 2.
+  aus einem Herald oder einem Zufallstrigger stammt, kommt deshalb über Harp-CH4 (nur Option AP20).
+
+Kanäle und Anschlüsse (Gesamtplan v1.5):
+
+- **Kanal A:** Homodyndetektor. **Kanal B:** LO-Monitor-Photodiode, gleicher Trigger, eigener Sample Skip
+  (Standard 25 → 100 MS/s, 200 Samples je Record) **[Spez.: Recordlänge, Offset, Skip je Kanal einstellbar]**;
+  Modell: Dunkelwert + Signal ∝ P_LO, Intensitätsrauschen je Record, Rauschen je Sample [Annahme].
+  Gespeichert als `records/data_b`.
+- **GPIO:** Ausgang eines Pulsgenerators mit der Triggerquelle des Laufs (TRIG-Port bzw. periodisch) → Harp CH2.
+  Der Pulsgenerator gibt jedes Ereignis der Quelle aus, nicht nur angenommene Trigger **[Spez., UG Kap. 7.2]**.
+- **TRIG:** Herald (Läufe A, K-H). **SYNC:** Sync-Marker. **CLK:** 10-MHz-Referenz (ED-7).
 
 Signal am Analogeingang:
 
@@ -124,7 +144,8 @@ Startzeit seit Sitzungsbeginn (`t_start_s`).
 | `electronic` | electronic | periodisch intern | LO aus |
 | `state` | prepared_state | Zustandstrigger | Testzustand (kohärent, thermisch, Fock, Katze) |
 
-Der Standardablauf ist **K-V → K-H → A (heralded) → B (ohne Herald) → A → K-V** (verschachtelt A-B-A). Die
+Der Standardablauf ist **K-V → K-H → A (heralded) → B (freilaufend) → A → K-V** (verschachtelt A-B-A); Lauf B
+mit Zufallstrigger: `config/random_b.yaml`. Die
 Heralds laufen auch im B-Lauf mit und werden in der PTU-Datei aufgezeichnet, triggern aber den Digitizer nicht.
 Die frühere Variante mit eingestreuten Zufallstriggern ist als Option erhalten (`config/offherald_option.yaml`).
 
@@ -135,7 +156,8 @@ Die frühere Variante mit eingestreuten Zufallstriggern ist als Option erhalten 
 - **LO-Leistung** P_LO(t) = lo_scale·(1 + a·t): optisches Signal und Vakuumrauschen skalieren mit √P_LO, das
   elektronische Rauschen nicht (die Clearance wird S·P_LO);
 - **Effizienz** η(t) = η·eta_scale·(1 + b·t), je Lauf zur Laufmitte;
-- **LO-Monitor**: Photodiode mit 10 Hz und 0,1 % Rauschen, gespeichert unter `/blocks/<id>/monitor`.
+- **LO-Monitor**: Photodiode an ADQ32-Kanal B (Standard, `lo_monitor`); optional zusätzlich ein externer
+  Leistungsmesser mit 10 Hz (`drift.monitor`, gespeichert unter `/blocks/<id>/monitor`).
 
 Die Sollwerte je Lauf gelten für eine Normierung mit der Vakuumskala dieses Laufs.
 
@@ -144,7 +166,7 @@ Die Sollwerte je Lauf gelten für eine Normierung mit der Vakuumskala dieses Lau
 | Datei | Inhalt |
 |---|---|
 | `harp_<lauf>.ptu` | T2-Records je Lauf; Kopf mit `UsrHHD_RunId`, `UsrHHD_SessionId`, `UsrHHD_CampaignId`, `UsrHHD_CalibrationId`, `UsrHHD_ComparisonRole` |
-| `digitizer.h5` | Schema v1.1, siehe Modulkopf von `hhd/io/schema.py` |
+| `digitizer.h5` | Schema v1.2 (Kanal A und B), siehe Modulkopf von `hhd/io/schema.py` |
 | `truth.h5` | Ground Truth je Block (s. u.) und Uhrphase `clock/` |
 | `session.json` | Manifest mit Sitzung, Kalibrierung, Läufen, Sollwerten, `mapping`, Konfiguration, SHA-256 aller Dateien |
 
@@ -160,7 +182,7 @@ Gruppen der Ground Truth je Block in `truth.h5`:
 
 `hhd-sim validate` prüft:
 
-- Schema v1.1, eine `calibration_id` je Sitzung, eindeutige Lauf-IDs;
+- Schema v1.2, eine `calibration_id` je Sitzung, eindeutige Lauf-IDs;
 - Prüfsummen;
 - PTU-Köpfe: Record-Typ, Anzahl, Auflösung, Lauf-, Sitzungs- und Kalibrierungs-ID.
 
@@ -210,7 +232,7 @@ Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 - Fock |2⟩ und Katze im Sollbereich;
 - Übersprechen wird über K-H erkannt.
 
-## 9 Grenzen (Stand 0.2.0.dev0)
+## 9 Grenzen (Stand 0.3.0.dev0)
 
 - Die Referenzauswertung braucht die Ground Truth. Die Zuordnung Herald ↔ Record allein aus Markern folgt in
   AP4 (Synchronisation), Kalibrierung und Rekonstruktion in AP5–AP7.
@@ -225,4 +247,6 @@ Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 - Vom Gerät zu bestätigen [unsicher]:
   - `time_unit` des ADQ32;
   - ob der Record-Header den Trigger-Eingang meldet;
-  - der PTU-Record-Typ der HydraHarp 500.
+  - der PTU-Record-Typ der HydraHarp 500;
+  - ob der ADQ32-Pulsgenerator nur angenommene Trigger ausgeben kann und seine Latenz;
+  - Pegelanpassung GPIO (≥ 1,5 V an 50 Ω) → Harp-Eingang (Betriebsbereich ±1,2 V, optimal 150–300 mV).

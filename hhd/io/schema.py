@@ -1,4 +1,4 @@
-"""HDF5-Schema v1.1 für Digitizer-Daten (Strom 2) und Wahrheitsdateien des Simulators.
+"""HDF5-Schema v1.2 für Digitizer-Daten (Strom 2) und Wahrheitsdateien des Simulators.
 
 Das Schema ist ein **[Vorschlag]** (Gesamtplan, Kap. 6 „Datenformate“), angelehnt an die Record-Header des
 ADQ3 User Guide 21-2539, Kap. 9.3: ``timestamp`` und ``record_start`` als ganze Zahlen in ``time_unit``,
@@ -6,27 +6,33 @@ Zeit des ersten Samples ``t_x[0] = timestamp + record_start`` **[Spez.]**.
 
 Aufbau ``digitizer.h5``::
 
-    /                      attrs: format="hhd-digitizer", schema_version="1.1", simulated, software, created,
+    /                      attrs: format="hhd-digitizer", schema_version="1.2", simulated, software, created,
                                   session_id, campaign_id, calibration_id
     /device                attrs: model, form_factor, clock_option, channel_mode, f_adc_Hz, skip_factor,
                                   sampling_rate_Hz, time_unit_s, sampling_period_tu, adc_bits, record_length,
                                   horizontal_offset, trig_resolution_s, sync_resolution_s, reference_clock,
-                                  header_reports_trigger_source, bandwidth_option, analog_bandwidth_Hz
+                                  header_reports_trigger_source, bandwidth_option, analog_bandwidth_Hz,
+                                  channel_a_role, channel_b_role, channel_b_skip_factor, channel_b_record_length,
+                                  channel_b_horizontal_offset, lo_monitor_dark_lsb, lo_monitor_lsb_nominal
     /blocks/<block_id>     ein Messlauf; attrs: run_id, session_id, campaign_id, comparison_role
                                   (heralded | unheralded | control | test_state), t_start_s (seit Sitzungsbeginn),
                                   dataset_type, kind, sequence_index, calibration_id (= Sitzung), signal_blocked,
                                   lo_on, phase_mode, phase_theta0_rad, phase_ramp_Hz, phase_steps_rad,
-                                  phase_dwell_s, ptu_file, duration_s
-        records/data            int16 (n, L)   ADC-Werte in LSB
+                                  phase_dwell_s, ptu_file, duration_s, harp_channel_roles, harp_marker_roles,
+                                  adq32_trigger_source
+        records/data            int16 (n, L)   ADC-Werte Kanal A (Homodyn) in LSB
+        records/data_b          int16 (n, L_B) optional: Kanal B (LO-Monitor, Photodiode), gleicher Trigger;
+                                               L_B = channel_b_record_length (eigener Sample Skip)
         records/timestamp       int64 (n)      Trigger-Zeitpunkt in time_unit (Zähler seit Start)
         records/record_start    int64 (n)      erstes Sample relativ zu timestamp (≤ 0 bei Pretrigger)
         records/record_number   uint32 (n)
         records/trigger_source  uint8 (n)      TRIGGER_SOURCES; 255 = vom Header nicht gemeldet
         markers/timestamp       int64 (m)      SYNC-Ereignisse in time_unit
-        monitor/t_s, monitor/lo_power_rel      optional: LO-Leistungsmonitor (relativ)
+        monitor/t_s, monitor/lo_power_rel      optional: externer LO-Leistungsmesser (relativ)
     /calibration           attrs: calibration_id, mode ("shared"), runs, vacuum_blocks (JSON-Liste), electronic_blocks
 
 v1.0 → v1.1 (additiv): Sitzungs-/Lauf-IDs, dataset_type ``free_running``, Gruppe ``monitor``.
+v1.1 → v1.2 (additiv): Kanal B ``records/data_b`` (LO-Monitor), Kanalrollen von Harp und ADQ32.
 """
 from __future__ import annotations
 
@@ -37,7 +43,7 @@ from typing import Any
 import h5py
 import numpy as np
 
-SCHEMA_VERSION = "1.1"         # 1.1: Sitzung/Lauf-IDs, free_running, LO-Monitor (Gesamtplan v1.4, ED-12)
+SCHEMA_VERSION = "1.2"         # 1.2: Kanal B (LO-Monitor), Kanalrollen (Gesamtplan v1.5)
 FORMAT_DIGITIZER = "hhd-digitizer"
 FORMAT_TRUTH = "hhd-truth"
 
@@ -74,7 +80,7 @@ def _attrs(obj, d: dict[str, Any]) -> None:
 
 def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.ndarray, timestamp: np.ndarray,
                 record_start: np.ndarray, trigger_source: np.ndarray, marker_ts: np.ndarray,
-                monitor: dict | None = None) -> None:
+                monitor: dict | None = None, data_b: np.ndarray | None = None) -> None:
     g = f.require_group("blocks").create_group(block_id)
     _attrs(g, attrs)
     r = g.create_group("records")
@@ -87,6 +93,13 @@ def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.nda
     r.create_dataset("record_number", data=np.arange(n, dtype=np.uint32))
     r.create_dataset("trigger_source", data=np.asarray(trigger_source, np.uint8))
     r["data"].attrs["units"] = "ADC LSB"
+    r["data"].attrs["channel"] = "A"
+    if data_b is not None:                                   # Kanal B: LO-Monitor
+        Lb = int(f["device"].attrs.get("channel_b_record_length", data_b.shape[1] if data_b.ndim == 2 else 0))
+        db = np.asarray(data_b, np.int16).reshape(n, Lb)
+        r.create_dataset("data_b", data=db, chunks=(max(1, min(1024, n)), Lb) if n and Lb else None,
+                         compression="gzip" if n else None, compression_opts=4 if n else None)
+        r["data_b"].attrs.update(units="ADC LSB", channel="B", role=str(f["device"].attrs.get("channel_b_role", "")))
     r["timestamp"].attrs["units"] = "time_unit"
     r["record_start"].attrs["units"] = "time_unit"
     m = g.create_group("markers")
@@ -147,6 +160,16 @@ def validate_digitizer_file(path: str | Path) -> list[str]:
                     err.append(f"/blocks/{bid}/records/{name}: Länge {k} != {n}")
             if "data" in r and r["data"].ndim == 2 and r["data"].shape[1] != L:
                 err.append(f"/blocks/{bid}/records/data: Recordlänge {r['data'].shape[1]} != {L}")
+            if "data_b" in r:
+                Lb = int(dev.get("channel_b_record_length", -1))
+                if r["data_b"].dtype != np.dtype(np.int16):
+                    err.append(f"/blocks/{bid}/records/data_b: dtype {r['data_b'].dtype} != int16")
+                if n is not None and r["data_b"].shape[0] != n:
+                    err.append(f"/blocks/{bid}/records/data_b: Länge {r['data_b'].shape[0]} != {n}")
+                if r["data_b"].ndim != 2 or r["data_b"].shape[1] != Lb:
+                    err.append(f"/blocks/{bid}/records/data_b: Recordlänge != channel_b_record_length {Lb}")
+            elif dev.get("channel_b_role", "off") not in ("off", b"off"):
+                err.append(f"/blocks/{bid}/records/data_b fehlt (channel_b_role = {dev.get('channel_b_role')})")
             if "timestamp" in r and r["timestamp"].shape[0] > 1 and np.any(np.diff(r["timestamp"][:]) <= 0):
                 err.append(f"/blocks/{bid}/records/timestamp nicht streng monoton")
             if "timestamp" not in g["markers"]:

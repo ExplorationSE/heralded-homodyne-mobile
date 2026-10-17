@@ -1,7 +1,7 @@
 # Prüfung der Gegenmaßnahmen gegen Drift zwischen getrennten Läufen (Gesamtplan v1.4, R15):
 # LO-Leistung +5 %/s und Effizienz −2 %/s (absichtlich stark). Auswertung z. B. mit
 #   hhd-sim check <dir> --norm pooled | interpolated | monitor
-# K-V und LO-Monitor zeigen die LO-Drift; die Effizienzdrift zeigt nur der A-B-A-Vergleich.
+# K-V und LO-Monitor (ADQ32-Kanal B) zeigen die LO-Drift; die Effizienzdrift zeigt nur der A-B-A-Vergleich.
 session:
   id: drift
 drift: {lo_rel_per_s: 0.05, eta_rel_per_s: -0.02}

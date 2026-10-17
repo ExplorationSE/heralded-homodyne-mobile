@@ -31,3 +31,11 @@ class DigitizerClock:
     def __call__(self, t):
         t = np.asarray(t, dtype=float)
         return (1 + self.eps) * (t - self.t_arm) + self.phi(t)
+
+    def inverse(self, TD):
+        """wahre Zeit zu Digitizer-Zeit (Fixpunktiteration; φ ist klein und glatt)."""
+        TD = np.asarray(TD, dtype=float)
+        t = TD / (1 + self.eps) + self.t_arm
+        for _ in range(3):
+            t = (TD - self.phi(t)) / (1 + self.eps) + self.t_arm
+        return t

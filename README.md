@@ -6,13 +6,16 @@ von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasenge
 Phase θ als Option
 (ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExSE Harp GX Mobil.
 
-**Stand 0.2.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`) und die Dateiformate (`hhd.io`). Import, Analyse,
-Server und App folgen (AP3 ff., siehe Gesamtplan v1.4).
+**Stand 0.3.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`) und die Dateiformate (`hhd.io`). Import, Analyse,
+Server und App folgen (AP3 ff., siehe Gesamtplan v1.5).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
-K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: Zufalls- oder freilaufender Trigger) → **A** → K-V.
+K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als
+Alternative `config/random_b.yaml`) → **A** → K-V.
 Off-Herald-Fenster und eingestreute Zufallstrigger bleiben als Option (`config/offherald_option.yaml`).
-**Geräte (Defaults):** HydraHarp 500 S mit 4 Kanälen; ADQ32-PCIe S2G5 (2,5 GS/s), BW1G0 (1 GHz).
+**Geräte (Defaults):** HydraHarp 500 S mit Sync-Eingang + 4 Kanälen (Sync-Marker am Sync-Eingang, CH1 Herald,
+CH2 ADQ32-Trigger-Kopie, CH3 reserviert, CH4 Hilfstrigger; M1 Laufmarke, M2 Phasenreferenz); ADQ32-PCIe S2G5
+(2,5 GS/s), BW1G0 (1 GHz), Kanal A Homodyn, Kanal B LO-Monitor-Photodiode.
 
 > [!IMPORTANT]
 > **Hinweis – bitte zuerst lesen**
@@ -31,11 +34,11 @@ Off-Herald-Fenster und eingestreute Zufallstrigger bleiben als Option (`config/o
 | Pfad | Inhalt |
 |---|---|
 | `hhd/io/ptu.py` | PTU-Format **Generic T2** (0x00010207): Kodierer, zustandsbehafteter Dekoder (auch für Datenstrom-Chunks), Kopf mit `UsrHHD_*`-Metadaten |
-| `hhd/io/schema.py` | HDF5-Schema v1.1 „hhd-digitizer“ für ADQ32-Records (Daten, Kopfzeilen, Marker, LO-Monitor, Sitzungs-/Lauf-IDs, Kalibrierung) mit Prüffunktion |
+| `hhd/io/schema.py` | HDF5-Schema v1.2 „hhd-digitizer“ für ADQ32-Records (Kanal A, Kanal B = LO-Monitor, Kopfzeilen, Marker, Sitzungs-/Lauf-IDs, Kanalrollen, Kalibrierung) mit Prüffunktion |
 | `hhd/sim/config.py` | Konfiguration (YAML/JSON) als Parametertabelle mit Einheit, Status und Quelle; Grenzprüfung gegen die Gerätedaten |
 | `hhd/sim/states.py` | Zustände: Vakuum, kohärent, thermisch, Fock \|1⟩ (geheraldet, mit η), Fock \|n⟩ und Katze als Erweiterung |
 | `hhd/sim/phase.py` | Phase θ: zufällig (phasengemittelt), fest, Rampe, Stufen; Referenzmarker an die Harp |
-| `hhd/sim/harp.py` | HydraHarp 500: 1 ps, Jitter, Totzeit, Kanal-Offsets, Marker-Eingänge mit Zeitfehler ≤ 100 ns |
+| `hhd/sim/harp.py` | HydraHarp 500: 1 ps, Jitter, Totzeit, Kanal-Offsets, Sync-Eingang als Zeitstempelkanal, Marker-Eingänge mit Zeitfehler ≤ 100 ns |
 | `hhd/sim/digitizer.py` | ADQ32: Records, TRIG-/SYNC-Zeitstempel, Pretrigger, Rearm, 12-bit-ADC, Analogbandbreite, elektronisches Rauschen, LO-Drift, Übersprechen |
 | `hhd/sim/clock.py` | Uhrenmodell: gemeinsame 10-MHz-Referenz (ED-7) oder freie Uhr mit Frequenzfehler und Random Walk |
 | `hhd/sim/engine.py` | Sitzung aus getrennten Läufen (K-V, K-H, mit/ohne Herald, getriggerte Zustände), Drift, LO-Monitor, Kampagnen, Dateiausgabe, Ground Truth |
@@ -66,7 +69,7 @@ hhd-sim params                                # Parametertabelle (Default, Einhe
 hhd-sim config -o meine.yaml                  # vollständige Standardkonfiguration zum Anpassen
 hhd-sim run config/standard.yaml -o data/S001         # eine Sitzung
 hhd-sim campaign config/standard.yaml -o data/K1 -n 3 # Kampagne aus 3 Sitzungen (Seeds seed, seed+1, …)
-hhd-sim validate data/S001                    # Schema v1.1, Prüfsummen, PTU-Köpfe, IDs
+hhd-sim validate data/S001                    # Schema v1.2, Prüfsummen, PTU-Köpfe, IDs
 hhd-sim check data/S001                       # Sollwerte, Vergleich A/B, Driftindikatoren (mit Ground Truth)
 hhd-sim check data/S001 --norm interpolated   # Vakuumnormierung zeitlich interpoliert (bzw. --norm monitor)
 hhd-sim stream config/standard.yaml --chunk 0.1 --speed 1   # Echtzeit-Wiedergabe
@@ -79,8 +82,8 @@ Manifest, HDF5-Attributen und PTU-Kopf (`UsrHHD_RunId`, `UsrHHD_SessionId`, `Usr
 
 | Datei | Inhalt |
 |---|---|
-| `harp_<lauf>.ptu` | HydraHarp-500-T2-Datei je Lauf (Herald, Zufallstrigger-Kennung, Marker) |
-| `digitizer.h5` | ADQ32-Records aller Läufe, LO-Monitor, Schema v1.1 |
+| `harp_<lauf>.ptu` | HydraHarp-500-T2-Datei je Lauf (Sync-Marker, Herald, Trigger-Kopie, Hilfstrigger, Laufmarke) |
+| `digitizer.h5` | ADQ32-Records aller Läufe, Kanal A und B (LO-Monitor), Schema v1.2 |
 | `truth.h5` | Ground Truth: wahre Zeiten, Moden, Quadraturen, Zuordnung Herald ↔ Record, Drift, Uhrphase |
 | `session.json` | Manifest: Sitzung, Kalibrierung, Läufe, Sollwerte, Konfiguration, SHA-256-Prüfsummen |
 
@@ -88,17 +91,17 @@ Beispiel `config/standard.yaml` (8 s Messzeit in 6 Läufen, Seed 20261020; Reche
 
 | Lauf | Art | Records | W(0,0) gemessen | Soll |
 |---|---|---|---|---|
-| `S001-R01` `kv_start` | Vakuum (K-V) | 2000 | +0,315 ± 0,007 | +0,318 |
-| `S001-R02` `kh` | Herald, Signal blockiert (K-H) | 1006 | +0,310 ± 0,009 | +0,318 |
-| `S001-R03` `heralded_1` | A: Herald-Trigger | 2520 | −0,112 ± 0,013 | −0,105 |
-| `S001-R04` `unheralded` | B: Zufallstrigger | 2033 | +0,318 ± 0,002 | +0,318 |
-| `S001-R05` `heralded_2` | A: Herald-Trigger | 2533 | −0,091 ± 0,011 | −0,105 |
-| `S001-R06` `kv_end` | Vakuum (K-V) | 2000 | +0,318 ± 0,004 | +0,318 |
-| A gesamt | | 5053 | **−0,102 ± 0,008** | −0,105 |
-| A − B | | | **−0,420 ± 0,008** (z = −51) | |
+| `S001-R01` `kv_start` | Vakuum (K-V) | 2000 | +0,317 ± 0,005 | +0,318 |
+| `S001-R02` `kh` | Herald, Signal blockiert (K-H) | 1006 | +0,287 ± 0,017 | +0,318 |
+| `S001-R03` `heralded_1` | A: Herald-Trigger | 2520 | −0,111 ± 0,012 | −0,105 |
+| `S001-R04` `unheralded` | B: freilaufender Trigger | 2000 | +0,318 ± 0,004 | +0,318 |
+| `S001-R05` `heralded_2` | A: Herald-Trigger | 2533 | −0,095 ± 0,011 | −0,105 |
+| `S001-R06` `kv_end` | Vakuum (K-V) | 2000 | +0,318 ± 0,003 | +0,318 |
+| A gesamt | | 5053 | **−0,104 ± 0,007** | −0,105 |
+| A − B | | | **−0,422 ± 0,009** (z = −49) | |
 
-Driftindikatoren dieses Laufs: A-B-A z = +1,2 (W(0,0)), K-V-Varianz −2,5 % (z = −0,6), LO-Monitor +0,07 % – keine Warnung.
-Mit `config/drift.yaml` zeigen K-V und LO-Monitor die LO-Drift, die Effizienzdrift nur der A-B-A-Vergleich.
+Driftindikatoren dieses Laufs: A-B-A z = +1,0 (W(0,0)), K-V-Varianz −1,9 % (z = −0,4), LO-Monitor (Kanal B) ±0,00 % – keine Warnung.
+Mit `config/drift.yaml` zeigen K-V und LO-Monitor (Kanal B) die LO-Drift, die Effizienzdrift nur der A-B-A-Vergleich.
 
 Die Auswertung in `hhd.sim.check` nutzt die **wahren** Modenpositionen aus `truth.h5`; sie prüft den Simulator,
 nicht die spätere Analyse (die muss Herald und Record allein aus Markern zuordnen, AP4/AP5).

@@ -8,7 +8,11 @@ Herstellerangaben **[Spez.]**:
   Rearm-Zeit max. 20 ns; Pretrigger 2-Kanal in Schritten von 8 bis 16 360 Samples (Datenblatt 20-2378);
 * Record-Header: ``timestamp`` (Trigger auf dem Zeitgitter), ``record_start`` (erstes Sample relativ zum
   Trigger), Einheit ``time_unit``; t_x[0] = timestamp + record_start (User Guide 21-2539, Kap. 9.3);
-* Sample Skip verwirft Samples ohne Tiefpass (User Guide, Kap. 5.2).
+* Sample Skip verwirft Samples ohne Tiefpass, je Kanal einstellbar (User Guide, Kap. 5.2); Recordlänge,
+  Horizontal-Offset und Triggerquelle sind je Kanal einstellbar (User Guide, ADQDataAcquisitionParametersChannel);
+* Kanal B: LO-Leistungsmonitor (Photodiode), gleicher Trigger wie Kanal A, mit eigenem Sample Skip;
+* Pulsgenerator (User Guide, Kap. 7.2): ein Puls je Ereignis der gewählten Ereignisquelle (TRIG-Port bzw.
+  periodisch), Ausgabe an einem Port (hier GPIO); Zeitraster 32 Samples der Basisrate (6,4 ns bei 5 GHz).
 
 Modellannahmen: ``time_unit`` = 1/(f_ADC·8) (nicht dokumentiert); periodische interne Trigger haben
 Sample-Auflösung; der Record-Header meldet den auslösenden Eingang nicht (konfigurierbar).
@@ -80,6 +84,8 @@ class DigitizerRecording:
     marker_recorded: np.ndarray
     n_modes_in_record: np.ndarray
     cand_accepted: np.ndarray        # je TRIG-Kandidat: Recordnummer oder −1
+    data_b: np.ndarray | None = None  # Kanal B (LO-Monitor), int16 (n, L_B)
+    lo_rel_true: np.ndarray | None = None  # wahre relative LO-Leistung je Record
 
 
 class ADQ32:
@@ -104,7 +110,36 @@ class ADQ32:
                     horizontal_offset=-self.pre, trig_resolution_s=c.trig_res, sync_resolution_s=c.sync_res,
                     reference_clock="external 10 MHz" if c.clock.shared_10MHz else "internal",
                     bandwidth_option=d.bandwidth_option, analog_bandwidth_Hz=c.bandwidth,
-                    header_reports_trigger_source=d.header_reports_trigger_source, channel="A")
+                    header_reports_trigger_source=d.header_reports_trigger_source, channel="A",
+                    channel_a_role="homodyne", channel_b_role="lo_monitor" if c.lo_b_enabled else "off",
+                    channel_b_skip_factor=c.lo_monitor.skip_factor if c.lo_b_enabled else 0,
+                    channel_b_record_length=c.lo_b_record_length if c.lo_b_enabled else 0,
+                    channel_b_horizontal_offset=-c.lo_b_pretrigger if c.lo_b_enabled else 0,
+                    lo_monitor_dark_lsb=c.lo_monitor.dark_lsb, lo_monitor_lsb_nominal=c.lo_monitor.lsb_nominal,
+                    trigger_copy_port="GPIO", pulse_generator_step_s=c.pulse_gen_step)
+
+    def periodic_grid(self, t0: float, duration: float, rate: float) -> np.ndarray:
+        """Digitizer-Zeiten der internen periodischen Trigger im Lauf (Sample-Auflösung [Annahme])."""
+        if rate <= 0:
+            return np.empty(0)
+        TD0, TD1 = self.clk(t0), self.clk(t0 + duration)
+        tp = np.arange(np.ceil(TD0 * rate), np.floor(TD1 * rate)) / rate
+        return np.ceil(tp * self.fs) / self.fs
+
+    def trigger_copy(self, rng: np.random.Generator, t0: float, duration: float, trig_true: np.ndarray,
+                     periodic_rate: float) -> np.ndarray:
+        """Kopie der Triggerereignisse über einen Pulsgenerator am GPIO-Port → wahre Zeit am GPIO-Ausgang.
+
+        Der Pulsgenerator gibt **jedes** Ereignis der Quelle aus (nicht nur angenommene Trigger) [Spez., UG 7.2];
+        ob er sich auf angenommene Trigger beschränken lässt, ist offen [unsicher]. Zeitraster 6,4 ns.
+        """
+        c, d, clk = self.cfg, self.cfg.digitizer, self.clk
+        TD = np.concatenate([clk(np.asarray(trig_true, float) + rng.normal(0, d.trig_jitter, len(trig_true))),
+                             self.periodic_grid(t0, duration, periodic_rate)])
+        TD = TD[(TD >= clk(t0)) & (TD <= clk(t0 + duration))]
+        q = c.pulse_gen_step
+        TDo = np.ceil(TD / q - 1e-9) * q + d.trigger_copy_latency
+        return np.sort(clk.inverse(TDo))
 
     # ------------------------------------------------------------------ Trigger → Records
     def acquire(self, rng: np.random.Generator, t0: float, duration: float, trig: TriggerInput,
@@ -122,9 +157,7 @@ class ADQ32:
         tsl = [ts_trig]
         ttrue = [trig.t_true]
         if periodic_rate > 0:
-            TD0, TD1 = clk(t0), clk(t0 + duration)
-            tp = np.arange(np.ceil(TD0 * periodic_rate), np.floor(TD1 * periodic_rate)) / periodic_rate
-            tp = np.ceil(tp * fs) / fs                                  # Sample-Auflösung [Annahme]
+            tp = self.periodic_grid(t0, duration, periodic_rate)
             tsl.append(tp); kinds.append(np.full(len(tp), TRIG_PERIODIC, np.int8))
             idx.append(np.arange(len(tp))); ttrue.append(np.full(len(tp), np.nan))
         ts_all = np.concatenate(tsl)
@@ -165,6 +198,14 @@ class ADQ32:
             lo_amp = np.sqrt(np.asarray(lo_scale_fn(t_rec_true), float) * np.ones(n))
         else:
             lo_amp = np.ones(n)
+        lo_rel = lo_amp ** 2 if lo_on else np.zeros(n)
+        data_b = None
+        if c.lo_b_enabled:                               # Kanal B: Photodiode am LO (Mittelwert ∝ P_LO)
+            lm = c.lo_monitor
+            Lb = c.lo_b_record_length
+            p_rec = lo_rel * (1.0 + rng.normal(0, lm.rin_rel, n))
+            yb = lm.dark_lsb + lm.lsb_nominal * p_rec[:, None] + rng.normal(0, lm.noise_lsb, (n, Lb))
+            data_b = np.clip(np.round(yb), -self.lim - 1, self.lim).astype(np.int16).reshape(n, Lb)
         data = np.empty((n, L), np.int16)
         n_in = np.zeros(n, np.int32)
         for j in range(n):
@@ -203,4 +244,5 @@ class ADQ32:
         okm = (TDm >= TD_start) & (TDm <= TD_end) & (TDm >= 0) & (rng.random(len(sync_true)) >= d.p_miss_marker)
         ts_m = np.rint(np.floor(TDm[okm] / c.sync_res + 1e-9) * c.sync_res / tu).astype(np.int64)
         return DigitizerRecording(data, ts_rec, record_start.astype(np.int64), src.astype(np.uint8),
-                                  kind_all[acc], idx_all[acc], ttrue_all[acc], ts_m, okm, n_in, cand_acc)
+                                  kind_all[acc], idx_all[acc], ttrue_all[acc], ts_m, okm, n_in, cand_acc,
+                                  data_b=data_b, lo_rel_true=lo_rel)

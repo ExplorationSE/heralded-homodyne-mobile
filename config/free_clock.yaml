@@ -1,5 +1,5 @@
 # Variante ohne gemeinsame 10-MHz-Referenz: freie Digitizer-Uhr (ε = 2 ppm, Irrfahrt) und Sync-Marker am
-# Marker-Eingang der HydraHarp 500 (Zeitfehler < 100 ns). Entspricht V1/V3 des Synchronisationsberichts.
+# Marker-Eingang M3 der HydraHarp 500 (Zeitfehler < 100 ns) statt am Sync-Eingang. Entspricht V1/V3 des Synchronisationsberichts.
 session:
   id: free_clock
 clock: {shared_10MHz: false, eps: 2.0e-6, rw_D: 1.0e-17}

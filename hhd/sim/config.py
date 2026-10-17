@@ -52,9 +52,25 @@ class SessionCfg:
 class DriftCfg:
     lo_rel_per_s: float = P(0.0, "1/s", doc="lineare relative Drift der LO-Leistung ab Sitzungsbeginn (0 = aus); Vakuumrauschen ∝ √P_LO, elektronisches Rauschen fest", status="Vorschlag", source="Gesamtplan v1.4, R15")
     eta_rel_per_s: float = P(0.0, "1/s", doc="lineare relative Drift der Zustandseffizienz η je Lauf (Modenanpassung, Justage)", status="Vorschlag", source="Gesamtplan v1.4, R15")
-    monitor: bool = P(True, doc="LO-Leistungsmonitor (Photodiode) mitschreiben: /blocks/<id>/monitor", status="Vorschlag")
-    monitor_rate_Hz: float = P(10.0, "Hz", doc="Abtastrate des LO-Monitors", status="Annahme")
-    monitor_noise_rel: float = P(1e-3, "", doc="relatives Rauschen des LO-Monitors", status="Annahme")
+    monitor: bool = P(False, doc="zusätzlich externer, langsamer LO-Leistungsmesser (/blocks/<id>/monitor); Standard ist die Photodiode an ADQ32-Kanal B (lo_monitor)", status="Vorschlag")
+    monitor_rate_Hz: float = P(10.0, "Hz", doc="Abtastrate des externen LO-Leistungsmessers", status="Annahme")
+    monitor_noise_rel: float = P(1e-3, "", doc="relatives Rauschen des externen LO-Leistungsmessers", status="Annahme")
+
+
+@dataclass
+class LoMonitorCfg:
+    """LO-Leistungsmonitor: Photodiode (Strahlteiler am LO) an ADQ32-Kanal B (Entscheidung zu Gesamtplan v1.4).
+
+    Kanal B wird im 2-Kanal-Modus mit demselben Trigger wie Kanal A aufgenommen; Recordlänge, Horizontal-Offset
+    und Sample Skip sind je Kanal einstellbar [Spez., ADQ3 User Guide 21-2539, ADQDataAcquisitionParametersChannel,
+    Kap. 5.2]. Der Mittelwert eines B-Records ist ein Maß für die LO-Leistung während dieses Records.
+    """
+    source: str = P("adq32_b", doc="adq32_b (Photodiode an Kanal B) oder off", status="Vorschlag", source="Entscheidung Herr Eilers (v1.5)")
+    skip_factor: int = P(25, "", doc="Sample Skip für Kanal B (2,5 GS/s → 100 MS/s); Fenster wie Kanal A", status="Vorschlag", source=ADQ3_UG + ", Kap. 5.2")
+    lsb_nominal: float = P(1000.0, "LSB", doc="Signal der Photodiode bei nominaler LO-Leistung über dem Dunkelwert (Eingangsbereich 0,5 Vpp, DC-Offset programmierbar)", status="Annahme")
+    dark_lsb: float = P(20.0, "LSB", doc="Dunkelwert (Photodiode ohne Licht + ADC-Offset); im Labor mit LO aus messen", status="Annahme")
+    noise_lsb: float = P(3.0, "LSB", doc="Rauschen je Sample (Photodiode + Verstärker + ADC)", status="Annahme")
+    rin_rel: float = P(1e-3, "", doc="relatives Intensitätsrauschen des LO je Record", status="Annahme")
 
 
 @dataclass
@@ -82,19 +98,24 @@ class PhaseCfg:
 @dataclass
 class HarpCfg:
     model: str = P("HydraHarp 500 S", doc="HydraHarp 500 S (4–8 Kanäle) oder M (8–16 Kanäle); Festlegung: S", status="Spez.", source=HH500_MANUAL)
-    n_channels: int = P(4, "", doc="Anzahl Eingangskanäle (S: 4..8, M: 8..16); HHD braucht 4", status="Spez.", source=HH500_MANUAL)
+    n_channels: int = P(4, "", doc="Anzahl Eingangskanäle CH1..CHn (S: 4..8, M: 8..16), zusätzlich der Sync-Eingang (Kanal 0)", status="Spez.", source=HH500_MANUAL)
     resolution: float = P(1e-12, "s", doc="T2-Auflösung (fest 1 ps)", status="Spez.", source=HH500_MANUAL)
     jitter_rms: float = P(2.5e-12, "s", doc="Einzelmessungs-Zeitunsicherheit typ. (rms)", status="Spez.", source=HH500_MANUAL)
     trigger: str = P("ETR", doc="Eingangstrigger ETR (Totzeit < 680 ps) oder CFD (< 6,8 ns)", status="Spez.", source=HH500_MANUAL)
     tdead: float = P(0.0, "s", doc="programmierbare Zusatz-Totzeit (0 = native Totzeit)", status="Spez.", source="HydraHarp 500 Manual, Kap. 6.1")
-    herald_channel: int = P(1, "", doc="Eingang des Herald-Detektors", status="Vorschlag")
-    random_tag_channel: int = P(2, "", doc="Eingang mit der Kopie des Zufallstriggers (Kennung, Analyse Kap. 6)", status="Vorschlag")
-    state_tag_channel: int = P(3, "", doc="Eingang mit dem Trigger getriggerter Testzustände", status="Vorschlag")
-    marker_timing_channel: int = P(4, "", doc="Eingang für Sync-Marker, falls markers.on_timing_channel", status="Vorschlag")
+    herald_channel: int = P(1, "", doc="CH1: Herald-Detektor (Kopie über Fan-out an ADQ32 TRIG)", status="Vorschlag", source="Gesamtplan v1.5, Kanalbelegung")
+    trigger_copy_channel: int = P(2, "", doc="CH2: Kopie der ADQ32-Triggerereignisse (Pulsgenerator an ADQ32-GPIO); 0 = aus", status="Vorschlag", source="Gesamtplan v1.5, Kanalbelegung")
+    herald2_channel: int = P(3, "", doc="CH3: reserviert für zweiten Herald-Detektor bzw. PNR (nicht simuliert); 0 = keine Reservierung", status="Vorschlag", source="Gesamtplan v1.5, Kanalbelegung")
+    random_tag_channel: int = P(4, "", doc="CH4 (Hilfskanal): Kopie des Zufallstriggers (Lauf random, Option AP20)", status="Vorschlag", source="Gesamtplan v1.5, Kanalbelegung")
+    state_tag_channel: int = P(4, "", doc="CH4 (Hilfskanal): Trigger getriggerter Testzustände (nie im selben Lauf wie Zufallstrigger)", status="Vorschlag", source="Gesamtplan v1.5, Kanalbelegung")
+    marker_timing_channel: int = P(0, "", doc="Timing-Kanal der Sync-Marker, falls markers.on_timing_channel: 0 = Sync-Eingang (in T2 vollwertiger Zeitstempelkanal, Teiler aus)", status="Vorschlag", source=HH500_T2)
+    sync_divider: int = P(1, "", doc="Sync-Teiler; in T2 bei Nutzung des Sync-Eingangs als Kanal 1 (\"None\") [Spez.]", status="Spez.", source=HH500_T2)
+    run_marker_bit: int = P(1, "", doc="Marker-Eingang M1 (Bit 1): Laufmarke bei Laufbeginn und -ende (Quelle [offen]); 0 = aus", status="Vorschlag", source="Gesamtplan v1.5, Kanalbelegung")
+    d_TC: float = P(30e-9, "s", doc="Laufzeit ADQ32-GPIO → Harp CH2 (Kabel, Abschwächer)", status="Annahme")
     channel_offsets: dict = P({}, "s", doc="Eingangs-Offsets je Kanal {Kanal: s}, Bereich ±100 ns", status="Spez.", source=HH500_MANUAL)
     d_H: float = P(85.3e-9, "s", doc="Laufzeit Herald-Detektor → Harp", source=SYNC_REP)
     d_RH: float = P(10e-9, "s", doc="Laufzeit Zufalls-/Zustandstrigger-Generator → Harp", status="Annahme")
-    marker_bit: int = P(1, "", doc="Marker-Bitmaske der Sync-Marker (Marker-Eingang 1)", status="Vorschlag")
+    marker_bit: int = P(4, "", doc="Marker-Eingang M3 (Bit 4) für Sync-Marker, nur falls nicht auf einem Timing-Kanal (Rückfall); Störmarker-Modell", status="Vorschlag")
     marker_error_rms: float = P(30e-9, "s", doc="Streuung des Marker-Zeitfehlers (Spez.: Fehler < 100 ns in T2; Gaußmodell = Annahme)", source=SYNC_REP)
     marker_offset: float = P(20e-9, "s", doc="konstante Marker-Latenz", source=SYNC_REP)
     marker_error_max: float = P(100e-9, "s", doc="Grenze des Marker-Zeitfehlers in T2 (Modell wird hier abgeschnitten)", status="Spez.", source=HH500_MANUAL)
@@ -131,6 +152,8 @@ class DigitizerCfg:
     header_reports_trigger_source: bool = P(False, doc="meldet der Record-Header den auslösenden Eingang? (unbekannt → false; Kennung über Harp)", status="Annahme")
     crosstalk_amp: float = P(0.0, "Vakuum-σ", doc="Amplitude eines Trigger-Übersprechens auf den Analogkanal (Fehlerbild R10)", status="Vorschlag")
     crosstalk_tau: float = P(15e-9, "s", doc="Abklingzeit des Übersprechens", status="Annahme")
+    trigger_copy_latency: float = P(10e-9, "s", doc="Latenz Triggerereignis → Pulsgenerator-Ausgang (GPIO)", status="Annahme")
+    pulse_gen_granularity: int = P(32, "Samples", doc="Zeitraster des Pulsgenerators in Samples der Basisabtastrate (5 GHz bei S2G5 → 6,4 ns)", status="Spez.", source=ADQ3_UG + ", Kap. 7.2 (Beispiel ADQ32)")
     crosstalk_delay: float = P(77.3e-9, "s", doc="Verzögerung des Übersprechens nach dem TRIG-Puls (Default d_S − d_T: am Modenort, ungünstigster Fall)", status="Annahme")
 
 
@@ -147,7 +170,7 @@ class ClockCfg:
 class MarkerCfg:
     f_marker: float = P(1000.0, "Hz", doc="Rate der Sync-Marker", source=SYNC_REP)
     p_omit: float = P(0.10, "", doc="pseudozufällige Auslassung (Muster für die Zuordnung)", source=SYNC_REP)
-    on_timing_channel: bool = P(True, doc="Marker auf regulärem Timing-Kanal statt Marker-Eingang (ED-7)", status="Vorschlag", source="ED-7")
+    on_timing_channel: bool = P(True, doc="Sync-Marker auf einem Timing-Kanal (Standard: Sync-Eingang, 1 ps) statt auf einem Marker-Eingang (< 100 ns)", status="Vorschlag", source="ED-7; " + HH500_T2)
     sigma_tc: float = P(5e-12, "s", doc="Streuung, wenn der Marker auf einem Timing-Kanal liegt", source=SYNC_REP)
     d_MH: float = P(15e-9, "s", doc="Laufzeit Markerquelle → Harp", source=SYNC_REP)
 
@@ -169,16 +192,17 @@ class BlockCfg:
 
 
 def default_blocks() -> list[dict]:
-    """Standard-Messablauf ED-12 (Gesamtplan v1.4, AP18): getrennte Läufe, verschachtelt A-B-A.
+    """Standard-Messablauf ED-12 (Gesamtplan v1.5, AP18): getrennte Läufe, verschachtelt A-B-A.
 
-    K-V → K-H → A (Herald-Trigger) → B (ohne Herald, Zufallstrigger) → A → K-V. Alle Läufe einer Sitzung teilen
-    eine Kalibrierung (calibration_id). Off-Herald-Fenster und eingestreute Zufallstrigger bleiben Option.
+    K-V → K-H → A (Herald-Trigger) → B (ohne Herald, **freilaufender** interner Trigger) → A → K-V. Alle Läufe
+    einer Sitzung teilen eine Kalibrierung (calibration_id). Lauf B mit Zufallstrigger (config/random_b.yaml),
+    Off-Herald-Fenster und eingestreute Zufallstrigger bleiben Optionen.
     """
     return [
         dict(id="kv_start", kind="vacuum", duration_s=0.5, periodic_rate=4000.0),
         dict(id="kh", kind="herald_blocked", duration_s=1.0),
         dict(id="heralded_1", kind="heralded", duration_s=2.5),
-        dict(id="unheralded", kind="random", duration_s=1.0, random_rate=2000.0),
+        dict(id="unheralded", kind="free_running", duration_s=1.0, periodic_rate=2000.0),
         dict(id="heralded_2", kind="heralded", duration_s=2.5),
         dict(id="kv_end", kind="vacuum", duration_s=0.5, periodic_rate=4000.0),
     ]
@@ -198,6 +222,7 @@ class SimConfig:
     clock: ClockCfg = field(default_factory=ClockCfg)
     markers: MarkerCfg = field(default_factory=MarkerCfg)
     drift: DriftCfg = field(default_factory=DriftCfg)
+    lo_monitor: LoMonitorCfg = field(default_factory=LoMonitorCfg)
     blocks: list[BlockCfg] = field(default_factory=lambda: [BlockCfg(**b) for b in default_blocks()])
 
     # ---------------------------------------------------------------- abgeleitete Größen (ADQ32)
@@ -235,6 +260,59 @@ class SimConfig:
         return BANDWIDTH.get(self.digitizer.bandwidth_option, float("nan"))
 
     @property
+    def f_base(self) -> float:
+        """Basisabtastrate des ADC (1-Kanal-Rate): 5 GHz (S2G5) bzw. 4 GHz (S2G0)."""
+        return {"S2G5": 5.0e9, "S2G0": 4.0e9}[self.digitizer.clock_option]
+
+    @property
+    def pulse_gen_step(self) -> float:
+        """Zeitraster des ADQ32-Pulsgenerators (6,4 ns bei S2G5) [Spez. für ADQ32 bei 5 GHz; S2G0 Annahme]."""
+        return self.digitizer.pulse_gen_granularity / self.f_base
+
+    @property
+    def lo_b_enabled(self) -> bool:
+        return self.lo_monitor.source == "adq32_b"
+
+    @property
+    def lo_b_record_length(self) -> int:
+        return self.digitizer.record_length // self.lo_monitor.skip_factor
+
+    @property
+    def lo_b_pretrigger(self) -> int:
+        return self.digitizer.pretrigger // self.lo_monitor.skip_factor
+
+    def channel_roles(self, kind: str | None = None) -> dict[str, str]:
+        """Belegung der HydraHarp-Eingänge {Kanal: Rolle}; Kanal 0 = Sync-Eingang. ``kind``: Laufart."""
+        h = self.harp
+        roles = {str(h.herald_channel): "herald"}
+        if h.trigger_copy_channel:
+            roles[str(h.trigger_copy_channel)] = "adq32_trigger_copy"
+        if h.herald2_channel:
+            roles[str(h.herald2_channel)] = "herald2_reserved"
+        aux = {"state": "state_tag", "random": "random_tag"}.get(kind or "", "")
+        if kind == "heralded":
+            aux = "random_tag (nur bei random_rate > 0)"
+        if aux.startswith("state"):
+            roles[str(h.state_tag_channel)] = aux
+        elif aux:
+            roles[str(h.random_tag_channel)] = aux
+        else:
+            roles.setdefault(str(h.random_tag_channel), "aux (Zufalls-/Zustandstrigger, sonst Reserve)")
+        if self.markers.on_timing_channel:
+            roles[str(h.marker_timing_channel)] = "sync_marker"
+        return dict(sorted(roles.items(), key=lambda kv: int(kv[0])))
+
+    def marker_roles(self) -> dict[str, str]:
+        h, roles = self.harp, {}
+        if h.run_marker_bit:
+            roles[str(h.run_marker_bit)] = "run_marker"
+        if self.phase.marker_bit:
+            roles[str(self.phase.marker_bit)] = "phase_ref"
+        if not self.markers.on_timing_channel:
+            roles[str(h.marker_bit)] = "sync_marker"
+        return roles
+
+    @property
     def calibration_id(self) -> str:
         return f"{self.session.campaign}-{self.session.id}-cal"
 
@@ -265,21 +343,36 @@ class SimConfig:
             e.append("harp.resolution: T2-Auflösung ist fest 1 ps")
         if h.trigger not in ("ETR", "CFD"):
             e.append("harp.trigger: ETR oder CFD")
-        chans = [h.herald_channel, h.random_tag_channel, h.state_tag_channel]
+        # Zufalls- und Zustandstrigger dürfen sich den Hilfskanal teilen (nie im selben Lauf)
+        aux = {h.random_tag_channel, h.state_tag_channel}
+        chans = [h.herald_channel] + [c for c in (h.trigger_copy_channel, h.herald2_channel) if c] + sorted(aux)
         if self.markers.on_timing_channel:
             chans.append(h.marker_timing_channel)
         if len(set(chans)) != len(chans):
             e.append("harp: Kanalbelegung doppelt")
         for c in chans:
-            if not 1 <= c <= h.n_channels:
-                e.append(f"harp: Kanal {c} außerhalb 1..{h.n_channels}")
+            if not 0 <= c <= h.n_channels:
+                e.append(f"harp: Kanal {c} außerhalb 0 (Sync)..{h.n_channels}")
+        if h.herald_channel == 0 or 0 in aux:
+            w.append("harp: Herald bzw. Hilfstrigger am Sync-Eingang (möglich in T2, aber Sync-Marker dann auf CH)")
+        if 0 in chans and h.sync_divider != 1:
+            e.append("harp.sync_divider: in T2 muss der Sync-Teiler aus sein (1), wenn der Sync-Eingang Zeitstempel liefert")
+        if self.markers.on_timing_channel and h.marker_timing_channel == 0 and self.markers.f_marker > 85e6:
+            e.append("markers.f_marker: max. Sync-Rate ohne Teiler 85 MHz")
+        if self.markers.on_timing_channel and self.markers.f_marker > 1e6:
+            w.append("markers.f_marker > 1 MHz: hoher Anteil am USB-Durchsatz (typ. 85 Mcps); 10 MHz gehört an Ref-In, nicht an einen Kanal")
+        mbits = [b for b in (h.run_marker_bit, self.phase.marker_bit) if b]
+        if not self.markers.on_timing_channel:
+            mbits.append(h.marker_bit)
+        if any(b not in (1, 2, 4, 8) for b in mbits + [h.marker_bit]) or h.run_marker_bit not in (0, 1, 2, 4, 8):
+            e.append("Marker-Bit: 1, 2, 4 oder 8 (vier Marker-Eingänge)")
+        if len(set(mbits)) != len(mbits):
+            e.append("harp: Marker-Eingänge doppelt belegt")
         for c, off in h.channel_offsets.items():
             if abs(float(off)) > 100e-9:
                 e.append(f"harp.channel_offsets[{c}]: Bereich ±100 ns")
-        if h.marker_bit not in (1, 2, 4, 8) or (self.phase.marker_bit not in (0, 1, 2, 4, 8)):
+        if self.phase.marker_bit not in (0, 1, 2, 4, 8):
             e.append("Marker-Bit: 1, 2, 4 oder 8 (vier Marker-Eingänge)")
-        if self.phase.marker_bit and self.phase.marker_bit == h.marker_bit and not self.markers.on_timing_channel:
-            e.append("phase.marker_bit und harp.marker_bit gleich")
         if not self.markers.on_timing_channel and self.markers.f_marker > 1 / 100e-9:
             e.append("markers.f_marker: Marker-Pulse und -Pausen je > 50 ns (max. 10 MHz)")
         if d.model != "ADQ32":
@@ -305,6 +398,20 @@ class SimConfig:
             e.append("digitizer.frontend_filter: first_order oder none")
         if d.adc_bits != 12:
             e.append("digitizer.adc_bits: ADQ32 hat 12 bit")
+        lm = self.lo_monitor
+        if lm.source not in ("adq32_b", "off"):
+            e.append("lo_monitor.source: adq32_b oder off")
+        if self.lo_b_enabled:
+            if d.channel_mode != 2:
+                e.append("lo_monitor: Kanal B nur im 2-Kanal-Modus (digitizer.channel_mode = 2)")
+            if lm.skip_factor < 1 or d.record_length % lm.skip_factor or d.pretrigger % lm.skip_factor:
+                e.append("lo_monitor.skip_factor ≥ 1 und Teiler von record_length und pretrigger")
+            elif self.lo_b_pretrigger % 8:
+                e.append("lo_monitor: Pretrigger von Kanal B in Schritten von 8 Samples")
+            lo_max = 1 + max(0.0, self.drift.lo_rel_per_s) * sum(b.duration_s + self.session.gap_s for b in self.blocks)
+            lo_max *= max([b.lo_scale for b in self.blocks] or [1.0])
+            if lm.dark_lsb + lm.lsb_nominal * lo_max + 5 * lm.noise_lsb > 2 ** (d.adc_bits - 1) - 1:
+                w.append("lo_monitor: Kanal B übersteuert bei maximaler LO-Leistung (Verstärkung/DC-Offset anpassen)")
         if abs(self.clock.eps) > 3e-6 and not self.clock.shared_10MHz:
             w.append("clock.eps > ±3 ppm (ADQ32-Spezifikation der internen Referenz)")
         if d.form_factor == "USB":
@@ -420,7 +527,7 @@ def _build(klass, data: dict | None, where: str):
 def parameter_rows(cfg: SimConfig | None = None) -> list[dict]:
     cfg = cfg or SimConfig()
     rows = []
-    for gname in ("session", "source", "phase", "harp", "digitizer", "clock", "markers", "drift"):
+    for gname in ("session", "source", "phase", "harp", "digitizer", "clock", "markers", "drift", "lo_monitor"):
         grp = getattr(cfg, gname)
         for f in fields(grp):
             md = f.metadata

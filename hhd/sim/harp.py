@@ -11,6 +11,9 @@ Herstellerangaben **[Spez., HydraHarp 500 Manual, Kap. 6.3 und 9.3.1]**:
 
 Modellannahmen: Zeitfehler gaußförmig; Totzeit nicht verlängernd; die Harp-Zeitbasis ist die wahre Zeitachse
 (Referenz), jede Messung (Block) beginnt bei 0 ps.
+
+Kanal 0 ist der **Sync-Eingang**: in T2 ein vollwertiger Zeitstempelkanal (1 ps, Teiler „None“), im Datenstrom
+als Special-Record mit Kanal 0 kodiert [Spez., Manual Kap. 6.3.2; Demo ``tttrmode.py`` des HH500Lib].
 """
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..io.ptu import KIND_EVENT, KIND_MARKER
+from ..io.ptu import KIND_EVENT, KIND_MARKER, KIND_SYNC
 from .config import SimConfig
 
 MAX_SUSTAINED_RATE = 85e6
@@ -82,7 +85,8 @@ class HydraHarp500:
             ok[o] = okk
             ok &= (ps >= 0) & (ps < T_ps)
             per_in[ch] = np.where(ok, ps, -1)
-            times.append(ps[ok]); kinds.append(np.full(ok.sum(), KIND_EVENT)); codes.append(np.full(ok.sum(), ch))
+            times.append(ps[ok]); kinds.append(np.full(ok.sum(), KIND_SYNC if ch == 0 else KIND_EVENT))
+            codes.append(np.full(ok.sum(), ch))
             total += ok.sum()
         for bit, t in markers.items():
             t = np.asarray(t, float)
