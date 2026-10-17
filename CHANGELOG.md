@@ -40,6 +40,8 @@ Simulator für den Drifttest (`docs/HARDWARE.md`). Nur öffentliche Handbücher,
   `adq_override.example.json`.
 - Tests `tests/test_drivers.py`, `tests/test_server_live.py`, `tests/test_streaming_sim.py`.
 - Behoben: Ein doppeltes „Weiter“ konnte die nächste Pause überspringen.
+- Live-Vorschau: Ein Dunkelwert, der sich kaum vom LO-Wert unterscheidet (LO nicht abgeschaltet?), wird mit
+  Warnung verworfen. Im gemischten Betrieb gibt es keine Sync-Warnungen, weil die Geräte nicht gekoppelt sind.
 
 ## 0.9.0.dev0 – 17.10.2026 (unveröffentlicht)
 

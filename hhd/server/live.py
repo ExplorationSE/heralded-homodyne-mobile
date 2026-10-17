@@ -38,6 +38,7 @@ class LiveParams:
     vac_warn_z: float = 4.0             # Warnung bei K-V-Varianzänderung > 4σ
     herald_drop_rel: float = 0.2        # Warnung bei Herald-Rate < 80 % des ersten A-Laufs
     trace_len: int = 400
+    coupled: bool = True                # False bei gemischtem Betrieb: Geräte nicht gekoppelt → keine Sync-Warnungen
 
 
 @dataclass
@@ -150,10 +151,12 @@ class LivePreview:
             elif rate < (1 - self.p.herald_drop_rel) * self.herald_rate_ref:
                 self._warn("herald", f"Herald-Rate {rate:.0f}/s < {100 * (1 - self.p.herald_drop_rel):.0f} % "
                                      f"des ersten A-Laufs ({self.herald_rate_ref:.0f}/s)")
-        if r.spec.kind == "heralded" and r.sync_result.get("matched_frac") is not None \
+        if not self.p.coupled:
+            r.sync_result["uncoupled"] = True
+        elif r.spec.kind == "heralded" and r.sync_result.get("matched_frac") is not None \
                 and r.sync_result["matched_frac"] < 0.9:
             self._warn("sync", f"{r.spec.block_id}: nur {100 * r.sync_result['matched_frac']:.0f} % der Heralds zugeordnet")
-        if not r.sync_result.get("locked") and r.spec.kind in ("heralded", "herald_blocked"):
+        if self.p.coupled and not r.sync_result.get("locked") and r.spec.kind in ("heralded", "herald_blocked"):
             self._warn("sync", f"{r.spec.block_id}: Synchronisation nicht eingerastet")
         if r.n_records == 0:
             self._warn("daten", f"{r.spec.block_id}: keine Records")

@@ -424,6 +424,7 @@ class MeasurementService:
             self._notify()
             with self._mtx:
                 self.live.reset()
+                self.live.p.coupled = acq != "mixed"        # gemischt: Geräte nicht gekoppelt, Sync ohne Aussage
             if self.device_error:
                 raise DeviceError(self.device_error)
             runs, meta, dev_attrs = self._plan(sid, plan)

@@ -88,6 +88,7 @@ def test_mixed_live_harp_sim_digitizer(tmp_path, mock_libs):
                                                                                "session": "GEMISCHT"}
     d = _run(svc)
     assert "keine automatische Auswertung" in svc.msg and not svc.jobs
+    assert not any(w["kind"] == "sync" for w in svc.live.warnings)            # keine Sync-Warnungen (ungekoppelt)
     svc.close()
     man = json.loads((d / "session.json").read_text(encoding="utf-8"))
     assert man["device_modes"] == {"harp": "live", "digitizer": "sim"} and man["acquisition_mode"] == "mixed"

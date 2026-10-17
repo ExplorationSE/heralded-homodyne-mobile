@@ -158,6 +158,7 @@ function render() {
   $("k-sync").className = cur?.locked ? "ok-t" : "";
   const mf = runs.filter(r => r.sync?.matched_frac != null).slice(-1)[0];
   $("k-match").textContent = mf ? `${(mf.sync.matched_frac * 100).toFixed(1)} % zugeordnet` : "eingerastet";
+  if (S.mode === "mixed") { $("k-sync").textContent = "–"; $("k-sync").className = ""; $("k-match").textContent = "gemischt: ungekoppelt"; }
   const W = L.warnings || [];
   $("warns").innerHTML = W.length ? W.slice().reverse().map(x => `<li><b>${esc(x.kind)}</b>${esc(x.msg)}</li>`).join("") : '<li class="mut">keine</li>';
   renderJobs(); renderDevices();
