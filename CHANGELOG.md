@@ -1,5 +1,27 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.13.0.dev0 – 18.10.2026 (unveröffentlicht)
+
+Auftrag („Los.“): speichersparende Δ-Kalibrierung, echte Mehrstunden-Simulation über den Server.
+
+- **Δ-Kalibrierung als Summen je Rasterpunkt** (`delay.GridAccumulator`, `SyncParams.delay_method = stream`,
+  `hhd sync --delay-method stream|matrix`):
+  - Q² wird blockweise sofort akkumuliert; Bootstrap als Poisson-Bootstrap (n_boot × n_grid Summen);
+  - Speicher unabhängig von der Kandidatenzahl, Ergebnis unabhängig von der Blockung;
+  - V(δ) und Δ_T identisch zur früheren Matrixvariante, σ_boot im Rahmen des Bootstrap-Rauschens;
+  - 60-s-Lauf, alle 65 868 Kandidaten: 413 → 66 MB (Spitze der ganzen Sync), 36 → 21 s.
+- **Zuordnungswahrheit je Record** im Datenstrom-Simulator (`truth_records.h5`, `record_truth_dir`,
+  Server `sim_record_truth`), Prüfung `hhd validate-records` (`hhd.sim.record_validate`), auch für
+  segmentiert synchronisierte Läufe.
+- `truth.h5` des Datenstrom-Simulators enthält Sollwerte je Lauf (`expected_json`, recordgewichtetes Mittel über
+  die Scheiben), damit läuft `hhd validate-analysis` auch für Datenstrom-Sitzungen.
+- **Fix DriftMonitor:** im Dunkellauf (LO aus) keine LO-Warnung mehr (vorher „LO-Leistung −621 %“ bei
+  Dunkelläufen länger als das Fenster).
+- **Mehrstunden-Simulation über den Server** (Port 8795, `sim_engine = stream`, segmentierte Sync auto,
+  Auswertung, Drift-Monitor): `docs/SERVER.md` Abschnitt 7b.
+- **Tests:** `tests/test_delay_stream.py` (4), `test_streaming_sim.py::test_record_truth_validation`,
+  Erweiterungen in `test_server.py::test_stream_sim_engine` und `test_longrun.py::test_drift_over_replay`.
+
 ## 0.12.0.dev0 – 18.10.2026 (unveröffentlicht)
 
 Auftrag („Weitermachen“): Datenstrom-Simulator als Server-Gerät, segmentierte Synchronisation sehr langer
