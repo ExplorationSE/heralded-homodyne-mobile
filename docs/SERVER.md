@@ -160,6 +160,40 @@ entfernt.
   0 = nie) läuft die Datenstrom-Auswertung (`docs/ANALYSE.md` Abschnitt 12), sonst die Auswertung im Speicher.
 * `hhd drift <sitzung>`: Drift (LO, Vakuumvarianz, η) über eine Wiedergabe.
 
+## 7b Mehrstunden-Simulation über den Server (0.13, 18.10.2026)
+
+Ende-zu-Ende über einen eigenen Server (Port 8795, `realtime = false`, `sim_engine = "stream"`,
+`sim_record_truth = true`, Auswertung automatisch, segmentierte Sync automatisch ab 600 s), Steuerung über
+WebSocket wie die Web-App. Simulator-Konfiguration `config/longrun_2h.yaml`:
+- 2,26 h simulierte Zeit, 9 Läufe: K-V 60 s, Dunkel 30 s, K-H 120 s, A 3600 s, B 300 s, K-V, A 3600 s, B, K-V;
+- 1 792 928 Records à 2000 Samples, 13,4 Mio. Harp-Ereignisse;
+- LO-Drift ±0,5 % (Periode 30 min) und η-Drift ±1 % (40 min) als Sinus.
+
+| Schritt | Laufzeit (Box, 8 Kerne) | Spitzenspeicher (VmHWM) |
+|---|---|---|
+| Messung (Simulator → Dateien, Live-Vorschau) | 18,9 min (erster Lauf 13,3 min) | Server 236 MB |
+| Auftrag: segmentierte Sync (2 × 120 Segmente) inkl. Δ | 6,6 min (Δ 84 s) | Auswertungsprozess 265 MB |
+| Auftrag: Datenstrom-Auswertung | 1,6 min | (im selben Prozess) |
+| `hhd validate-records` | 6 s | 403 MB |
+| `hhd drift` (Wiedergabe, Drift-Monitor) | 2,3 min | 168 MB |
+
+Plattenbedarf 4,9 GB (`digitizer.h5` 4,6 GB, `sync.h5` 95 MB, `quadratures.h5` 86 MB,
+`truth_records.h5` 19 MB, PTU 2 × 33 MB). Der Speicher hängt nicht von der Dauer ab (Batch-Simulator und
+Batch-Sync bräuchten für diese Sitzung mehrere GB).
+
+Ergebnisse (gegen die Simulator-Wahrheit, `hhd validate-analysis`, `hhd validate-records`):
+- Zuordnung: 0 Fehlzuordnungen von 1 464 248 zugeordneten Records, 0 verloren; Qualität „ok“, keine Warnungen.
+- Δ_T = 77,23 ± 0,96 ns (Δ-Streaming, 20 000 Records, Poisson-Bootstrap).
+- A (1 440 040 Records): Var x 0,8394 ± 0,0031 (wahr 0,8394), W(0,0) 0,1021 ± 0,0015 (wahr 0,1023),
+  η_eff (Fit) 0,3396 ± 0,0023 (wahr 0,3394). Mit ξ = 0,500 und η_el = 0,969 folgt η_rest 0,7005 ± 0,0047
+  (wahr 0,7002).
+- B: W(0,0) 0,3171 ± 0,0013 (wahr 0,3183); Vergleich A − B: η 0,3375 ± 0,0026 (wahr 0,3394).
+- Alle Pulls |z| < 1.
+- Drift-Monitor: LO am Ende +0,64 % (wahr +0,64 %), Trend z = 3,6; η a_02/a_01 = 1,020 ± 0,021 (wahr 1,017).
+  Nach dem Fix in 0.13 gibt es keine Fehlalarme mehr im Dunkellauf.
+- Der zweite Lauf mit gleichem Seed liefert bitgleiche Ergebnisse.
+- Grenze der Datenstrom-Auswertung: keine PCA (Modenüberlapp im Effizienzbudget „–“).
+
 ## 8 Grenzen
 
 * Echte Geräte: Treiber nach Handbuch, nur gegen Mock-Bibliotheken getestet; offene Punkte in
