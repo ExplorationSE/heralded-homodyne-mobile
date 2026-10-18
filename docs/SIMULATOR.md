@@ -241,6 +241,12 @@ Seit 0.12 gibt es eine schrittweise Schnittstelle: `setup()` liefert die Läufe,
 `write_truth()` die Wahrheit. Darüber läuft der Simulator auch als Server-Gerät (`sim_engine = "stream"`,
 `docs/SERVER.md` 7a). `run()` nutzt dieselbe Schnittstelle.
 
+Seit 0.13 schreibt der Simulator auf Wunsch (`StreamingSimulator(..., record_truth_dir=DIR)`, Server
+`sim_record_truth = true`) die Zuordnungswahrheit je Record nach `truth_records.h5`
+(`blocks/<id>/{kind, herald_ps, is_dark}`, scheibenweise angehängt, `complete` nach der letzten Scheibe;
+etwa 10 B je Record). Damit prüft `hhd validate-records` Fehlzuordnungen auch bei Läufen über Stunden
+(`docs/SYNC.md` Abschnitt 6).
+
 `hhd.sim.stream.SimStream` spielt einen Lauf in Zeitscheiben ab, optional in Echtzeit oder beschleunigt. Ein
 Chunk enthält:
 

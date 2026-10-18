@@ -83,7 +83,29 @@ Q aus FFT-Korrelation mit der Modenfunktion (doppelt-exponentiell, 1/γ = 40 ns;
 Grobraster −700…1100 ns (8 ns), Feinraster ±120 ns (1 ns), Fit V = c + A·O(δ − Δ_T)² mit freier Basislinie,
 Bootstrap (100). **Δ_T (Mode − Trigger)** wird sitzungsweit gepoolt; **Δ je Lauf (Mode − abgebildeter Herald)
 = Δ_T + δ_HT**, weil die SYNC-Quantisierung (3,2 ns) die Phase der Abbildung je Lauf verschiebt.
-Speicher: Records blockweise, gespeichert wird nur Q² auf dem Raster (≤ 20 000 Records).
+Speicher (ab 0.13, `SyncParams.delay_method = "stream"`, `hhd sync --delay-method`): Records blockweise
+(Blockgröße nach Recordlänge, ~24 MB FFT-Arbeitsspeicher), Q² wird sofort in Summen je Rasterpunkt
+akkumuliert (`delay.GridAccumulator`, NaN = außerhalb des Records). Die Bootstrap-Unsicherheit kommt aus einem
+**Poisson-Bootstrap**: je Record und Replikat ein Gewicht w ~ Poisson(1), akkumuliert als n_boot × n_grid
+Summen. Die Gewichte werden recordweise gezogen, das Ergebnis hängt also nicht von der Blockung ab. Der
+Speicher hängt nicht mehr von der Kandidatenzahl ab; `delay_max_records` (Standard 20 000) begrenzt nur noch die
+Laufzeit. Die frühere Variante (Q²-Matrix n_rec × n_grid, Multinomial-Bootstrap) bleibt als
+`delay_method = "matrix"` zum Vergleich.
+
+Vergleich (60-s-Lauf, freie Uhr, Batch-Sync; tracemalloc-Spitze der ganzen Synchronisation):
+
+| Kandidaten | Methode | Δ_T | σ_boot | Spitze |
+|---|---|---|---|---|
+| 20 000 | matrix | 78,2471 ns | 0,437 ns | 137 MB |
+| 20 000 | stream | 78,2471 ns | 0,517 ns | 66 MB |
+| 65 868 (alle) | matrix | 77,4195 ns | 0,259 ns | 413 MB |
+| 65 868 (alle) | stream | 77,4195 ns | 0,324 ns | 66 MB |
+
+V(δ) und Δ_T sind identisch (bis auf die Summationsreihenfolge, < 1e-12 relativ). σ_boot unterscheidet sich nur
+durch das Bootstrap-Rauschen: mit 300 Replikaten und drei Seeds liegen Matrix 0,258/0,295/0,308 ns und Stream
+0,282/0,283/0,301 ns (Streuung eines σ-Schätzers aus 100 Replikaten ≈ 7 %, dazu Ausreißer-Fits). Segmentiert
+(Reservoir 20 000): Δ_T 77,2479 ns, σ 0,522 (matrix) bzw. 0,526 ns (stream), 129 gegen 62 MB. 120-s-Lauf mit
+allen 132 026 Kandidaten (segmentiert, stream): 64 MB.
 
 ### 3.5 Qualitäts-/Selbstprüfung
 
@@ -141,7 +163,10 @@ Segmenten von `segment_s` (Standard 30 s, Digitizer-Zeit) bearbeitet. Der Speich
 - Speicher ohne Δ (tracemalloc): 60-s- gegen 120-s-Lauf
   - Batch 28 → 55 MB;
   - segmentiert 13,6 → 15,7 MB, ab Leseblockgröße konstant.
-- Mit Δ ist der Speicher durch `delay_max_records` begrenzt (20 000 Records: ~150 MB, unabhängig von der Dauer).
+- Mit Δ ist der Speicher seit 0.13 auch unabhängig von der Kandidatenzahl (Abschnitt 3.4: ~62–66 MB
+  insgesamt für 20 000 bis 132 000 Kandidaten; vorher ~150 MB bei 20 000, linear wachsend).
+- Lange Läufe gegen die Wahrheit: `hhd validate-records` (Abschnitt 6) mit `truth_records.h5` des
+  Datenstrom-Simulators prüft die vorhandene, auch segmentierte `sync.h5`.
 - `hhd validate` (Wahrheit) nutzt immer den Batch-Lauf.
 
 ## 4 Ausgabe `sync/sync.h5`
@@ -157,7 +182,9 @@ stückweiser Anteile). Lauf B/K-V: `seg_class`, `seg_n_heralds`.
 hhd import   <sitzung|kampagne>
 hhd sync     <sitzung|kampagne> [-o DIR] [--no-delay] [--no-refine] [--linear] [--gamma-ns 40] [--strict]
              [--chunked-sync auto|always|never] [--segment-s 30] [--chunked-min-s 600]
-hhd validate <sitzung|kampagne>          # nur Simulation: Vergleich mit truth.h5
+             [--delay-method stream|matrix] [--delay-records 20000]
+hhd validate <sitzung|kampagne>          # nur Simulation: Vergleich mit truth.h5 (Batch-Neusynchronisation)
+hhd validate-records <sitzung> [--sync-dir DIR] [--json]   # Datenstrom-Simulator: sync.h5 gegen truth_records.h5
 hhd stream   <sitzung> [--run ID] [--chunk 1024]
 hhd bench    <sitzung> [--repeat N] [--no-delay]
 ```
@@ -170,6 +197,14 @@ Markerpaare korrekt; Pulls für a, b gegen den LS-Fit der idealen, quantisierten
 wahre Herald-Zeiten (Mittel = Quantisierungsphase bzw. Latenz; RMS, Maximum, auch nur Marker);
 Fehlzuordnungsrate, Verluste, Klassenkonsistenz (Heralds ohne Record nie „zugeordnet“, CH4-Kennungen);
 Δ-Pull gegen ⟨c_D − h_D⟩ (end-to-end), Δ_T gegen ⟨c_D − T_trig⟩.
+
+**Lange Läufe** (`hhd.sim.record_validate`, `hhd validate-records`, 0.13): Der Datenstrom-Simulator schreibt
+mit `record_truth_dir` (Server: `sim_record_truth = true`) je Record die Triggerart, die Harp-Zeit des
+auslösenden Heralds und ob er ein Dunkelereignis war (`truth_records.h5`, scheibenweise angehängt). Verglichen
+wird blockweise mit der vorhandenen `sync.h5`: Fehlzuordnung = zugeordneter Herald ≠ wahrer Herald; verloren =
+Herald-Record ohne Zuordnung. Speicher: Herald-Zeiten eines Laufs (8 B je Herald) plus ein Block Records.
+Prüfung: `tests/test_streaming_sim.py::test_record_truth_validation` (Batch und segmentiert 0 Fehlzuordnungen,
+zwei vertauschte Zuordnungen werden als 2 erkannt).
 
 ## 7 Schnittstelle für den Rust-Kern (AP9)
 

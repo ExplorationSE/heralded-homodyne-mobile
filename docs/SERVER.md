@@ -129,7 +129,7 @@ entfernt.
 * `tools/app_screenshots.py <url> <ordner>`: headless Chromium (Playwright), mobil (390×844, als entfernter
   Client) und Desktop (Mess-PC).
 
-## 7a Lange Sitzungen (0.11, 0.12)
+## 7a Lange Sitzungen (0.11–0.13)
 
 * **Simulator im Datenstrom** (0.12): `sim_engine = "stream"` (`server.toml`, `--sim-engine stream`, in der
   Web-App „Simulator: Datenstrom“, umschaltbar ohne laufende Sitzung).
@@ -149,6 +149,8 @@ entfernt.
 
   - Grenzen wie im Datenstrom-Simulator: keine Laufmarken und keine Phasenreferenz-Marker; Records an
     Scheibengrenzen entfallen.
+  - `sim_record_truth = true` (0.13, nur `stream`): zusätzlich `truth_records.h5` mit der Zuordnungswahrheit je
+    Record; Prüfung danach mit `hhd validate-records <sitzung>`.
 
 * **Wiedergabe** (`ReplayBackend`): PTU (`hhd.io.chunked.iter_ptu_windows`), Digitizer-Köpfe und Marker werden in
   Zeitfenstern von `chunk_s` gelesen, Wellenformen je Fenster als zusammenhängender Ausschnitt. Der Speicher hängt
