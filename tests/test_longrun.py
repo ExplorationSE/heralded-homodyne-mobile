@@ -127,11 +127,11 @@ def test_cli_streaming_and_drift(sessions, tmp_path):
     assert main(["drift", str(sa), "--json"]) == 0
 
 
-def _drift_cfg(sid, lo_total, eta_total):
+def _drift_cfg(sid, lo_total, eta_total, dark_s=0.5):
     cfg = SimConfig()
     cfg.digitizer.record_length, cfg.digitizer.pretrigger = 2000, 800
     blocks = [BlockCfg(id="kv_00", kind="vacuum", duration_s=1.5, periodic_rate=4000.0),
-              BlockCfg(id="dark_00", kind="electronic", duration_s=0.5, periodic_rate=2000.0)]
+              BlockCfg(id="dark_00", kind="electronic", duration_s=dark_s, periodic_rate=2000.0)]
     for c in range(4):
         blocks += [BlockCfg(id=f"a_{c:02d}", kind="heralded", duration_s=3.0),
                    BlockCfg(id=f"kv_{c + 1:02d}", kind="vacuum", duration_s=1.5, periodic_rate=4000.0)]
@@ -145,7 +145,8 @@ def _drift_cfg(sid, lo_total, eta_total):
 def test_drift_over_replay(tmp_path):
     """LO-Drift 2 % / η-Drift −35 % werden über die Wiedergabe erkannt; ohne Drift kein Alarm."""
     StreamingSimulator(_drift_cfg("DRIFT", 0.02, -0.35), slice_s=0.5).run(tmp_path / "d")
-    StreamingSimulator(_drift_cfg("CTRL", 0.0, 0.0), slice_s=0.5).run(tmp_path / "c")
+    # Dunkellauf länger als das Fenster: LO aus darf keine LO-Warnung geben (0.13, vorher −600 %)
+    StreamingSimulator(_drift_cfg("CTRL", 0.0, 0.0, dark_s=5.0), slice_s=0.5).run(tmp_path / "c")
     d = drift_over_replay(tmp_path / "d", chunk_s=0.5, window_s=2.0)
     tr = d["trend"]
     assert tr["lo"]["z"] > 5 and abs(tr["lo"]["last"] - 1.0) > 0.01

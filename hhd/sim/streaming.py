@@ -195,6 +195,28 @@ class _Run:
     extra: dict
 
 
+class _ExpectedMean:
+    """Sollwerte eines Laufs (``expected`` von ``simulate_block``) als mit der Recordzahl gewichtetes Mittel über
+    die Scheiben (Drift im Lauf); nicht-skalare Einträge von der letzten Scheibe. Für ``hhd validate-analysis``."""
+
+    def __init__(self):
+        self.s: dict = {}; self.w = 0.0; self.last: dict = {}
+
+    def add(self, exp: dict, n: int) -> None:
+        w = float(max(n, 1))
+        for k, v in exp.items():
+            if isinstance(v, (int, float, np.floating, np.integer)) and not isinstance(v, bool):
+                self.s[k] = self.s.get(k, 0.0) + w * float(v)
+        self.w += w
+        self.last = exp
+
+    def result(self) -> dict:
+        out = {k: v for k, v in self.last.items() if k not in self.s}
+        out.update({k: v / self.w for k, v in self.s.items()})
+        out["averaged_over_slices"] = True
+        return out
+
+
 class RecordTruthWriter:
     """``truth_records.h5``: je Lauf ``blocks/<id>/{kind, herald_ps, is_dark}`` (eine Zeile je Digitizer-Record,
     Reihenfolge wie in ``digitizer.h5``), erweiterbar, scheibenweise angehängt. ``herald_ps`` = Harp-Zeit (ps ab
@@ -312,6 +334,7 @@ class StreamingSimulator:
         rid = self.runs[i].run_id
         n_sl = max(1, int(round(b.duration_s / self.slice_s)))
         enc = _T2Shift()
+        exp_acc = _ExpectedMean()
         if self.record_truth_dir is not None:
             if self._rtw is None:
                 self._rtw = RecordTruthWriter(self.record_truth_dir)
@@ -330,6 +353,7 @@ class StreamingSimulator:
             if self._rtw is not None:
                 self._rtw.add(br.truth, int(round(j * self.slice_s * 1e12)))
             self.n_records += len(dg.timestamp)
+            exp_acc.add(br.expected, len(dg.timestamp))
             if self._path_used is not None:
                 self._path.sample(ts + dur / 2)
             last = j == n_sl - 1 or (j + 1) * self.slice_s >= b.duration_s
@@ -341,7 +365,8 @@ class StreamingSimulator:
                 t_mid = t0 + b.duration_s / 2
                 self.runs_truth.append(dict(id=b.id, run_id=rid, kind=b.kind, t_mid_s=t_mid - se.start_s,
                                             lo_scale=float(lo_scale_fn(cfg, b, self._path_used)(t_mid)),
-                                            eta_state=eta_of_run(cfg, b, t_mid, self._path_used)))
+                                            eta_state=eta_of_run(cfg, b, t_mid, self._path_used),
+                                            expected=exp_acc.result()))
             yield info, hrec, dg
             del br, dg
             if last:
@@ -368,11 +393,13 @@ class StreamingSimulator:
                 g = f.create_group(f"blocks/{r['id']}")
                 g.attrs.update(run_id=r["run_id"], kind=r["kind"], t_mid_s=r["t_mid_s"], lo_scale=r["lo_scale"],
                                eta_state=r["eta_state"])
+                if r.get("expected") is not None:
+                    g.attrs["expected_json"] = json.dumps(r["expected"], default=float)
         from .engine import _sha256
         man.setdefault("files", {})["truth.h5"] = dict(role="truth", sha256=_sha256(out / "truth.h5"))
         if (out / RecordTruthWriter.FILE).exists():
             man["files"][RecordTruthWriter.FILE] = dict(role="truth_records", sha256=_sha256(out / RecordTruthWriter.FILE))
-        man["truth"] = rt
+        man["truth"] = [{k: v for k, v in r.items() if k != "expected"} for r in rt]
         for k, v in self.extra_manifest.items():
             man.setdefault(k, v)
         (out / "session.json").write_text(json.dumps(man, indent=1, ensure_ascii=False, default=float), encoding="utf-8")

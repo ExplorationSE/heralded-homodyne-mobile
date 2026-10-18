@@ -102,7 +102,9 @@ class DriftMonitor:
             r.b_sum += float(mb.sum()); r.b_n += len(mb)
             w = self._win
             w[1] += float(mb.sum()); w[2] += len(mb)
-            if t_s - w[0] >= self.window_s and w[2]:
+            if t_s - w[0] >= self.window_s and w[2] and r.kind == "electronic":
+                self._win = [t_s, 0.0, 0]                         # Dunkellauf (LO aus): keine LO-Warnung
+            elif t_s - w[0] >= self.window_s and w[2]:
                 lo = self._lo_rel(w[1] / w[2])
                 if np.isfinite(lo):
                     self._trace(t_s, lo)

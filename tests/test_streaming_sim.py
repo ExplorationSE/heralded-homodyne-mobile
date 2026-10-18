@@ -132,6 +132,11 @@ def test_record_truth_validation(tmp_path):
     sim = StreamingSimulator(cfg, slice_s=0.5, record_truth_dir=out)
     man = sim.run(out)
     assert "truth_records.h5" in man["files"]
+    import json
+    with h5py.File(out / "truth.h5") as f:                    # Sollwerte je Lauf (für hhd validate-analysis)
+        ea = json.loads(f["blocks/a_00"].attrs["expected_json"])
+        assert ea["averaged_over_slices"] and 0 < ea["eta_eff"] < 1 and "W00" in ea and "n_eff" in json.loads(
+            f["blocks/b_00"].attrs["expected_json"])
     with h5py.File(out / "truth_records.h5") as f:
         assert all(f[f"blocks/{b}"].attrs["complete"] for b in ("kv_00", "a_00", "b_00"))
         assert f["blocks/a_00/kind"].shape[0] == load_session(out).runs[1].n_records
