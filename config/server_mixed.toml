@@ -11,6 +11,7 @@ harp_mode = "live"
 digitizer_mode = "sim"
 sim_config = "config/standard.yaml"
 sim_engine = "batch"             # batch: Sitzung im Speicher; stream: Zeitscheiben (lange Sitzungen, beschränkter Speicher)
+sim_record_truth = false        # nur stream: Zuordnungswahrheit je Record (truth_records.h5, hhd validate-records)
 
 [live]
 live_fallback = "refuse"

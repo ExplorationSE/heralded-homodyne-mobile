@@ -15,6 +15,7 @@ harp_mode = ""            # gemischter Betrieb: leer = device_mode, sonst live |
 digitizer_mode = ""       #   (sim und replay nicht mischbar; live mit sim oder replay erlaubt)
 sim_config = "config/standard.yaml"
 sim_engine = "batch"             # batch: Sitzung im Speicher; stream: Zeitscheiben (lange Sitzungen, beschränkter Speicher)
+sim_record_truth = false        # nur stream: Zuordnungswahrheit je Record (truth_records.h5, hhd validate-records)
 replay_dir = ""           # bei replay: Sitzungsverzeichnis
 chunk_s = 0.1
 speed = 1.0               # Echtzeitfaktor (sim/replay; mit Live-Gerät immer 1)

@@ -57,6 +57,7 @@ class ServerConfig:
     adq_drain_ms: int = 200
     sim_config: str = "config/standard.yaml"
     sim_engine: str = "batch"             # batch (Sitzung im Speicher) | stream (Zeitscheiben, beschränkter Speicher)
+    sim_record_truth: bool = False        # stream: Zuordnungswahrheit je Record (truth_records.h5, hhd validate-records)
     replay_dir: str = ""
     chunk_s: float = 0.1
     speed: float = 1.0                    # Echtzeitfaktor (Simulation/Wiedergabe)
@@ -490,6 +491,8 @@ class MeasurementService:
                 if streamed:
                     extra |= self.backend.extra_manifest()
                 rec = SessionRecorder(out, modes, meta, dev_attrs, hw, extra)
+                if streamed and hasattr(self.backend, "set_output"):
+                    self.backend.set_output(out, self.cfg.sim_record_truth)
             self.state, self.msg = "messung", ""
             for i, run in enumerate(runs):
                 if self._stop.is_set():

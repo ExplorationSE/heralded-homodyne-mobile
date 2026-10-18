@@ -279,6 +279,23 @@ def cmd_report(a) -> int:
     return 0
 
 
+def cmd_validate_records(a) -> int:
+    from .sim.record_validate import validate_records
+    v = validate_records(a.path, a.sync_dir)
+    if a.json:
+        print(json.dumps(v, indent=1, ensure_ascii=False, default=float)); return 0
+    sm = v["summary"]
+    print(f"Validierung je Record {a.path}")
+    for k, r in v["runs"].items():
+        if "error" in r:
+            print(f"  {k:10s} {r['error']}"); continue
+        print(f"  {k:10s} Records {r['n_records']:9d}  zugeordnet {r['n_matched']:9d}  Fehlzuordnungen {r['misassigned']}"
+              f"  verloren {r['lost']}/{r['herald_records']}")
+    print(f"  Summe: Fehlzuordnungen {sm['misassigned']}/{sm['n_matched']} (Rate {sm['misassignment_rate']:.2e}), "
+          f"verloren {sm['lost']}/{sm['herald_records']}, Effizienz {sm['efficiency']:.4%}")
+    return 0 if sm["misassignment_rate"] < 1e-3 else 1
+
+
 def cmd_validate_analysis(a) -> int:
     from pathlib import Path
     from .analysis.pipeline import analyze_session
@@ -335,6 +352,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sp.add_parser("validate", help="Vergleich mit der Simulator-Wahrheit (nur Simulation)"); common(p)
     p.add_argument("--json", action="store_true")
     p.set_defaults(f=cmd_validate)
+    p = sp.add_parser("validate-records", help="Fehlzuordnungen gegen truth_records.h5 (Datenstrom-Simulator, lange Läufe)")
+    p.add_argument("path"); p.add_argument("--sync-dir"); p.add_argument("--json", action="store_true")
+    p.set_defaults(f=cmd_validate_records)
     p = sp.add_parser("stream", help="chunkweiser Synchronisierer gegen Batch"); p.add_argument("path")
     p.add_argument("--run"); p.add_argument("--chunk", type=int, default=1024)
     p.set_defaults(f=cmd_stream)

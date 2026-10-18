@@ -409,6 +409,11 @@ class StreamSimBackend(SimBackend):
                                                 last, raw=raw))
         return True
 
+    def set_output(self, out_dir: Path, record_truth: bool = False) -> None:
+        """Vor dem ersten Lauf: Sitzungsverzeichnis; mit ``record_truth`` schreibt der Simulator die
+        Zuordnungswahrheit je Record (``truth_records.h5``, für ``hhd validate-records``)."""
+        self.sim.record_truth_dir = Path(out_dir) if record_truth else None
+
     def write_files(self, out_dir: Path, n_done: int | None = None) -> dict:
         """Nach ``SessionRecorder.close``: ``truth.h5`` der fertigen Läufe und Manifest-Ergänzungen."""
         done = {r.block_id for r in self.sim.runs[: n_done if n_done is not None else len(self.sim.runs)]}

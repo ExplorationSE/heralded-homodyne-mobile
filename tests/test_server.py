@@ -251,7 +251,7 @@ def test_stream_sim_engine(tmp_path):
     import gc
     import tracemalloc
     from hhd.server.devices import StreamSimBackend
-    cfg = _cfg(tmp_path, sim_engine="stream")
+    cfg = _cfg(tmp_path, sim_engine="stream", sim_record_truth=True)
     svc = MeasurementService(cfg, tmp_path)
     st = svc.status()
     assert st["sim_engine"] == "stream" and isinstance(svc.backend, StreamSimBackend)
@@ -268,6 +268,10 @@ def test_stream_sim_engine(tmp_path):
     man = json.loads((d / "session.json").read_text(encoding="utf-8"))
     assert man["streaming"]["generator"] == "hhd.sim.streaming" and len(man["truth"]) == 7 and "truth.h5" in man["files"]
     assert json.loads((d / "server_session.json").read_text(encoding="utf-8"))["sim_engine"] == "stream"
+    from hhd.sim.record_validate import validate_records
+    assert "truth_records.h5" in man["files"]
+    vr = validate_records(d)["summary"]
+    assert vr["misassigned"] == 0 and vr["n_matched"] > 100 and vr["efficiency"] > 0.95, vr
     from hhd.io.session import load_session
     s = load_session(d)
     assert not s.warnings and len(s.runs) == 7

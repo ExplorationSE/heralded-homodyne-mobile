@@ -116,3 +116,40 @@ def test_streaming_drift_detected(tmp_path):
     tc = ctrl.trend()
     assert abs(tc["eta"]["z"]) < 3.0 and not any("LO-Leistung" in w for w in ctrl.warnings)
     assert abs(tc["lo"]["last"] - 1) < 0.003
+
+
+def test_record_truth_validation(tmp_path):
+    """truth_records.h5 (0.13): Fehlzuordnungen auch bei segmentierter Synchronisation prüfbar; eine
+    absichtlich vertauschte Zuordnung wird erkannt."""
+    import shutil
+    import h5py
+    from hhd.sim.record_validate import validate_records
+    from hhd.sync.pipeline import SyncParams, sync_session
+    cfg = _cfg([BlockCfg(id="kv_00", kind="vacuum", duration_s=1.0, periodic_rate=2000.0),
+                BlockCfg(id="a_00", kind="heralded", duration_s=6.0),
+                BlockCfg(id="b_00", kind="free_running", duration_s=1.0, periodic_rate=1000.0)])
+    out = tmp_path / "s"
+    sim = StreamingSimulator(cfg, slice_s=0.5, record_truth_dir=out)
+    man = sim.run(out)
+    assert "truth_records.h5" in man["files"]
+    with h5py.File(out / "truth_records.h5") as f:
+        assert all(f[f"blocks/{b}"].attrs["complete"] for b in ("kv_00", "a_00", "b_00"))
+        assert f["blocks/a_00/kind"].shape[0] == load_session(out).runs[1].n_records
+    for mode, seg in (("never", None), ("always", 2.0)):
+        sd = tmp_path / f"sync_{mode}"
+        sync_session(out, SyncParams(chunked=mode, segment_s=seg or 30.0, overlap_s=0.25, n_boot=5), sd)
+        v = validate_records(out, sd)
+        sm, r = v["summary"], v["runs"]["a_00"]
+        assert sm["misassigned"] == 0 and r["n_matched"] > 500, (mode, sm)
+        assert r["efficiency"] > 0.97 and sm["matched_no_truth"] == 0, (mode, r)
+        if mode == "always":
+            assert sm.get("chunked_runs") == ["a_00"] or "a_00" in sm.get("chunked_runs", [])
+    # Vertauschen zweier zugeordneter Records → zwei Fehlzuordnungen
+    bad = tmp_path / "sync_bad"
+    shutil.copytree(tmp_path / "sync_never", bad)
+    with h5py.File(bad / "sync.h5", "a") as f:
+        sh = f["runs/a_00/seg_herald"]
+        i = np.flatnonzero(sh[:] >= 0)[:2]
+        a, b = sh[i[0]], sh[i[1]]
+        sh[i[0]], sh[i[1]] = b, a
+    assert validate_records(out, bad)["summary"]["misassigned"] == 2

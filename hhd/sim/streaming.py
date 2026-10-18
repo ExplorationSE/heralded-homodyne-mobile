@@ -14,6 +14,9 @@ Unterschiede zum Datei-Modus (bewusst, dokumentiert):
 * Laufmarken (M1) und Phasenreferenz-Marker werden nicht erzeugt (pro Scheibe sinnlos);
 * Uhr-Irrfahrt und stochastische Drift werden **lazy** in Segmenten erzeugt (:class:`LazyWalk`); die Wahrheit
   (``truth.h5``) enthält nur eine **dezimierte** Driftkurve und je Lauf die Sollwerte zur Laufmitte.
+* Optional (``record_truth_dir``, ab 0.13) die Zuordnungswahrheit je Record in ``truth_records.h5``
+  (:class:`RecordTruthWriter`, blockweise angehängt: Triggerart, Harp-Zeit des auslösenden Heralds, Dunkelereignis),
+  damit Fehlzuordnungen auch bei Läufen über Stunden geprüft werden können (``hhd validate-records``).
 
 Voraussetzungen: ``slice_s · markers.f_marker`` und ``slice_s · periodic_rate`` ganzzahlig (Marker- und
 Periodenraster laufen über Scheibengrenzen weiter), ``phase.mode`` ≠ ``ramp``/``steps``.
@@ -192,12 +195,65 @@ class _Run:
     extra: dict
 
 
+class RecordTruthWriter:
+    """``truth_records.h5``: je Lauf ``blocks/<id>/{kind, herald_ps, is_dark}`` (eine Zeile je Digitizer-Record,
+    Reihenfolge wie in ``digitizer.h5``), erweiterbar, scheibenweise angehängt. ``herald_ps`` = Harp-Zeit (ps ab
+    Laufbeginn) des auslösenden Heralds, −1 ohne Herald bzw. ohne Harp-Ereignis. Attribut ``complete`` erst nach
+    der letzten Scheibe."""
+
+    FILE = "truth_records.h5"
+
+    def __init__(self, out_dir: str | Path):
+        self.path = Path(out_dir) / self.FILE
+        self.f = h5py.File(self.path, "a")
+        self.f.attrs.update(format="hhd-truth-records", software=f"hhd {__version__}")
+
+    def begin(self, block_id: str, run_id: str) -> None:
+        if f"blocks/{block_id}" in self.f:
+            del self.f[f"blocks/{block_id}"]
+        g = self.f.create_group(f"blocks/{block_id}")
+        g.attrs.update(run_id=run_id, complete=False)
+        for k, dt in (("kind", np.int8), ("herald_ps", np.int64), ("is_dark", np.bool_)):
+            g.create_dataset(k, (0,), dtype=dt, maxshape=(None,), chunks=(1 << 16,))
+        self.g = g
+
+    def add(self, truth: dict, offset_ps: int) -> None:
+        rec, he = truth["records"], truth["heralds"]
+        kind = np.asarray(rec["kind"]).astype(np.int8)
+        src = np.asarray(rec["source_index"], np.int64)
+        from .digitizer import TRIG_HERALD
+        hp = np.asarray(he["harp_ps"], np.int64)
+        dark = np.asarray(he["is_dark"], bool)
+        isH = (kind == TRIG_HERALD) & (src >= 0) & (src < len(hp))
+        herald_ps = np.full(len(kind), -1, np.int64)
+        is_dark = np.zeros(len(kind), bool)
+        if isH.any():
+            ps = hp[src[isH]]
+            herald_ps[isH] = np.where(ps >= 0, ps + offset_ps, -1)
+            is_dark[isH] = dark[src[isH]]
+        n0 = self.g["kind"].shape[0]
+        for k, v in (("kind", kind), ("herald_ps", herald_ps), ("is_dark", is_dark)):
+            self.g[k].resize((n0 + len(v),))
+            self.g[k][n0:] = v
+
+    def end(self) -> None:
+        self.g.attrs["complete"] = True
+        self.f.flush()
+
+    def close(self) -> None:
+        if self.f:
+            self.f.close()
+            self.f = None
+
+
 class StreamingSimulator:
     """Sitzung scheibenweise simulieren und schreiben. ``on_slice(info, rec, data_b, t_session)`` (optional)
     erhält je Scheibe die Records (z. B. für ``hhd.analysis.driftmon.DriftMonitor``)."""
 
-    def __init__(self, cfg: SimConfig, slice_s: float = 1.0, on_slice=None):
+    def __init__(self, cfg: SimConfig, slice_s: float = 1.0, on_slice=None, record_truth_dir: str | Path | None = None):
         self.cfg = copy.deepcopy(cfg)
+        self.record_truth_dir = record_truth_dir
+        self._rtw: RecordTruthWriter | None = None
         self.cfg.harp.run_marker_bit = 0                       # keine Laufmarken je Scheibe
         self.cfg.phase.marker_bit = 0
         self.slice_s = float(slice_s)
@@ -256,6 +312,10 @@ class StreamingSimulator:
         rid = self.runs[i].run_id
         n_sl = max(1, int(round(b.duration_s / self.slice_s)))
         enc = _T2Shift()
+        if self.record_truth_dir is not None:
+            if self._rtw is None:
+                self._rtw = RecordTruthWriter(self.record_truth_dir)
+            self._rtw.begin(b.id, rid)
         for j, ss in enumerate(ssb.spawn(n_sl)):
             dur = min(self.slice_s, b.duration_s - j * self.slice_s)
             if dur <= 0:
@@ -267,6 +327,8 @@ class StreamingSimulator:
                                 drift_path=self._path_used)
             dg = br.digitizer
             hrec = enc.shift(br.harp_records, int(round(j * self.slice_s * 1e12)))
+            if self._rtw is not None:
+                self._rtw.add(br.truth, int(round(j * self.slice_s * 1e12)))
             self.n_records += len(dg.timestamp)
             if self._path_used is not None:
                 self._path.sample(ts + dur / 2)
@@ -274,6 +336,8 @@ class StreamingSimulator:
             info = dict(block_id=b.id, kind=b.kind, index=i, slice=j, t_session=ts - se.start_s,
                         t_run_end=j * self.slice_s + dur, last=last)
             if last:                                   # Wahrheit vor der letzten Scheibe (Leser hören dort auf)
+                if self._rtw is not None:
+                    self._rtw.end()
                 t_mid = t0 + b.duration_s / 2
                 self.runs_truth.append(dict(id=b.id, run_id=rid, kind=b.kind, t_mid_s=t_mid - se.start_s,
                                             lo_scale=float(lo_scale_fn(cfg, b, self._path_used)(t_mid)),
@@ -290,6 +354,9 @@ class StreamingSimulator:
         if man is None:
             man = json.loads((out / "session.json").read_text(encoding="utf-8"))
         rt = [r for r in self.runs_truth if run_ids is None or r["id"] in run_ids]
+        if self._rtw is not None:
+            self._rtw.close()
+            self._rtw = None
         with h5py.File(out / "truth.h5", "w") as f:
             f.attrs.update(format=S.FORMAT_TRUTH, schema_version=S.SCHEMA_VERSION, software=f"hhd {__version__}",
                            config_json=cfg.to_json(), streaming=True, warnings_json=json.dumps(self.warnings))
@@ -303,6 +370,8 @@ class StreamingSimulator:
                                eta_state=r["eta_state"])
         from .engine import _sha256
         man.setdefault("files", {})["truth.h5"] = dict(role="truth", sha256=_sha256(out / "truth.h5"))
+        if (out / RecordTruthWriter.FILE).exists():
+            man["files"][RecordTruthWriter.FILE] = dict(role="truth_records", sha256=_sha256(out / RecordTruthWriter.FILE))
         man["truth"] = rt
         for k, v in self.extra_manifest.items():
             man.setdefault(k, v)
