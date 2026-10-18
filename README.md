@@ -70,7 +70,8 @@ LO-Monitor Thorlabs **PDA05CF2** mit 10-dB-Dämpfer an Kanal B. **Laufplan-Defau
 | `hhd/cli.py` | Kommandozeile `hhd` (import, sync, validate, stream, bench, calibrate, reconstruct, compare [--streaming], drift, report) |
 | `hhd/drivers/` | Treiber (ctypes): `hh500.py` (HH500Lib, T2), `adq.py` (ADQAPI, JSON-Parameter, Record-Header 2.0), dynamisches Laden; `mock/` Mock-Bibliotheken in C für Tests |
 | `hhd/io/recorder.py`, `stream_writer.py`, `modes.py` | Aufzeichnung im Datenstrom (PTU, `digitizer.h5`, `session.json`), Betriebsarten je Gerät |
-| `hhd/sim/streaming.py` | speichersparender Datenstrom-Simulator (Zeitscheiben, lazy Drift, dezimierte Wahrheit) |
+| `hhd/sim/streaming.py` | speichersparender Datenstrom-Simulator (Zeitscheiben, lazy Drift, dezimierte Wahrheit, optional Zuordnungswahrheit je Record) |
+| `hhd/sim/record_validate.py` | Fehlzuordnungen langer Läufe gegen `truth_records.h5` (`hhd validate-records`) |
 | `hhd/analysis/driftmon.py` | Drift-Überwachung im Datenstrom (LO, Vakuumvarianz, η) mit konstantem Speicher |
 | `hhd/analysis/streaming.py` | Datenstrom-Auswertung langer Sitzungen (Histogramme, Momente, Bin-MaxLik, Poisson-Bootstrap) |
 | `hhd/analysis/replaydrift.py` | Drift über eine Wiedergabe (`hhd drift`) |
@@ -153,6 +154,7 @@ hhd import data/S001             # Läufe, Records, Marker, Kanalrollen, Prüfsu
 hhd sync data/S001               # → data/S001/sync/sync.h5 + sync.json (Klassen, Uhrabbildung, Δ, Selbstprüfung)
 hhd sync data/K1                 # Kampagne
 hhd validate data/S001           # nur Simulation: Fehlzuordnungen, Pulls a, b, Δ gegen truth.h5
+hhd validate-records data/S001   # Datenstrom-Simulator, lange Läufe: sync.h5 gegen truth_records.h5
 hhd stream data/S001             # chunkweiser Synchronisierer gegen Batch
 hhd bench data/S001              # Durchsatz (Ereignisse/s)
 ```
