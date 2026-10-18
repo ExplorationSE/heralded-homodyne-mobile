@@ -20,7 +20,7 @@ from .digitizer import TRIG_HERALD
 from .streaming import RecordTruthWriter
 
 
-def validate_records(path: str | Path, sync_dir: str | Path | None = None, block: int = 1 << 20) -> dict:
+def validate_records(path: str | Path, sync_dir: str | Path | None = None, block: int = 1 << 18) -> dict:
     path = Path(path)
     sd = Path(sync_dir) if sync_dir else path / "sync"
     tf = path / RecordTruthWriter.FILE
