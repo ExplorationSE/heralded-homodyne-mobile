@@ -17,8 +17,12 @@ Auftrag („Los.“): speichersparende Δ-Kalibrierung, echte Mehrstunden-Simula
   die Scheiben), damit läuft `hhd validate-analysis` auch für Datenstrom-Sitzungen.
 - **Fix DriftMonitor:** im Dunkellauf (LO aus) keine LO-Warnung mehr (vorher „LO-Leistung −621 %“ bei
   Dunkelläufen länger als das Fenster).
+- **Fix Server-Ende:** der Auswertungsprozess (ProcessPool) wird beim Beenden mit beendet, statt verwaist
+  weiterzulaufen.
+- `config/longrun_2h.yaml` (2,26-h-Sitzung für den Server).
 - **Mehrstunden-Simulation über den Server** (Port 8795, `sim_engine = stream`, segmentierte Sync auto,
-  Auswertung, Drift-Monitor): `docs/SERVER.md` Abschnitt 7b.
+  Auswertung, Drift-Monitor): `docs/SERVER.md` Abschnitt 7b. Ergebnis: 0 Fehlzuordnungen von 1,46 Mio.,
+  alle Pulls |z| < 1, Spitze 236 MB (Server) bzw. 265 MB (Auswertung), 4,9 GB Platte.
 - **Tests:** `tests/test_delay_stream.py` (4), `test_streaming_sim.py::test_record_truth_validation`,
   Erweiterungen in `test_server.py::test_stream_sim_engine` und `test_longrun.py::test_drift_over_replay`.
 

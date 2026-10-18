@@ -191,7 +191,7 @@ Ergebnisse (gegen die Simulator-Wahrheit, `hhd validate-analysis`, `hhd validate
 - Alle Pulls |z| < 1.
 - Drift-Monitor: LO am Ende +0,64 % (wahr +0,64 %), Trend z = 3,6; η a_02/a_01 = 1,020 ± 0,021 (wahr 1,017).
   Nach dem Fix in 0.13 gibt es keine Fehlalarme mehr im Dunkellauf.
-- Der zweite Lauf mit gleichem Seed liefert bitgleiche Ergebnisse.
+- Ein zweiter Durchlauf mit gleichem Seed lieferte dieselben Ergebnisse (Δ_T, Zählungen, Rekonstruktion).
 - Grenze der Datenstrom-Auswertung: keine PCA (Modenüberlapp im Effizienzbudget „–“).
 
 ## 8 Grenzen
