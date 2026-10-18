@@ -263,7 +263,11 @@ class MeasurementService:
         if self._thread:
             self._thread.join(timeout=10)
         if self._pool:
+            procs = list((getattr(self._pool, "_processes", None) or {}).values())
             self._pool.shutdown(wait=False, cancel_futures=True)
+            for pr in procs:                     # Auswertungsprozess nicht verwaist zurücklassen (Server-Ende)
+                if pr.is_alive():
+                    pr.terminate()
         self._job_thread_pool.shutdown(wait=False, cancel_futures=True)
         for d in (self.harp, self.dig):
             try:
