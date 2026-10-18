@@ -38,7 +38,8 @@ class SyncParams:
     allow_piecewise: bool = True
     refine: bool = True
     calibrate_delay: bool = True
-    delay_max_records: int = 20000
+    delay_max_records: int = 20000            # Stichprobe für Δ (Laufzeit; Speicher ist seit 0.13 unabhängig davon)
+    delay_method: str = "stream"              # stream (Summen, Poisson-Bootstrap) | matrix (frühere Variante)
     vacuum_max_records: int = 3000
     n_boot: int = 100
     coarse_scan_s: tuple = (-700e-9, 1100e-9, 8e-9)
@@ -318,7 +319,8 @@ def calibrate_delay(sess: SessionData, syncs: dict, p: SyncParams, reservoir=Non
         pos0 = (trig[ix] - first[ix]) * fs
         sources.append((rs.run.read_records, ix, pos0))
     res = Dl.calibrate(sources, fs, kern, norm, p.gamma, p.mode_shape, coarse=p.coarse_scan_s,
-                       fine_half=p.fine_half_s, fine_step=p.fine_step_s, n_boot=p.n_boot, seed=p.seed)
+                       fine_half=p.fine_half_s, fine_step=p.fine_step_s, n_boot=p.n_boot, seed=p.seed,
+                       method=p.delay_method)
     dT = res["delta"]; sT = res["sigma_boot"]
     per_run = {}
     for rs, _, _ in cand:
@@ -332,7 +334,7 @@ def calibrate_delay(sess: SessionData, syncs: dict, p: SyncParams, reservoir=Non
         per_run[rs.key] = rs.delta
     out = dict(available=True, delta_T_s=dT, sigma_delta_T_s=sT, sigma_fit_s=res["sigma_fit"], A=res["A"],
                c=res["c"], contrast=res["contrast"], sigma_A=res["sigma_A"], n_records=res["n_records"],
-               n_boot=res["n_boot"], norm=asdict(norm), coarse_peak_s=res["coarse"]["peak"], per_run=per_run,
+               n_boot=res["n_boot"], method=res["method"], bootstrap=res["bootstrap"], norm=asdict(norm), coarse_peak_s=res["coarse"]["peak"], per_run=per_run,
                delta_mean_s=float(np.mean([v["delta_s"] for v in per_run.values()])),
                scan=dict(grid_s=res["grid"].tolist(), V=res["V"].tolist()),
                coarse=dict(grid_s=res["coarse"]["grid"].tolist(), V=res["coarse"]["V"].tolist()),

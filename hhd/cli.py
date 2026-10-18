@@ -51,6 +51,8 @@ def _params(a):
         p.allow_piecewise = False
     if a.delay_records:
         p.delay_max_records = a.delay_records
+    if getattr(a, "delay_method", None):
+        p.delay_method = a.delay_method
     if getattr(a, "chunked_sync", None):
         p.chunked = a.chunked_sync
     if getattr(a, "segment_s", None):
@@ -317,6 +319,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--no-refine", action="store_true", help="ohne Verfeinerung über Herald/Trigger-Paare")
         p.add_argument("--linear", action="store_true", help="nur lineare Uhrabbildung")
         p.add_argument("--delay-records", type=int, help="max. Records für Δ (Standard 20000)")
+        p.add_argument("--delay-method", choices=("stream", "matrix"),
+                       help="Δ-Akkumulation: stream (Standard, Speicher unabhängig von der Recordzahl) | matrix")
         p.add_argument("--chunked-sync", choices=("auto", "always", "never"),
                        help="Läufe in Segmenten synchronisieren (beschränkter Speicher; auto: ab --chunked-min-s)")
         p.add_argument("--segment-s", type=float, help="Segmentlänge der segmentierten Synchronisation (Standard 30 s)")
