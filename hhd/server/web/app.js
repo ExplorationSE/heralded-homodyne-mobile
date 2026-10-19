@@ -274,7 +274,7 @@ function renderResult(R) {
   const ev = (o) => o && typeof o === "object" ? fmtE(o.value, o.err) : fmt(o, 4);
   $("budget").innerHTML = brow("Herald-Rate", fmt(eb.herald_rate_per_s, 0) + " /s") + brow("ξ (Herald-Reinheit)", fmt(eb.xi, 4)) +
     brow("η_el (elektronisch)", fmtE(eb.eta_el, eb.eta_el_err)) + brow("η_Mode (PCA)", fmt(eb.eta_mode_pca, 4)) +
-    (f1 ? brow("η_eff (Fit)", ev(eb.eta_eff_fit)) : brow("η_eff (⟨n⟩)", ev(eb.eta_eff_n)) + brow("η_eff (|1⟩-Fit, nicht gültig)", ev(eb.eta_eff_fit))) + brow("η_eff (Varianz)", ev(eb.eta_eff_var)) + brow("η_rest", ev(eb.eta_rest));
+    (f1 ? brow("η_eff (Fit)", ev(eb.eta_eff_fit)) : brow("η_eff (⟨n⟩)", ev(eb.eta_eff_n)) + brow("η_eff (|1⟩-Fit, nicht gültig)", ev(eb.eta_eff_fit))) + brow(f1 ? "η_eff (Varianz)" : "Var x − ½ (= η_eff·⟨n⟩)", ev(eb.eta_eff_var)) + brow("η_rest", ev(eb.eta_rest));
 }
 function wr(g, r) { const R = g.wigner_r || [], V = g.wigner_radial || []; if (r >= R[R.length - 1]) return V[V.length - 1] || 0; let i = 1; while (i < R.length && R[i] < r) i++; const t = (r - R[i - 1]) / (R[i] - R[i - 1]); return V[i - 1] * (1 - t) + V[i] * t; }
 function drawWigner(A) {
