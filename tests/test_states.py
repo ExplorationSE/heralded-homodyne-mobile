@@ -47,6 +47,6 @@ def test_coherent_phase_dependence():
 def test_make_state():
     assert isinstance(make_state("fock1"), Fock) and make_state({"type": "fock", "n": 2}).n == 2
     with pytest.raises(ValueError):
-        make_state({"type": "squeezed"})
+        make_state({"type": "unbekannt"})   # ab 0.14 gibt es „squeezed“
     with pytest.raises(ValueError):
         make_state({"type": "coherent", "beta": 1})
