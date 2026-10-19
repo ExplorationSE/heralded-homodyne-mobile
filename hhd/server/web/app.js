@@ -140,7 +140,7 @@ function render() {
   $("simeng_l").classList.toggle("hidden", !S.sim_engine);
   if (S.sim_engine && document.activeElement !== $("simeng")) $("simeng").value = S.sim_engine;
   $("simeng").disabled = !mine || running || paused;
-  $("sessinfo").textContent = (S.session_id ? `Sitzung ${S.session_id}` : "") + (S.msg ? " · " + S.msg : "") + (S.device_error ? " · " + S.device_error : "");
+  $("sessinfo").textContent = [(S.session_id && !(S.msg || "").includes(S.session_id)) ? `Sitzung ${S.session_id}` : "", S.msg || ""].filter(Boolean).join(" · ") + (S.device_error ? " · " + S.device_error : "");
   const L = S.live || {}, runs = L.runs || [];
   $("planbar").innerHTML = (S.plan || []).map((r, i) => {
     const cls = i < runs.length && runs[i]?.done ? "done" : (i === S.run_index ? "cur" : "");
