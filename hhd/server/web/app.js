@@ -269,7 +269,7 @@ function drawWigner(A) {
   const cell = s / n;
   for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
     const x = -xm + 2 * xm * (i + .5) / n, p = -xm + 2 * xm * (j + .5) / n, v = wr(A, Math.hypot(x, p)) / vmax;
-    const c = v >= 0 ? [Math.round(15 + 230 * v), Math.round(23 + 90 * v), Math.round(42 + 60 * v)] : [Math.round(15 + 20 * -v), Math.round(23 + 140 * -v), Math.round(42 + 213 * -v)];
+    const c = v >= 0 ? [Math.round(15 + 234 * v), Math.round(23 + 92 * v), Math.round(42 - 20 * v)] : [Math.round(15 + 20 * -v), Math.round(23 + 140 * -v), Math.round(42 + 213 * -v)];
     g.fillStyle = `rgb(${c})`; g.fillRect(ox + i * cell, oy + (n - 1 - j) * cell, cell + .5, cell + .5);
   }
   g.strokeStyle = "rgba(226,232,240,.25)"; g.beginPath(); g.moveTo(ox, oy + s / 2); g.lineTo(ox + s, oy + s / 2); g.moveTo(ox + s / 2, oy); g.lineTo(ox + s / 2, oy + s); g.stroke();
