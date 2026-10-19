@@ -143,7 +143,9 @@ class SourceCfg:
     det_dead_s: float = P(HERALD_PRESETS["snspd"]["det_dead_s"], "s", doc="Totzeit/Erholzeit des Herald-Detektors (SNSPD typ. < 30 ns; InGaAs-APD 0,1–80 µs einstellbar, Preset 10 µs); Nachpulse nicht simuliert", status="Spez.", source=IDQ_281 + "; " + IDQ_QUBE)
     eta_herald: float = P(round(HERALD_PRESETS["snspd"]["det_eff"] * HERALD_ARM_T, 4), "", doc="Nachweiswahrscheinlichkeit im Herald-Arm = det_eff · herald_arm_T (ohne Angabe neu berechnet); bestimmt die Rate ungeheraldeter Signalphotonen R_herald·(1/η_h − 1)", source="Analyse Vergleich")
     eta: float = P(0.70, "", doc="Zustandseffizienz η = η_QE(InGaAs, optics.eta_hd_qe) · η_Rest (Optik, Modenanpassung, Visibility²) vor elektronischem Rauschen", source=SYNC_REP)
-    heralded_state: str = P("fock1", doc="Zustand der geheraldeten Mode (fock1; fock2 nur als Test)", status="Vorschlag")
+    heralded_state: str = P("fock1", doc="Zustand der geheraldeten Mode: Voreinstellung aus hhd.sim.states.STATE_PRESETS (fock1, fock2, fock3, "
+                                                  "fock01, cat_even_1, cat_odd_1, cat_even_2, cat_odd_2, kitten_3dB, coherent_1, "
+                                                  "squeezed_3dB, squeezed_6dB, thermal_0.5)", status="Vorschlag")
     mode_shape: str = P("double_exponential", doc="Temporale Mode: double_exponential f(t)=√γ·e^(−γ|t|) (CW-SPDC) oder gauss", status="Vorschlag")
     gamma: float = P(1 / 40e-9, "1/s", doc="Abklingrate der Mode (1/γ = 40 ns); bei gauss: 1/σ", source=SYNC_REP)
     sigma_spd: float = P(round(HERALD_PRESETS["snspd"]["sigma_spd"], 15), "s", doc="Jitter des Herald-Detektors (rms), gemeinsam für Harp und TRIG; Preset SNSPD 40 ps FWHM (ID281 Standard; Eos ≤ 15 ps), InGaAs-APD 150 ps FWHM", status="Spez.", source=IDQ_281 + "; " + IDQ_QUBE)
@@ -509,8 +511,9 @@ class SimConfig:
                 e.append("lo_monitor.dc_offset_V: ±0,25 V")
             if lm.dark_lsb - 5 * lm.noise_lsb < -2 ** (d.adc_bits - 1):
                 w.append("lo_monitor: Dunkelwert unter dem Messbereich (DC-Offset anpassen)")
-        if s.heralded_state not in ("fock1", "fock2"):
-            e.append("source.heralded_state: fock1 oder fock2")
+        from .states import STATE_PRESETS
+        if s.heralded_state not in STATE_PRESETS:
+            e.append(f"source.heralded_state: eine der Voreinstellungen {', '.join(STATE_PRESETS)}")
         if s.mode_shape not in ("double_exponential", "gauss"):
             e.append("source.mode_shape: double_exponential oder gauss")
         ids = [b.id for b in self.blocks]

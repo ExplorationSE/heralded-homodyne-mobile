@@ -24,9 +24,21 @@ from .devices import SIM_ENGINES, DeviceError, ReplayBackend, RunSpec, SimBacken
 from .live import KIND_LABEL, LiveParams, LivePreview
 from ..io.recorder import SessionRecorder
 
+from ..sim.state_plans import STATE_PLANS, plan_doc, plan_label
+
 PLANS = {"standard": "M1 Zeitraffer (18 Läufe)", "kurz": "Kurz (7 Läufe)"}
 PLAN_DOC = {"standard": "K-V, Dunkel, K-H, 6×(A, B) + A mit K-V nach jedem 3. Zyklus und am Ende",
-            "kurz": "K-V, Dunkel, K-H, A, B, A, K-V"}
+            "kurz": "K-V, Dunkel, K-H, A, B, A, K-V (Einzelphoton |1⟩)"}
+for _p, _k in STATE_PLANS.items():
+    PLANS[_p] = plan_label(_k); PLAN_DOC[_p] = plan_doc(_k)
+# Gruppen der Auswahlliste (Web-App: <optgroup>)
+PLAN_GROUPS = [dict(label="Einzelphoton |1⟩", plans=["standard", "kurz"]),
+               dict(label="Fock-Zustände", plans=["kurz_fock2", "kurz_fock3", "kurz_fock01"]),
+               dict(label="Katzen (phasengemittelt)", plans=["kurz_cat_even_1", "kurz_cat_odd_1", "kurz_cat_even_2",
+                                                              "kurz_cat_odd_2", "kurz_kitten_3dB"]),
+               dict(label="Gaußsche Zustände", plans=["kurz_coherent_1", "kurz_squeezed_3dB", "kurz_squeezed_6dB",
+                                                      "kurz_thermal_0.5"])]
+assert sorted(p for g in PLAN_GROUPS for p in g["plans"]) == sorted(PLANS)
 STATES = {"bereit": "bereit", "vorbereitung": "Simulation/Vorbereitung", "messung": "Messung läuft",
           "pause": "Pause – wartet auf „Weiter“",
           "schreiben": "Dateien schreiben", "fertig": "Sitzung abgeschlossen", "abgebrochen": "abgebrochen",
@@ -291,7 +303,7 @@ class MeasurementService:
                     state=self.state, state_text=STATES.get(self.state, self.state), msg=self.msg,
                     session_id=self.session_id, run_index=self.run_idx,
                     plan=[dict(r.to_dict(), label=KIND_LABEL.get(r.kind, r.kind)) for r in self.plan],
-                    plans=PLANS, plan_doc=PLAN_DOC, lock=self.lock.state(), display=self.display, live=live,
+                    plans=PLANS, plan_doc=PLAN_DOC, plan_groups=PLAN_GROUPS, lock=self.lock.state(), display=self.display, live=live,
                     jobs=[j.to_dict() for j in sorted(self.jobs.values(), key=lambda j: -j.t_submit)][:10],
                     devices=dict(harp=self.harp.info(), digitizer=self.dig.info()), device_error=self.device_error,
                     server_time=time.strftime("%Y-%m-%d %H:%M:%S"))

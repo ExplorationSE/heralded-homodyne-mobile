@@ -39,7 +39,7 @@ from ..recon.core import _iterate, fidelity_diag, lossy_fock1, patterns, photon_
 from ..recon.stats import R_GRID, w00_score_coeffs
 from ..sync import assign as A
 from .pipeline import (CI_QUANT, SCHEMA, AnalysisParams, _clean, _summ, drift_ab_from_per,
-                       efficiency_budget)
+                       efficiency_budget, session_state)
 
 LIM, FINE = 8.0, 120                          # Histogramm ±8, Breite 1/120
 NB = int(2 * LIM * FINE)
@@ -666,6 +666,7 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
         timing["compare"] = time.time() - t
     sd = SimpleNamespace(runs={b: SimpleNamespace(report=rep["runs"].get(b, {})) for b in runs})
     result["efficiency_budget"] = efficiency_budget(session, sd, cal, res_groups, pca, comp, ap)
+    result["state"] = session_state(session)
     result["warnings"] = warnings
     timing["total"] = time.time() - t0
     result["performance"] = dict(timing_s=timing, n_records=int(sum(m.n for m in moms.values())))

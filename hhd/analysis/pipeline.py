@@ -309,6 +309,25 @@ def drift_ab_from_per(per: list[dict], ap: AnalysisParams) -> dict:
 
 
 # ---------------------------------------------------------------- Effizienzbudget
+def session_state(session) -> dict:
+    """Geheraldeten Zustand aus den Laufattributen lesen (Simulator-Laufplan ``kurz_<zustand>``).
+
+    Fehlt die Angabe (Messdaten, ältere Sitzungen), gilt das Einzelphoton |1⟩. Nur die Beschreibung des
+    vorgesehenen Zustands (ideal, ohne Verluste), keine Wahrheitsdaten.
+    """
+    for r in session.runs_of("heralded"):
+        raw = r.attrs.get("heralded_state", "")
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        if raw:
+            try:
+                return json.loads(raw)
+            except ValueError:
+                pass
+    return dict(preset="fock1", label="Einzelphoton |1⟩", phase_sensitive=False, mean_n_ideal=1.0,
+                phase_averaged=True, assumed=True)
+
+
 def efficiency_budget(session, sd, cal: Calibration, res_groups: dict, pca: dict | None, comp: dict | None,
                       ap: AnalysisParams) -> dict:
     n_her = 0; dur = 0.0
@@ -318,7 +337,10 @@ def efficiency_budget(session, sd, cal: Calibration, res_groups: dict, pca: dict
     R = n_her / dur if dur > 0 else float("nan")
     xi = 1 - ap.dark_count_rate / R if R > 0 else float("nan")
     A = res_groups.get("A")
-    out = dict(herald_rate_per_s=R, dark_count_rate_per_s=ap.dark_count_rate,
+    st = session_state(session)
+    fock1 = st.get("preset", "fock1") == "fock1"
+    n_id = float(st.get("mean_n_ideal") or 1.0)
+    out = dict(state=st, herald_rate_per_s=R, dark_count_rate_per_s=ap.dark_count_rate,
                xi=xi, eta_el=cal.eta_el if cal.var_el is not None else None,
                eta_mode_pca=(pca or {}).get("overlap_param_corrected"))
     if A:
@@ -327,6 +349,17 @@ def efficiency_budget(session, sd, cal: Calibration, res_groups: dict, pca: dict
         out["eta_eff_var"] = dict(value=A["eta_var"], err=A.get("var_x_err", float("nan")))
         if comp:
             out["eta_eff_comparison"] = comp["eta_from_comparison"]
+        if not fock1:
+            # η aus der phasengemittelten Varianz: Var x − ½ = η_eff·⟨n⟩_ideal (für jeden Zustand, auch Gauß).
+            # Der |1⟩-Verlustfit (eta_fit) gilt hier nicht und wird nur als modellabhängig mitgeführt.
+            ef = (A["var_x"] - 0.5) / n_id if n_id > 0 else float("nan")
+            efe = A.get("var_x_err", float("nan")) / n_id if n_id > 0 else float("nan")
+            A["eta_n"], A["eta_n_err"] = ef, efe
+            out["eta_eff_fit"]["note"] = "|1⟩-Verlustmodell, für diesen Zustand nicht gültig"
+            out["eta_eff_n"] = dict(value=ef, err=efe, note="(Var x − ½)/⟨n⟩_ideal, phasengemittelt")
+            if comp:
+                c = comp["eta_from_comparison"]
+                out["eta_eff_comparison"] = dict(c, value=c["value"] / n_id, err=c["err"] / n_id)
         den = xi * (cal.eta_el if cal.var_el is not None else 1.0)
         rel_el = (cal.eta_el_err or 0.0) / cal.eta_el if cal.var_el is not None else 0.0
         out["eta_el_err"] = cal.eta_el_err
@@ -436,6 +469,7 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
             result["comparison"] = comp
             timing["compare"] = time.time() - t
         result["efficiency_budget"] = efficiency_budget(session, sd, cal, res_groups, pca, comp, ap)
+    result["state"] = session_state(session)
     result["warnings"] = warnings
     timing["total"] = time.time() - t0
     result["performance"] = dict(timing_s=timing, n_records=int(sum(len(q.q) for q in quads.values())))

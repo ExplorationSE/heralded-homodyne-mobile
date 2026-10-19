@@ -48,7 +48,7 @@ from .drift import DriftPath
 from .digitizer import ADQ32, TRIG_HERALD, TRIG_RANDOM, TRIG_STATE, TriggerInput
 from .harp import HydraHarp500, apply_dead_time
 from .phase import PhaseModel
-from .states import make_state
+from .states import make_state, state_info
 
 KIND_TO_DATASET = dict(heralded="heralded", random="random_trigger", free_running="free_running",
                        herald_blocked="herald_blocked", vacuum="vacuum", electronic="electronic", state="prepared_state")
@@ -115,6 +115,19 @@ def eta_of_run(cfg: SimConfig, b: BlockCfg, t_mid: float, path: DriftPath | None
     return float(np.clip(cfg.source.eta * b.eta_scale * f, 1e-6, 1.0))
 
 
+_STATE_INFO: dict[str, dict] = {}
+
+
+def heralded_state_info(cfg: SimConfig) -> dict:
+    """Zustand der geheraldeten Mode für die Metadaten (Typ, Anzeigename, phasenempfindlich, ⟨n⟩ verlustfrei)."""
+    k = cfg.source.heralded_state
+    if k not in _STATE_INFO:
+        _STATE_INFO[k] = state_info(k)
+    out = dict(_STATE_INFO[k])
+    out["phase_averaged"] = (not out["phase_sensitive"]) or cfg.phase.mode in ("random", "ramp")
+    return out
+
+
 def plan_block_attrs(cfg: SimConfig, b: BlockCfg, index: int, t0: float, calibration_id: str, run_id: str,
                      phase: PhaseModel | None = None) -> dict:
     """Attribute eines Laufs (Gruppe ``/blocks/<id>``) aus der Konfiguration – auch für Live-Läufe ohne Simulation."""
@@ -130,6 +143,7 @@ def plan_block_attrs(cfg: SimConfig, b: BlockCfg, index: int, t0: float, calibra
                 duration_s=b.duration_s, ptu_file=f"harp_{b.id}.ptu",
                 random_rate=b.random_rate, periodic_rate=periodic, crosstalk_amp=xt_amp,
                 state=json.dumps(test_state.describe()) if test_state else "",
+                heralded_state=json.dumps(heralded_state_info(cfg)) if kind != "state" else "",
                 harp_channel_roles=json.dumps(cfg.channel_roles(kind)), harp_marker_roles=json.dumps(cfg.marker_roles()),
                 adq32_trigger_source="TRIG" if kind in ("heralded", "herald_blocked", "random", "state") else "PERIODIC",
                 **phase.metadata())
@@ -296,12 +310,19 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     # (Sollwerte gelten für eine Normierung mit der Vakuumskala dieses Laufs)
     eta_el = 1.0 / (1.0 + 1.0 / (cfg.clearance * lo_mid))
     expected: dict[str, Any] = dict(eta_electronic=eta_el, mapping=mapping, lo_scale=lo_mid, eta_state=eta_run)
+    hinfo = heralded_state_info(cfg)
     if kind == "heralded":
         xi = src.R_herald / (src.R_herald + src.R_dark)
-        e = heralded_state.expected(eta_run * eta_el)
+        e = heralded_state.expected(eta_run * eta_el, theta=float(pcfg.theta0))
+        # phasengemittelt (Phase zufällig/Rampe): Var x = ⟨n⟩ + ½; p_n und W(0,0) phasenunabhängig
+        var_s = e["var_x_phase_avg"] if hinfo["phase_averaged"] else e["var_x"]
+        p_n = np.array(e["p_n"]) * xi; p_n[0] += 1 - xi
         expected.update(xi=xi, eta_eff=eta_run * eta_el * xi,
-                        W00=xi * e["W00"] + (1 - xi) / np.pi, var_x=xi * e["var_x"] + (1 - xi) * 0.5,
-                        note="ohne Beitrag ungeheraldeter/sekundärer Moden und Überlappverluste")
+                        W00=xi * e["W00"] + (1 - xi) / np.pi, var_x=xi * var_s + (1 - xi) * 0.5,
+                        mean_n=xi * e["mean_n"], p_n=p_n.tolist(), heralded_state=hinfo,
+                        phase_averaged=hinfo["phase_averaged"],
+                        note="ohne Beitrag ungeheraldeter/sekundärer Moden und Überlappverluste"
+                             + ("; phasengemittelt" if hinfo["phase_sensitive"] and hinfo["phase_averaged"] else ""))
     elif kind in ("vacuum", "herald_blocked"):
         expected.update(W00=1 / np.pi, var_x=0.5)
     elif kind == "electronic":
@@ -309,7 +330,8 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     elif kind in ("random", "free_running"):
         R_pair = src.R_herald / src.eta_herald
         g = src.gamma
-        n_eff = R_pair * eta_run * eta_el * (2.5 / g if src.mode_shape == "double_exponential" else np.sqrt(np.pi) / g)
+        n_eff = R_pair * eta_run * eta_el * (2.5 / g if src.mode_shape == "double_exponential" else np.sqrt(np.pi) / g) \
+            * hinfo["mean_n_ideal"]                       # Zusatzvarianz ∝ ⟨n⟩ des Zustands (phasengemittelt)
         expected.update(W00=(1 / np.pi) * (1 - 2 * n_eff), var_x=0.5 + n_eff, n_eff=n_eff,
                         note="unbedingter Zustand ≈ Vakuum (CW-SPDC, kleine mittlere Photonenzahl je Mode)")
     elif kind == "state":

@@ -34,6 +34,9 @@ def validate_analysis(session_dir, result: dict) -> dict:
     rec = result.get("reconstruction", {})
     out: dict = dict(session=str(d), session_id=result.get("session_id"), groups={})
     tru_group = {}
+    preset = (result.get("state") or {}).get("preset", "fock1")
+    fock1 = preset == "fock1"
+    out["state"] = preset
     for k, info in result["groups"].items():
         if k not in rec:
             continue
@@ -49,8 +52,17 @@ def validate_analysis(session_dir, result: dict) -> dict:
         T["eta"] = avg("eta_eff") if k == "A" else (avg("n_eff") if k == "B" else 0.0)
         tru_group[k] = T
         o = dict(true=T, n=g["n"])
-        for q, tq in (("var_x", "var_x"), ("W00", "W00"), ("W00_moments", "W00"), ("eta_fit", "eta"), ("eta_var", "eta")):
+        qs = [("var_x", "var_x"), ("W00", "W00"), ("W00_moments", "W00"), ("eta_fit", "eta"), ("eta_var", "eta")]
+        if k == "A" and not fock1:
+            # anderer Zustand: |1⟩-Verlustfit und eta_var nicht anwendbar, stattdessen η = (Var x − ½)/⟨n⟩_ideal
+            qs = [("var_x", "var_x"), ("W00", "W00"), ("W00_moments", "W00"), ("eta_n", "eta")]
+            pn = [exp[b].get("p_n") for b in runs]
+            if any(p is None or sum(p[3:]) > 1e-3 for p in pn):
+                qs.remove(("W00_moments", "W00"))   # linearer Schätzer nur für p_n ≈ 0 ab n = 3
+        for q, tq in qs:
             t = T.get(tq)
+            if q not in g:
+                continue
             if t is None:
                 continue
             o[q] = dict(value=g[q], err=g.get(f"{q}_err"), true=t, diff=g[q] - t, pull=_pull(g[q], t, g.get(f"{q}_err")))
@@ -94,7 +106,7 @@ def validate_analysis(session_dir, result: dict) -> dict:
     return out
 
 
-def summarize_pulls(vals: list[dict], keys=("A.var_x", "A.W00", "A.W00_bc", "A.W00_moments", "A.eta_fit", "A.eta_var",
+def summarize_pulls(vals: list[dict], keys=("A.var_x", "A.W00", "A.W00_bc", "A.W00_moments", "A.eta_fit", "A.eta_var", "A.eta_n",
                                            "B.var_x", "B.W00_moments", "eta_comparison", "W00_diff", "eta_state")) -> dict:
     """Kampagnenauswertung: Mittel/Streuung der Pulls, Bias (absolut und in σ), Abdeckung 68/95 %."""
     out = {}

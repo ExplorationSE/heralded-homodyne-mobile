@@ -252,6 +252,11 @@ class SimBackend:
         cfg.session.campaign = "K-SERVER"
         if plan == "kurz":                    # schnelle Prüfsitzung: K-V, Dunkel, K-H, A, B, A, K-V
             cfg.blocks = short_plan(cfg.blocks)
+        elif plan.startswith("kurz_"):        # kurze Sitzung für weitere Zustände (hhd.sim.state_plans)
+            from ..sim.state_plans import STATE_PLANS, apply_state_plan
+            if plan not in STATE_PLANS:
+                raise ValueError(f"Laufplan {plan!r} unbekannt")
+            apply_state_plan(cfg, plan)
         if self.time_scale:
             for b in cfg.blocks:
                 b.duration_s = float(b.duration_s) * self.time_scale
