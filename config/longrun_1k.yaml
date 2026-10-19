@@ -1,5 +1,5 @@
-# Langlauf mit realistischer Herald-Rate (0.14, docs/SERVER.md Abschnitt 7c): 1,09 h, 9 Läufe, 2 × 25 min A.
-# Herald 1000/s (+ Dunkel 100/s), Record 2000 Samples, LO-/η-Sinusdrift; ~18 GB Daten.
+# Langlauf mit realistischer Herald-Rate (0.14, docs/SERVER.md Abschnitt 7c): 1,37 h, 9 Läufe, 2 × 33 min A.
+# Herald 1000/s (+ Dunkel 100/s), Record 2000 Samples, LO-/η-Sinusdrift; ~16 GB Daten.
 # Server: sim_config = "config/longrun_1k.yaml", sim_engine = "stream", sim_record_truth = true, realtime = false
 session:
   id: LONG1K
@@ -146,7 +146,7 @@ blocks:
   duration_s: 120
 - id: a_01
   kind: heralded
-  duration_s: 1500
+  duration_s: 2000
 - id: b_01
   kind: free_running
   duration_s: 300
@@ -157,7 +157,7 @@ blocks:
   periodic_rate: 1000
 - id: a_02
   kind: heralded
-  duration_s: 1500
+  duration_s: 2000
 - id: b_02
   kind: free_running
   duration_s: 300
