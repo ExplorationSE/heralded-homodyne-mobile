@@ -122,7 +122,7 @@ def test_end_to_end_sim(tmp_path):
     svc = app.state.svc
     with TestClient(app) as cl:
         assert cl.get("/api/health").json()["ok"]
-        assert cl.get("/").status_code == 200 and "HHD Mobil" in cl.get("/").text
+        assert cl.get("/").status_code == 200 and "Harp ADQ32 HHD Mobil" in cl.get("/").text
         assert cl.get("/api/status").json()["simulated"] is True
         with cl.websocket_connect("/ws") as ws:
             hello = ws.receive_json()

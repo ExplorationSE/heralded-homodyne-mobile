@@ -71,7 +71,7 @@ def validate_run(run_dir: str | Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="hhd-sim", description="Simulator ExSE Harp ADQ32 HHD Mobil (HydraHarp 500 + ADQ32)")
+    ap = argparse.ArgumentParser(prog="hhd-sim", description="Simulator ExplorationSE Harp ADQ32 HHD Mobil (HydraHarp 500 + ADQ32)")
     ap.add_argument("--version", action="version", version=f"hhd {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("params", help="Parametertabelle ausgeben")

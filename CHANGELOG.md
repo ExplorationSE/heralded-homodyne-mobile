@@ -1,4 +1,4 @@
-# Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
+# Änderungsprotokoll – ExplorationSE Harp ADQ32 HHD Mobil
 
 ## 0.14.0.dev0 – 19.10.2026 (unveröffentlicht)
 
@@ -19,6 +19,7 @@ Auftrag („weiter“): Farbe, PCA im Datenstrom, Langlauf mit 1000/s, speichers
   - 1,37 h, 5,34 Mio. Records, 0 Fehlzuordnungen von 4,53 Mio., alle Pulls |z| < 2;
   - Spitzenspeicher: Server 277 MB, Auswertung 291 MB; 15,2 GB Daten (danach gelöscht);
   - PCA über alle 4,39 Mio. A-Fenster: Überlapp 0,9993, τ_fit 40,0 ns.
+- Umbenennung.
 - **Tests:** `test_longrun.py::test_streaming_pca_matches_in_memory` (Obergrenze 20 000, 300, alle) und
   `test_streaming_sim.py::test_validate_records_streams_ptu`.
 
@@ -296,7 +297,7 @@ Entscheidungen von Herrn Eilers zu Gesamtplan v1.3 (ED-12, ED-11, ED-14, HydraHa
 
 Beginn AP2 Simulator (Vorarbeit vor Projektstart 20.10.2026), Weiterentwicklung des Prototyps `sync_sim`.
 
-- Paket `hhd` nach dem Muster von ExSE Harp GX Mobil (MIT, CI-Workflow für Ubuntu/Windows, Python 3.11/3.13).
+- Paket `hhd` nach dem Muster von ExplorationSE Harp GX Mobil (MIT, CI-Workflow für Ubuntu/Windows, Python 3.11/3.13).
 - `hhd.io`: PTU Generic T2 (HydraHarp 500), HDF5-Schema v1 für ADQ32-Records.
 - `hhd.sim`: Konfiguration mit Parametertabelle, Zustände (Vakuum, kohärent, thermisch, Fock |1⟩ mit η; Fock |n⟩,
   Katze als Erweiterung), Phase θ (zufällig, fest, Rampe, Stufen; ED-11), Uhrenmodell, Gerätemodelle HydraHarp 500

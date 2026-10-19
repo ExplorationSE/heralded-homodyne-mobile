@@ -326,7 +326,7 @@ def cmd_validate_analysis(a) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="hhd", description="ExSE Harp ADQ32 HHD Mobil – Auswertung (Import, Synchronisation, Kalibrierung, Rekonstruktion, Vergleich)")
+    ap = argparse.ArgumentParser(prog="hhd", description="ExplorationSE Harp ADQ32 HHD Mobil – Auswertung (Import, Synchronisation, Kalibrierung, Rekonstruktion, Vergleich)")
     ap.add_argument("--version", action="version", version=f"hhd {__version__}")
     sp = ap.add_subparsers(dest="cmd", required=True)
 

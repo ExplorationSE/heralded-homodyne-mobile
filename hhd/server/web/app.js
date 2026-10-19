@@ -1,4 +1,4 @@
-// HHD Mobil – Web-App des HHD-Mess-Servers. Spricht nur mit dem Server (WebSocket /ws und /api/*).
+// Harp ADQ32 HHD Mobil (ExplorationSE Harp ADQ32 HHD Mobil) – Web-App des HHD-Mess-Servers. Spricht nur mit dem Server (WebSocket /ws und /api/*).
 "use strict";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -313,7 +313,7 @@ async function loadLog() {
     const L = await (await api("/api/log?n=200")).json();
     $("logtbl").innerHTML = L.reverse().map(e => `<div class="logrow"><div><b>${esc(e.cmd)}</b> <span class="${e.ok ? "ok-t" : "bad-t"}">${e.ok ? "ok" : "abgelehnt"}</span><small class="mut"> · ${esc((e.ts || "").replace("T", " ").slice(0, 19))} · ${e.local ? "Mess-PC" : "entfernt"} · ${esc(e.client)}</small></div><small class="mut">${esc(JSON.stringify(e.params))}${e.msg ? " → " + esc(e.msg) : ""}</small></div>`).join("") || '<div class="mut">leer</div>';
   } catch (e) { /* ignore */ }
-  if (S) $("about").innerHTML = `Server hhd ${esc(S.version)} · Betriebsart: HydraHarp ${esc((S.modes || {}).harp || S.mode)}, ADQ32 ${esc((S.modes || {}).digitizer || S.mode)}${S.simulated ? " (SIMULIERT)" : ""} · Serverzeit ${esc(S.server_time)}<br>Steuersperre verfällt nach ${S.lock.timeout_s} s Inaktivität oder bei Trennung. Alle Befehle werden protokolliert (logs/commands.jsonl).`;
+  if (S) $("about").innerHTML = `ExplorationSE Harp ADQ32 HHD Mobil · Server hhd ${esc(S.version)} · Betriebsart: HydraHarp ${esc((S.modes || {}).harp || S.mode)}, ADQ32 ${esc((S.modes || {}).digitizer || S.mode)}${S.simulated ? " (SIMULIERT)" : ""} · Serverzeit ${esc(S.server_time)}<br>Steuersperre verfällt nach ${S.lock.timeout_s} s Inaktivität oder bei Trennung. Alle Befehle werden protokolliert (logs/commands.jsonl).`;
 }
 
 // ------------------------------------------------------------------ Bedienung

@@ -1,10 +1,12 @@
-# ExSE Harp ADQ32 HHD Mobil
+# ExplorationSE Harp ADQ32 HHD Mobil
+
+Kurzname in der Web-App: **Harp ADQ32 HHD Mobil**. Repository `harp-adq32-hhd-mobil`, Python-Paket `hhd`.
 
 Heralded-Homodyne-Detektion (HHD) mit einer PicoQuant **HydraHarp 500** (T2-Zeitmarken des Herald-Detektors) und
 einem Teledyne SP Devices **ADQ32-PCIe** (Wellenformen des Homodyndetektors). Ziel von Release 1.0: Rekonstruktion
 von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasengemittelt (Standard), mit bekannter
 Phase θ als Option
-(ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExSE Harp GX Mobil.
+(ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExplorationSE Harp GX Mobil.
 
 **Stand 0.10.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
 (`hhd.io.session`), **Synchronisation/Zuordnung** (`hhd.sync`; `docs/SYNC.md`) sowie die **Auswertung**:

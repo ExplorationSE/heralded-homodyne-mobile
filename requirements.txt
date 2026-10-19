@@ -1,4 +1,4 @@
-# ExSE Harp ADQ32 HHD Mobil – Laufzeit (alle Pakete als fertige Windows-Wheels verfügbar, kein Compiler nötig)
+# ExplorationSE Harp ADQ32 HHD Mobil – Laufzeit (alle Pakete als fertige Windows-Wheels verfügbar, kein Compiler nötig)
 numpy>=1.26
 scipy>=1.11
 h5py>=3.10
