@@ -194,6 +194,49 @@ Ergebnisse (gegen die Simulator-Wahrheit, `hhd validate-analysis`, `hhd validate
 - Ein zweiter Durchlauf mit gleichem Seed lieferte dieselben Ergebnisse (Δ_T, Zählungen, Rekonstruktion).
 - Grenze der Datenstrom-Auswertung: keine PCA (Modenüberlapp im Effizienzbudget „–“).
 
+## 7c Langlauf mit realistischer Herald-Rate 1000/s (0.14, 19.10.2026)
+
+Wie 7b: eigener Server (Port 8795, `realtime = false`, `sim_engine = "stream"`, `sim_record_truth = true`,
+Auswertung automatisch, segmentierte Sync automatisch), Steuerung über WebSocket. Simulator-Konfiguration
+`config/longrun_1k.yaml`:
+- Herald 1000/s (+ Dunkel 100/s), 1,37 h simulierte Zeit, 9 Läufe: K-V 60 s, Dunkel 30 s, K-H 120 s,
+  A 2000 s, B 300 s (1000/s), K-V, A 2000 s, B, K-V;
+- 5 336 056 Records à 2000 Samples, davon 4 394 184 saubere A-Records;
+- LO-Drift ±0,5 % (Periode 30 min) und η-Drift ±1 % (40 min) als Sinus.
+
+| Schritt | Laufzeit (Box, 8 Kerne) | Spitzenspeicher (VmHWM) |
+|---|---|---|
+| Messung (Simulator → Dateien, Live-Vorschau) | 41,6 min | Server 277 MB |
+| Auftrag: segmentierte Sync (a_01, a_02) inkl. Δ | 3,1 min | Auswertungsprozess 291 MB |
+| Auftrag: Datenstrom-Auswertung inkl. PCA (20 000 Fenster je Gruppe) | 5,9 min | (im selben Prozess) |
+| `hhd compare --streaming --pca-max-records 0` (PCA über alle 4,39 Mio. A-Fenster) | 7,0 min | 273 MB |
+| `hhd validate-records` (0.14, PTU blockweise) | 17 s | 194 MB (0.13-Code: 497 MB) |
+| `hhd drift` (Wiedergabe, Drift-Monitor) | 5,0 min | 186 MB |
+
+Plattenbedarf 15,2 GB (`digitizer.h5` 14,3 GB, `sync.h5` 0,26 GB, `quadratures.h5` 0,27 GB,
+`truth_records.h5` 60 MB, PTU 2 × 40 MB). Während der Sync lag für etwa 3 min eine Kopie von `digitizer.h5`
+auf der Platte (Spitze 28,9 GB). Die Kopie stammte vom Sicherungsmechanismus der Box
+(`*.box-store-snap-*`), nicht von hhd. hhd selbst legt keine Kopien an. Die Daten wurden danach gelöscht; die Kurzfassung liegt in
+`/workspace/homodyne_herald/langlauf_0.14/`.
+
+Ergebnisse gegen die Simulator-Wahrheit:
+- Zuordnung: 0 Fehlzuordnungen von 4 529 235 zugeordneten Records, 0 verloren. Beide A-Läufe wurden
+  segmentiert synchronisiert. Δ_T = 77,59 ns.
+- A: Var x 1,1208 ± 0,0040 (wahr 1,1177, z +0,8), W(0,0) −0,0742 ± 0,0004 (wahr −0,0749, z +1,6),
+  η_eff (Fit) 0,6187 ± 0,0018 (wahr 0,6177, z +0,6). Mit ξ = 0,909 und η_el = 0,969 folgt
+  η_rest 0,7023 ± 0,0020 (wahr 0,7009, z +0,7).
+- B: Var x 0,5039 ± 0,0021 (wahr 0,5001), W(0,0) 0,3160 ± 0,0012 (wahr 0,3182, z −1,8). Das ist dieselbe
+  Abweichung wie bei Var x.
+- PCA (Datenstrom, 20 000 Fenster): Überlapp roh 0,980, Rauschanteil 0,020, korrigiert 0,9999. Das
+  Effizienzbudget zeigt η_Mode jetzt an (vorher „–“).
+- PCA über alle Fenster: Überlapp roh 0,99934, Rauschanteil 0,0008, τ_fit 40,0 ns, Versatz 0,00 ns,
+  λ₂/λ₁ 0,053.
+- Drift-Monitor: LO kv_01 +0,78 % (wahr +0,78 %), kv_end −0,00 % (wahr −0,00 %); η a_02/a_01 0,994
+  (wahr 1,000, Trend z −0,4). Einzige Warnung: „LO-Monitor: Lauf kv_01 weicht um +0.52 % von K-V ab“.
+  Sie ist erwartet, denn die LO-Drift ist simuliert.
+- Bei zehnfacher Herald-Rate gegenüber 7b (100/s) und 2,5-mal mehr Records bleibt der Speicher beschränkt:
+  Server +17 %, Auswertung +10 %.
+
 ## 8 Grenzen
 
 * Echte Geräte: Treiber nach Handbuch, nur gegen Mock-Bibliotheken getestet; offene Punkte in

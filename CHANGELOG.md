@@ -1,5 +1,27 @@
 # Änderungsprotokoll – ExSE Harp ADQ32 HHD Mobil
 
+## 0.14.0.dev0 – 19.10.2026 (unveröffentlicht)
+
+Auftrag („weiter“): Farbe, PCA im Datenstrom, Langlauf mit 1000/s, speichersparendes `validate-records`.
+
+- **Web-App-Farben:** Rosa (#f472b6) ist durch Orange (#f97316) ersetzt, das zum Blau #38bdf8 passt und sich
+  vom Warn-Bernstein #f59e0b abhebt. Betroffen sind die A-/Herald-Kurven, die Rate, W(r), p_n, das A/B-Histogramm,
+  die positiven Werte der Wigner-Karte und das Icon. App-Screenshots und die Bedienungsanleitung sind neu erzeugt.
+- **PCA/Modenüberlapp in der Datenstrom-Auswertung:**
+  - inkrementelle Fensterkovarianz (Σw, Σwwᵀ je Block) mit neuem gemeinsamem Kern
+    `modes.pca.window_sums`/`pca_from_sums`;
+  - gleiche Auswahl und Obergrenze wie im Speicher (`AnalysisParams.pca_max_records`, Standard 20 000,
+    0 = alle, `--pca-max-records`), daher gleiches Ergebnis (rel. 10⁻⁷);
+  - η_Mode (PCA) erscheint jetzt im Effizienzbudget der Datenstrom-Auswertung.
+- **`hhd validate-records` speichersparend:** Die PTU-Datei wird blockweise dekodiert (`herald_ps_stream`),
+  im Speicher bleiben nur die Herald-Zeiten. Beim Langlauf sank der Bedarf von 497 auf 194 MB.
+- **Langlauf mit Herald 1000/s über den Server** (`config/longrun_1k.yaml`, `docs/SERVER.md` Abschnitt 7c):
+  - 1,37 h, 5,34 Mio. Records, 0 Fehlzuordnungen von 4,53 Mio., alle Pulls |z| < 2;
+  - Spitzenspeicher: Server 277 MB, Auswertung 291 MB; 15,2 GB Daten (danach gelöscht);
+  - PCA über alle 4,39 Mio. A-Fenster: Überlapp 0,9993, τ_fit 40,0 ns.
+- **Tests:** `test_longrun.py::test_streaming_pca_matches_in_memory` (Obergrenze 20 000, 300, alle) und
+  `test_streaming_sim.py::test_validate_records_streams_ptu`.
+
 ## 0.13.0.dev0 – 18.10.2026 (unveröffentlicht)
 
 Auftrag („Los.“): speichersparende Δ-Kalibrierung, echte Mehrstunden-Simulation über den Server.
