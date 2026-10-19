@@ -31,6 +31,15 @@ PLAN_DOC = {"standard": "K-V, Dunkel, K-H, 6×(A, B) + A mit K-V nach jedem 3. Z
             "kurz": "K-V, Dunkel, K-H, A, B, A, K-V (Einzelphoton |1⟩)"}
 for _p, _k in STATE_PLANS.items():
     PLANS[_p] = plan_label(_k); PLAN_DOC[_p] = plan_doc(_k)
+
+
+def plan_state(plan: str) -> dict:
+    """Vorgesehener geheraldeter Zustand eines Laufplans (Kurzinfo für Sitzungsliste/Metadaten)."""
+    from ..sim.states import state_info
+    i = state_info(STATE_PLANS.get(plan, "fock1"))
+    return {k: i[k] for k in ("preset", "label", "phase_sensitive", "mean_n_ideal", "W00_ideal")}
+
+
 # Gruppen der Auswahlliste (Web-App: <optgroup>)
 PLAN_GROUPS = [dict(label="Einzelphoton |1⟩", plans=["standard", "kurz"]),
                dict(label="Fock-Zustände", plans=["kurz_fock2", "kurz_fock3", "kurz_fock01"]),
@@ -574,7 +583,8 @@ class MeasurementService:
                     self.backend.write_files(out, n_done)
                 meta_s = dict(format="hhd-server-session", software=f"hhd {__version__}", mode=acq,
                               device_modes=modes, acquisition_mode=acq, sim_engine=self.sim_engine,
-                              simulated=self.simulated, plan=plan, note=note, runs_done=n_done, runs_planned=len(runs),
+                              simulated=self.simulated, plan=plan, plan_label=PLANS.get(plan, plan),
+                              state=plan_state(plan), note=note, runs_done=n_done, runs_planned=len(runs),
                               stopped=self._stop.is_set(), devices=dict(harp=self.harp.info()["params"],
                                                                         digitizer=self.dig.info()["params"]),
                               hardware={k: d.info().get("hardware", {}) for k, d in (("harp", self.harp), ("digitizer", self.dig))
@@ -654,7 +664,10 @@ class MeasurementService:
             if (d / "server_session.json").exists():
                 meta = json.loads((d / "server_session.json").read_text(encoding="utf-8"))
             res = d / "analysis" / "result.json"
-            out.append(dict(id=d.name, plan=meta.get("plan"), runs=meta.get("runs_done"), simulated=meta.get("simulated", True),
+            st = meta.get("state") or plan_state(meta.get("plan") or "")
+            out.append(dict(id=d.name, plan=meta.get("plan"), plan_label=PLANS.get(meta.get("plan"), meta.get("plan")),
+                            state=st.get("preset"), state_label=st.get("label"),
+                            phase_sensitive=bool(st.get("phase_sensitive")), runs=meta.get("runs_done"), simulated=meta.get("simulated", True),
                             mode=meta.get("acquisition_mode", meta.get("mode", "sim")), modes=meta.get("device_modes", {}),
                             note=meta.get("note", ""), analyzed=res.exists(),
                             mtime=time.strftime("%Y-%m-%d %H:%M", time.localtime(d.stat().st_mtime)),
@@ -684,7 +697,7 @@ class MeasurementService:
 GROUP_KEYS = ("n", "var_x", "var_err", "W00", "W00_ci68", "W00_ci95", "W00_err", "eta_fit", "eta_fit_err",
               "eta_fit_ci68", "eta_fit_ci95", "eta_var", "mean_n", "g2", "mandel_Q", "fidelity_fock1",
               "fidelity_lossy_fock1", "p_n", "wigner_r", "wigner_radial", "estimator", "W00_ci_method",
-              "eta_fit_ci_method", "W00_moments", "W00_moments_err")
+              "eta_fit_ci_method", "W00_moments", "W00_moments_err", "eta_n", "eta_n_err")
 
 
 def result_summary(r: dict) -> dict:
@@ -696,7 +709,7 @@ def result_summary(r: dict) -> dict:
                                      "diff_eta_fit", "eta_from_comparison", "null_tests") if k in comp}
     cal = r.get("calibration", {}) or {}
     return dict(session_id=r.get("session_id"), software=r.get("software"), schema=r.get("schema"),
-                groups=groups, comparison=keep, efficiency_budget=r.get("efficiency_budget"),
+                state=r.get("state") or (r.get("efficiency_budget") or {}).get("state"), groups=groups, comparison=keep, efficiency_budget=r.get("efficiency_budget"),
                 calibration={k: cal.get(k) for k in ("var_kv", "eta_el", "eta_el_err", "clearance", "normalization",
                                                     "n_kv", "n_el") if k in cal},
                 drift=r.get("drift_vacuum_lo"), warnings=r.get("warnings", []), performance=r.get("performance"))

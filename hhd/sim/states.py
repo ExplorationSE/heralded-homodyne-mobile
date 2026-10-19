@@ -316,7 +316,7 @@ STATE_PRESETS: dict[str, dict] = {
     "cat_odd_1": dict(spec=dict(type="cat", alpha=1.0, parity=-1), label="Katze ungerade α=1"),
     "cat_even_2": dict(spec=dict(type="cat", alpha=2.0, parity=1), label="Katze gerade α=2"),
     "cat_odd_2": dict(spec=dict(type="cat", alpha=2.0, parity=-1), label="Katze ungerade α=2"),
-    "kitten_3dB": dict(spec=dict(type="kitten", dB=3.0), label="Kätzchen (photonensubtr. gequetscht, 3 dB)"),
+    "kitten_3dB": dict(spec=dict(type="kitten", dB=3.0), label="Kätzchen 3 dB, photonensubtr. gequetscht"),
     "coherent_1": dict(spec=dict(type="coherent", alpha=1.0), label="kohärent |α=1⟩"),
     "squeezed_3dB": dict(spec=dict(type="squeezed", dB=3.0), label="gequetschtes Vakuum 3 dB"),
     "squeezed_6dB": dict(spec=dict(type="squeezed", dB=6.0), label="gequetschtes Vakuum 6 dB"),

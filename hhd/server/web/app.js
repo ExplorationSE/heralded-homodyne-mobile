@@ -133,8 +133,17 @@ function render() {
   $("cont").classList.toggle("hidden", !S.waiting_continue); $("cont").disabled = !mine;
   const st = $("state"); st.textContent = S.state_text; st.className = "pill" + (running ? " run" : S.state === "fehler" ? " err" : "");
   const plan = $("plan");
-  if (!plan.options.length) for (const [k, v] of Object.entries(S.plans)) plan.add(new Option(v, k));
+  if (!plan.options.length) {
+    const groups = S.plan_groups || [{ label: "", plans: Object.keys(S.plans) }], seen = new Set();
+    for (const gr of groups) {
+      const og = document.createElement("optgroup"); og.label = gr.label;
+      for (const k of gr.plans) if (S.plans[k]) { const o = new Option(S.plans[k], k); o.title = (S.plan_doc || {})[k] || ""; og.appendChild(o); seen.add(k); }
+      plan.appendChild(og);
+    }
+    for (const [k, v] of Object.entries(S.plans)) if (!seen.has(k)) plan.add(new Option(v, k));
+  }
   if (document.activeElement !== plan) plan.value = S.display.plan;
+  plan.title = (S.plan_doc || {})[plan.value] || "";
   if (document.activeElement !== $("speed")) $("speed").value = S.display.speed;
   $("autoana").checked = !!S.display.auto_analyze;
   $("simeng_l").classList.toggle("hidden", !S.sim_engine);
@@ -222,7 +231,7 @@ async function api(path) { const r = await fetch(path, { credentials: "same-orig
 async function loadSessions() {
   try {
     lastSessions = await (await api("/api/sessions")).json();
-    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
+    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")}${s.state && s.state !== "fock1" ? " · " + esc(s.state_label || s.state) + (s.phase_sensitive ? " (phasengem.)" : "") : ""} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
     document.querySelectorAll(".sess").forEach(e => e.onclick = () => openSession(e.dataset.s));
     if (selSession && lastSessions.find(s => s.id === selSession)?.analyzed && !openSession.loaded) openSession(selSession);
     if (!selSession && lastSessions.length && lastSessions[0].analyzed) openSession(lastSessions[0].id);
@@ -245,10 +254,16 @@ function renderResult(R) {
   const row = (lbl, a, b) => `<tr><th>${lbl}</th><td>${a}</td><td>${b}</td></tr>`;
   const W = (g) => `${fmtE(g.W00, g.W00_err)}<br><small class="mut">68 %: ${ci(g, "W00")} ${esc(g.W00_ci_method || "")}</small>`;
   const E = (g) => `${fmtE(g.eta_fit, g.eta_fit_err)}<br><small class="mut">68 %: ${ci(g, "eta_fit")}</small>`;
+  const st = R.state || { preset: "fock1", label: "Einzelphoton |1⟩" }, f1 = (st.preset || "fock1") === "fock1";
+  const ps = !!st.phase_sensitive;
+  $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +
+    (ps ? ` · <span class="warn-t">phasenempfindlich – nur phasengemittelt dargestellt und ausgewertet (Sollwerte ebenso)</span>` : "");
+  $("wiglbl").innerHTML = (ps ? "<b>phasengemittelt</b> (Phasenstruktur des Zustands nicht sichtbar)" : "phasengemittelt") + ", W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)";
+  const En = (g) => g.eta_n != null ? fmtE(g.eta_n, g.eta_n_err) : "–";
   $("restbl").innerHTML = `<tr><th></th><th>A (herald-bedingt)</th><th>B (frei laufend)</th></tr>` +
     row("N", A.n ?? "–", B.n ?? "–") + row("Var x", fmtE(A.var_x, A.var_err), fmtE(B.var_x, B.var_err)) +
-    row("W(0,0)", W(A), W(B)) + row("η (Fit)", E(A), E(B)) + row("⟨n⟩", fmt(A.mean_n), fmt(B.mean_n)) +
-    row("g²(0)", fmt(A.g2, 3), fmt(B.g2, 2)) + row("F (verlustbeh. |1⟩)", fmt(A.fidelity_lossy_fock1, 4), fmt(B.fidelity_lossy_fock1, 4)) +
+    row("W(0,0)", W(A), W(B)) + (f1 ? row("η (Fit)", E(A), E(B)) : row("η (⟨n⟩)", En(A), "–")) + row("⟨n⟩", fmt(A.mean_n), fmt(B.mean_n)) +
+    row("g²(0)", fmt(A.g2, 3), fmt(B.g2, 2)) + (f1 ? row("F (verlustbeh. |1⟩)", fmt(A.fidelity_lossy_fock1, 4), fmt(B.fidelity_lossy_fock1, 4)) : "") +
     row("A − B", `ΔVar = ${fmtE(C.diff_var_x?.value, C.diff_var_x?.err)}`, `ΔW(0,0) = ${fmtE(C.diff_W00?.value, C.diff_W00?.err)} (z = ${fmt(C.diff_W00?.z, 1)})`);
   const neg = A.W00 != null && A.W00_err ? (-A.W00 / A.W00_err) : null;
   $("reswarn").innerHTML = (neg != null && neg > 0 ? `<span class="ok-t">W_A(0,0) &lt; 0 mit ${neg.toFixed(1)} σ (nichtklassisch)</span><br>` : "") +
@@ -259,7 +274,7 @@ function renderResult(R) {
   const ev = (o) => o && typeof o === "object" ? fmtE(o.value, o.err) : fmt(o, 4);
   $("budget").innerHTML = brow("Herald-Rate", fmt(eb.herald_rate_per_s, 0) + " /s") + brow("ξ (Herald-Reinheit)", fmt(eb.xi, 4)) +
     brow("η_el (elektronisch)", fmtE(eb.eta_el, eb.eta_el_err)) + brow("η_Mode (PCA)", fmt(eb.eta_mode_pca, 4)) +
-    brow("η_eff (Fit)", ev(eb.eta_eff_fit)) + brow("η_eff (Varianz)", ev(eb.eta_eff_var)) + brow("η_rest", ev(eb.eta_rest));
+    (f1 ? brow("η_eff (Fit)", ev(eb.eta_eff_fit)) : brow("η_eff (⟨n⟩)", ev(eb.eta_eff_n)) + brow("η_eff (|1⟩-Fit, nicht gültig)", ev(eb.eta_eff_fit))) + brow("η_eff (Varianz)", ev(eb.eta_eff_var)) + brow("η_rest", ev(eb.eta_rest));
 }
 function wr(g, r) { const R = g.wigner_r || [], V = g.wigner_radial || []; if (r >= R[R.length - 1]) return V[V.length - 1] || 0; let i = 1; while (i < R.length && R[i] < r) i++; const t = (r - R[i - 1]) / (R[i] - R[i - 1]); return V[i - 1] * (1 - t) + V[i] * t; }
 function drawWigner(A) {

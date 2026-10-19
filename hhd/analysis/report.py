@@ -17,6 +17,12 @@ def _pm(g, q, fmt="{:.4f}"):
 def render_report(r: dict) -> str:
     L = [f"# Auswertung {r.get('session_id', '')}", "",
          f"Sitzung `{r['session']}`, Software hhd {r['software']['version']}, Schema `{r['schema']}`.", ""]
+    st = r.get("state") or {}
+    if st:
+        L += [f"Geheraldeter Zustand (A): **{st.get('label', st.get('preset'))}** (`{st.get('preset')}`"
+              + (f", ⟨n⟩ ideal {st['mean_n_ideal']:.3f}" if st.get("mean_n_ideal") is not None else "") + ")"
+              + ("; phasenempfindlich – Auswertung und Sollwerte nur phasengemittelt" if st.get("phase_sensitive") else "")
+              + ("; Annahme (keine Angabe in den Daten)" if st.get("assumed") else "") + ".", ""]
     c = r["calibration"]; p = r["params"]
     L += ["## Kalibrierung", "",
           f"* Normierung: **{c['norm']}**, K-V-Records: {c['n_kv']}, Skala {c['scale_lsb']:.2f} LSB/√(½)",
@@ -76,6 +82,9 @@ def render_report(r: dict) -> str:
         L += ["", "## Effizienzbudget", "",
               f"* Herald-Rate {eb['herald_rate_per_s']:.0f}/s, Dunkelrate {eb['dark_count_rate_per_s']:.0f}/s → "
               f"ξ = {_f(eb['xi'])}", f"* η_el = {_f(eb['eta_el'])}, Modenüberlapp (PCA, rauschkorrigiert) = {_f(eb['eta_mode_pca'])}"]
+        if "eta_eff_n" in eb:
+            L.append(f"* η_eff aus (Var − ½)/⟨n⟩_ideal = {eb['eta_eff_n']['value']:.4f} ± {_f(eb['eta_eff_n']['err'])} "
+                     f"(η_rest beruht hierauf; der |1⟩-Fit gilt für diesen Zustand nicht)")
         if "eta_eff_fit" in eb:
             L.append(f"* η_eff (Fit) = {eb['eta_eff_fit']['value']:.4f} ± {_f(eb['eta_eff_fit']['err'])}; "
                      f"(Var − ½) = {eb['eta_eff_var']['value']:.4f}; η_rest = {eb['eta_rest']['value']:.4f} "
