@@ -196,6 +196,23 @@ Polarisation). Die Pfade stammen aus einem eigenen Zweig des Sitzungs-Seeds; Sit
 Drift bleiben bitgleich. Die Wahrheit steht in `truth.h5` unter `/drift` (t_grid, lo, eta_factor, monitor_gain).
 Szenarien „gut“, „typisch“, „schlecht“: `hhd.sim.drift.SCENARIOS`.
 
+### Weitere geheraldete Zustände (ab 0.14)
+
+`source.heralded_state` wählt eine Voreinstellung aus `hhd.sim.states.STATE_PRESETS`: `fock1` (Standard),
+`fock2`, `fock3`, `fock01` ((|0⟩+|1⟩)/√2), `cat_even_1`/`cat_odd_1`/`cat_even_2`/`cat_odd_2` (Katzen α = 1, 2),
+`kitten_3dB` (photonensubtrahiertes gequetschtes Vakuum, a·S(r)|0⟩), `coherent_1`, `squeezed_3dB`/`squeezed_6dB`
+und `thermal_0.5`. Verlust wie bisher exakt (x → √η·x + √(1−η)·v); Überlagerungen werden über die gedrehte
+Wellenfunktion ⟨x_θ|ψ⟩ = Σ c_n e^{−inθ} ψ_n(x) gezogen, gequetschtes Vakuum gaußsch mit
+Var = ½(cosh 2r − sinh 2r·cos 2(θ−φ)). Der Server-Laufplan `kurz_<zustand>` (`hhd/sim/state_plans.py`) nutzt den
+Aufbau von `kurz` mit A 2 × 3 s und K-V 2 × 1 s und setzt bei phasenempfindlichen Zuständen die LO-Phase auf
+`random`.
+
+**Phasengemittelt:** Die Auswertung v1.0 kennt keine LO-Phase. Die Sollwerte (`expected_json`) der geheraldeten
+Läufe sind deshalb phasengemittelt (Var x = ⟨n⟩ + ½, p_n, W(0,0) sind phasenunabhängig), sobald die Phase
+zufällig oder als Rampe läuft; `heralded_state` im Laufattribut beschreibt den vorgesehenen Zustand (ideal,
+ohne Verluste). Sollwert A: W(0,0) = ξ·W_η(0,0) + (1−ξ)/π, η_eff = ξ·η·η_el. Für B gilt
+n_eff = R·η·η_el·T·⟨n⟩_ideal. Herald für `fock2`/`fock3`: idealisiert (Photonenzahlauflösung angenommen).
+
 ### Laufplan und Studie
 
 `hhd/sim/plan.py` erzeugt Blockfolgen (`make_plan`: kv_00, kh_start, a_01, b_01, …, K-V nach je `kv_every`

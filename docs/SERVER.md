@@ -51,7 +51,9 @@ Dann im Browser `http://<mess-pc>:8766/` (LAN; Port 8766, GX nutzt 8765). Am Mes
 * **Fehlende Herstellerbibliothek:** klare Meldung mit Installationshinweis; `live_fallback = "refuse"`
   (Standard, Start gesperrt) oder `"sim"` (Rückfall, gekennzeichnet). Der Server stürzt nicht ab.
 * **Simulation/Wiedergabe:** Laufpläne `standard` (M1 im Zeitraffer,
-  18 Läufe, ≈ 16 s mit Pausen) und `kurz` (7 Läufe); `speed` = Echtzeitfaktor.
+  18 Läufe, ≈ 16 s mit Pausen) und `kurz` (7 Läufe) sowie ab 0.14 `kurz_<zustand>` für weitere
+  geheraldete Zustände (Fock |2⟩/|3⟩, Katzen, Kätzchen, kohärent, gequetscht, thermisch, Überlagerung;
+  phasengemittelt; Gruppen in `plan_groups`); `speed` = Echtzeitfaktor.
 
 ## 3 Bedienung (Web-App)
 

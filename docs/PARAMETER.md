@@ -16,7 +16,7 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `source.det_dead_s` | 3e-08 | s | **Spez.** | ID Quantique ID281 (Produktseite); ID Quantique ID Qube NIR Free-Running (Broschüre) | Totzeit/Erholzeit des Herald-Detektors (SNSPD typ. < 30 ns; InGaAs-APD 0,1–80 µs einstellbar, Preset 10 µs); Nachpulse nicht simuliert |
 | `source.eta_herald` | 0.51 |  | Annahme | Analyse Vergleich | Nachweiswahrscheinlichkeit im Herald-Arm = det_eff · herald_arm_T (ohne Angabe neu berechnet); bestimmt die Rate ungeheraldeter Signalphotonen R_herald·(1/η_h − 1) |
 | `source.eta` | 0.7 |  | Annahme | Vorbericht Synchronisation, Parameter | Zustandseffizienz η = η_QE(InGaAs, optics.eta_hd_qe) · η_Rest (Optik, Modenanpassung, Visibility²) vor elektronischem Rauschen |
-| `source.heralded_state` | fock1 |  | Vorschlag |  | Zustand der geheraldeten Mode (fock1; fock2 nur als Test) |
+| `source.heralded_state` | fock1 |  | Vorschlag |  | Zustand der geheraldeten Mode: Voreinstellung aus hhd.sim.states.STATE_PRESETS (fock1, fock2, fock3, fock01, cat_even_1, cat_odd_1, cat_even_2, cat_odd_2, kitten_3dB, coherent_1, squeezed_3dB, squeezed_6dB, thermal_0.5) |
 | `source.mode_shape` | double_exponential |  | Vorschlag |  | Temporale Mode: double_exponential f(t)=√γ·e^(−γ\|t\|) (CW-SPDC) oder gauss |
 | `source.gamma` | 2.5e+07 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Abklingrate der Mode (1/γ = 40 ns); bei gauss: 1/σ |
 | `source.sigma_spd` | 1.6986e-11 | s | **Spez.** | ID Quantique ID281 (Produktseite); ID Quantique ID Qube NIR Free-Running (Broschüre) | Jitter des Herald-Detektors (rms), gemeinsam für Harp und TRIG; Preset SNSPD 40 ps FWHM (ID281 Standard; Eos ≤ 15 ps), InGaAs-APD 150 ps FWHM |

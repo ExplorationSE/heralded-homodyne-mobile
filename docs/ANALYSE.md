@@ -406,3 +406,18 @@ Marker.
 - Die Synchronisation bleibt ein Batch je Lauf. Nach der Zuordnung werden die Laufdaten freigegeben
   (`SyncParams.release_runs`). Der Speicher wächst also mit der Laufdauer, nicht mit der Sitzungsdauer.
 - Für sehr lange Einzelläufe gibt es `hhd.sync.stream.StreamingSynchronizer` (ohne stückweise Korrektur und ohne Δ).
+
+## Andere Zustände als |1⟩ (ab 0.14)
+
+Die Auswertung liest den vorgesehenen Zustand aus dem Laufattribut `heralded_state` der A-Läufe
+(`result["state"]`, ohne Angabe: |1⟩). Für alle Zustände gilt die phasengemittelte Rekonstruktion (p_n,
+W(r), W(0,0)); phasenempfindliche Zustände (Katzen, Kätzchen, kohärent, gequetscht, Überlagerung) erscheinen
+deshalb rotationssymmetrisch, die Phasenstruktur ist nicht sichtbar. Für Zustände ≠ |1⟩:
+
+- **η aus ⟨n⟩:** `eta_n = (Var x − ½)/⟨n⟩_ideal` (für |1⟩ gleich `eta_var`); η_rest beruht darauf. Der
+  |1⟩-Verlustfit `eta_fit` wird mitgeführt, gilt aber nicht (Budget-Hinweis). η aus dem A/B-Vergleich wird
+  durch ⟨n⟩_ideal geteilt.
+- Die Treue zum verlustbehafteten |1⟩ entfällt in der App; `W00_moments` (N = 2) wird in `validate-analysis`
+  nur geprüft, wenn p_n ab n = 3 vernachlässigbar ist.
+- `validate-analysis` vergleicht für A Var x, W(0,0) und eta_n mit den phasengemittelten Sollwerten.
+

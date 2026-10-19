@@ -2,6 +2,32 @@
 
 ## 0.14.0.dev0 – 19.10.2026 (unveröffentlicht)
 
+Auftrag „weitere Zustände im Laufplan“ (Wunsch Herr Eilers):
+
+- **Neue geheraldete Zustände im Simulator** (`hhd/sim/states.py`, `STATE_PRESETS`):
+  - Fock |2⟩, |3⟩ und die Überlagerung (|0⟩+|1⟩)/√2;
+  - gerade/ungerade Katzen mit α = 1 und α = 2, das Kätzchen (photonensubtrahiertes gequetschtes Vakuum, 3 dB);
+  - kohärent |α=1⟩, gequetschtes Vakuum 3 dB/6 dB, thermisch n̄ = 0,5.
+- **Laufpläne `kurz_<zustand>`** (`hhd/sim/state_plans.py`) für „Datei (im Speicher)“ und „Datenstrom“:
+  - Aufbau wie „kurz“ mit A 2 × 3 s, z. B. „Kurz: Fock |2⟩ (7 Läufe)“;
+  - die Auswahlliste der Web-App ist gruppiert (`plan_groups`, optgroup).
+- **Phasengemittelt:** Phasenempfindliche Zustände laufen mit zufälliger LO-Phase.
+  - Sollwerte, Auswertung und Darstellung sind phasengemittelt.
+  - Die App kennzeichnet das beim Zustand und an der Wigner-Karte.
+- **Zustand in Metadaten und Ergebnis:**
+  - Laufattribut `heralded_state`, `server_session.json` (`state`, `plan_label`);
+  - Sitzungsliste, `result["state"]`, Kopfzeile des Berichts, Ergebnisansicht.
+- **Auswertung für Zustände ≠ |1⟩:**
+  - η aus (Var x − ½)/⟨n⟩_ideal (`eta_n`, Budget `eta_eff_n`), η_rest beruht darauf;
+  - der |1⟩-Fit und die |1⟩-Treue sind dort als nicht gültig gekennzeichnet bzw. ausgeblendet;
+  - `validate-analysis` prüft eta_n statt eta_fit.
+  - Für |1⟩ bleibt alles unverändert.
+- **Tests:** `tests/test_state_plans.py`:
+  - MC gegen ρ (Varianz, W(0,0), Histogramm) für alle Voreinstellungen;
+  - Var(θ) des gequetschten Vakuums;
+  - jeder neue Laufplan durch Simulation und Auswertung mit Sollwertvergleich;
+  - Datenstrom mit Katze; |1⟩ unverändert.
+
 Auftrag („weiter“): Farbe, PCA im Datenstrom, Langlauf mit 1000/s, speichersparendes `validate-records`.
 
 - **Web-App-Farben:** Rosa (#f472b6) ist durch Orange (#f97316) ersetzt, das zum Blau #38bdf8 passt und sich
