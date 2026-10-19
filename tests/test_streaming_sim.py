@@ -158,3 +158,26 @@ def test_record_truth_validation(tmp_path):
         a, b = sh[i[0]], sh[i[1]]
         sh[i[0]], sh[i[1]] = b, a
     assert validate_records(out, bad)["summary"]["misassigned"] == 2
+
+
+def test_validate_records_streams_ptu(tmp_path):
+    """0.14: Herald-Zeiten blockweise dekodiert ≡ vollständige Dekodierung; Speicher ohne Ereignisliste des Laufs."""
+    import gc
+    import tracemalloc
+    from hhd.sim.record_validate import herald_ps_stream, validate_records
+    from hhd.sync.pipeline import sync_session
+    cfg = _cfg([BlockCfg(id="kv_00", kind="vacuum", duration_s=0.5, periodic_rate=2000.0),
+                BlockCfg(id="a_00", kind="heralded", duration_s=4.0)])
+    out = tmp_path / "s"
+    StreamingSimulator(cfg, slice_s=0.5, record_truth_dir=out).run(out)
+    sync_session(out, None, out / "sync")
+    run = load_session(out, lazy=True).runs[1]
+    full = np.sort(run.harp.role_ps("herald")); n_ev = sum(len(v) for v in run.harp.channels.values())
+    run.release()
+    for ch in (1000, 1 << 18):
+        assert np.array_equal(herald_ps_stream(run, ch), full)
+    gc.collect(); tracemalloc.start()
+    v = validate_records(out, block=4096, chunk_records=4096)
+    peak = tracemalloc.get_traced_memory()[1]; tracemalloc.stop()
+    assert v["summary"]["misassigned"] == 0 and v["runs"]["a_00"]["n_matched"] > 300
+    assert peak < 8 * n_ev + 4e6, (peak, n_ev)

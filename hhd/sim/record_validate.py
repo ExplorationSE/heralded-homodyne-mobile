@@ -2,8 +2,9 @@
 
 Für Sitzungen über Stunden, bei denen ``hhd validate`` (Batch-Neusynchronisation gegen ``truth.h5`` mit allen
 Ereignissen) zu viel Speicher bräuchte: verglichen wird die vorhandene ``sync/sync.h5`` (auch segmentiert
-synchronisiert) blockweise mit ``truth_records.h5``. Speicher: Herald-Zeiten eines Laufs (8 B je Herald) plus ein
-Block von ``block`` Records.
+synchronisiert) blockweise mit ``truth_records.h5``. Speicher (0.14): die PTU-Datei wird in Blöcken dekodiert
+(``RunData.iter_harp``), gehalten werden nur die Herald-Zeiten eines Laufs (8 B je Herald) plus ein Block von
+``block`` Records – nicht mehr alle Ereignisse des Laufs.
 """
 from __future__ import annotations
 
@@ -20,7 +21,20 @@ from .digitizer import TRIG_HERALD
 from .streaming import RecordTruthWriter
 
 
-def validate_records(path: str | Path, sync_dir: str | Path | None = None, block: int = 1 << 18) -> dict:
+def herald_ps_stream(run, chunk_records: int = 1 << 18) -> np.ndarray:
+    """Herald-Zeiten (ps, sortiert) eines Laufs, PTU blockweise dekodiert."""
+    parts = [hs.role_ps("herald").astype(np.int64, copy=False) for hs in run.iter_harp(chunk_records)]
+    parts = [p for p in parts if len(p)]
+    if not parts:
+        return np.empty(0, np.int64)
+    h = np.concatenate(parts)
+    if len(h) > 1 and np.any(h[1:] < h[:-1]):
+        h.sort()
+    return h
+
+
+def validate_records(path: str | Path, sync_dir: str | Path | None = None, block: int = 1 << 16,
+                     chunk_records: int = 1 << 18) -> dict:
     path = Path(path)
     sd = Path(sync_dir) if sync_dir else path / "sync"
     tf = path / RecordTruthWriter.FILE
@@ -41,7 +55,7 @@ def validate_records(path: str | Path, sync_dir: str | Path | None = None, block
             if sg["seg_herald"].shape[0] != n:
                 out["runs"][bid] = dict(error=f"Recordzahl {sg['seg_herald'].shape[0]} ≠ Wahrheit {n}")
                 continue
-            ours = np.sort(run.harp.role_ps("herald"))
+            ours = herald_ps_stream(run, chunk_records)
             r = dict(n_records=0, herald_records=0, n_matched=0, misassigned=0, lost=0, lost_ambiguous=0,
                      matched_dark=0, matched_no_truth=0, complete=bool(tg.attrs.get("complete", False)))
             for s in range(0, n, block):
