@@ -203,8 +203,12 @@ mit `record_truth_dir` (Server: `sim_record_truth = true`) je Record die Trigger
 auslösenden Heralds und ob er ein Dunkelereignis war (`truth_records.h5`, scheibenweise angehängt). Verglichen
 wird blockweise mit der vorhandenen `sync.h5`: Fehlzuordnung = zugeordneter Herald ≠ wahrer Herald; verloren =
 Herald-Record ohne Zuordnung. Speicher: Herald-Zeiten eines Laufs (8 B je Herald) plus ein Block Records.
+Seit 0.14 wird die PTU-Datei dafür blockweise dekodiert (`herald_ps_stream`, `RunData.iter_harp`, Blöcke zu
+2¹⁸ PTU-Records); vorher wurde der ganze Harp-Strom eines Laufs mit allen Kanälen und Markern geladen
+(0.13-Langlauf: 403 MB). Record-Blöcke 2¹⁶ (vorher 2¹⁸).
 Prüfung: `tests/test_streaming_sim.py::test_record_truth_validation` (Batch und segmentiert 0 Fehlzuordnungen,
-zwei vertauschte Zuordnungen werden als 2 erkannt).
+zwei vertauschte Zuordnungen werden als 2 erkannt) und `::test_validate_records_streams_ptu` (blockweise ≡
+vollständig dekodiert, Speicher unter 8 B je Harp-Ereignis + 4 MB).
 
 ## 7 Schnittstelle für den Rust-Kern (AP9)
 
