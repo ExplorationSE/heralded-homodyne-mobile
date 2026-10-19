@@ -23,9 +23,9 @@ from hhd.sim.streaming import StreamingSimulator
 from hhd.sync.pipeline import sync_session
 
 
-def _gen(out, scale, sid):
+def _gen(out, scale, sid, L=1000, pre=400):
     cfg = SimConfig.load("config/standard.yaml")
-    cfg.digitizer.record_length, cfg.digitizer.pretrigger = 1000, 400
+    cfg.digitizer.record_length, cfg.digitizer.pretrigger = L, pre
     for b in cfg.blocks:
         b.duration_s = round(b.duration_s * scale / 0.25) * 0.25 or 0.25
     cfg.session.id = sid
@@ -155,3 +155,33 @@ def test_drift_over_replay(tmp_path):
     c = drift_over_replay(tmp_path / "c", chunk_s=0.5, window_s=2.0)
     assert abs(c["trend"]["eta"]["z"]) < 3.0 and abs(c["trend"]["lo"]["last"] - 1) < 0.003
     assert not any("LO-Leistung" in w for w in c["warnings"])
+
+
+def _pca_equal(a, b):
+    assert a and b and a["available"] and b["available"]
+    assert (a["n_A"], a["n_V"], a["bins"]) == (b["n_A"], b["n_V"], b["bins"])
+    for k in ("lambda1", "ratio_l2_l1", "overlap_param", "overlap_noise_expected", "overlap_param_corrected",
+              "gamma_fit", "centre_shift_ns"):
+        assert b[k] == pytest.approx(a[k], rel=1e-7, abs=1e-10), k
+    assert np.allclose(a["mode"], b["mode"], atol=1e-7)
+
+
+@pytest.fixture(scope="module")
+def session_pca(tmp_path_factory):
+    return _gen(tmp_path_factory.mktemp("pca") / "s", 1.0, "LONG-PCA", L=2000, pre=800)   # Fenster ±320 ns passt
+
+
+@pytest.mark.parametrize("cap", [20000, 300, 0])
+def test_streaming_pca_matches_in_memory(session_pca, tmp_path, cap):
+    """Inkrementelle Fensterkovarianz der Datenstrom-Auswertung ≡ In-Memory-PCA (gleiche Auswahl, Obergrenze)."""
+    sb = session_pca
+    ap = AnalysisParams(n_boot=2, pca_max_records=cap)
+    m = analyze_session(sb, ap, out_dir=tmp_path / "mem")
+    s = analyze_session_streaming(sb, ap, write=False)
+    _pca_equal(m["pca"], s["pca"])
+    if cap == 300:
+        assert s["pca"]["n_A"] <= 300 and s["pca"]["n_V"] <= 300
+    assert s["pca"]["streaming"]["incremental_covariance"]
+    assert s["efficiency_budget"]["eta_mode_pca"] == pytest.approx(m["efficiency_budget"]["eta_mode_pca"], rel=1e-7)
+    if cap != 300:                                                      # 300 Fenster: zu verrauscht
+        assert 0.9 < s["pca"]["overlap_param_corrected"] <= 1.0

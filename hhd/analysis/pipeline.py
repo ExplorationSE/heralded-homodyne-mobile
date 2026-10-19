@@ -33,6 +33,7 @@ class AnalysisParams:
     bandwidth_model: bool = True            # Analogbandbreite des Digitizers in der Vorlage berücksichtigen
     mode_source: str = "parametric"         # "pca": γ/Versatz aus PCA; "pca_raw": rohe Eigenmode (Prüfung)
     pca: bool = True
+    pca_max_records: int = 20000            # je Gruppe (A, K-V); ≤ 0: alle (Datenstrom: inkrementelle Kovarianz)
     norm: str = "pooled"
     clearance_dB: float | None = None
     estimator: str = "maxlik"
@@ -361,7 +362,7 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
         gA = [(runs[b], np.flatnonzero(m), ex["centres"][b]) for b, m in groups["A"]]
         gV = [(runs[b], np.arange(runs[b].n_records), ex["centres"][b]) for b, _ in groups["KV"]]
         var_sample = _vacuum_sample_var(gV, ex["offset"])
-        pca = pca_mode(gA, gV, ex["offset"], var_sample, spec)
+        pca = pca_mode(gA, gV, ex["offset"], var_sample, spec, max_records=ap.pca_max_records)
         timing["pca"] = time.time() - t
         if not pca["available"]:
             warnings.append("PCA nicht möglich: " + pca["reason"])

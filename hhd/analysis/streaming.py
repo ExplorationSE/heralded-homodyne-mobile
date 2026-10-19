@@ -177,6 +177,56 @@ def _eta_fit_binned_parts(P1: np.ndarray, w: np.ndarray, max_iter: int = 200) ->
 
 
 # ---------------------------------------------------------------- Durchgang 1: Rohquadraturen je Lauf
+class _PCAAcc:
+    """Inkrementelle Fensterkovarianz für die PCA (wie ``modes.pca.pca_mode``, gleiche Auswahl und Obergrenze)."""
+
+    def __init__(self, spec, off, cap, half_ns=320.0, B=8, n_var=2000):
+        from ..modes.pca import pca_geometry
+        self.spec, self.off, self.half_ns, self.B, self.n_var = spec, off, half_ns, B, n_var
+        self.half, self.nb = pca_geometry(spec, half_ns, B)
+        self.cap = cap if cap and cap > 0 else np.inf
+        self.S = {g: [np.zeros(self.nb), np.zeros((self.nb, self.nb)), 0] for g in ("A", "KV")}
+        self.var_s = 0.0; self.var_n = 0
+
+    def start_run(self, group):
+        """Indexbudget des Laufs (In-Memory: ``idx[:cap − N]`` vor der Fensterprüfung)."""
+        if group is None:
+            return None
+        N = self.S[group][2]
+        return dict(group=group, budget=(np.inf if not np.isfinite(self.cap) else max(0, int(self.cap - N))),
+                    skip=N >= self.cap, i_var=0)
+
+    def add(self, st, data, sel, centre_D, first_D, fs):
+        from ..modes.pca import window_sums, window_start
+        if st is None:
+            return
+        if st["group"] == "KV" and st["i_var"] < self.n_var:
+            k = min(self.n_var - st["i_var"], len(data))
+            d = data[:k].astype(np.float64) - self.off
+            self.var_s += float(np.sum(d ** 2)); self.var_n += d.size; st["i_var"] += k
+        if st["skip"] or st["budget"] <= 0:
+            return
+        ii = np.flatnonzero(sel)
+        if np.isfinite(st["budget"]):
+            ii = ii[: st["budget"]]
+            st["budget"] -= len(ii)
+        if not len(ii):
+            return
+        a, b, n = window_sums(data[ii], window_start(centre_D[ii], first_D[ii], fs, self.half), self.nb, self.B, self.off)
+        S = self.S[st["group"]]
+        S[0] += a; S[1] += b; S[2] += n
+
+    def result(self):
+        from ..modes.pca import pca_from_sums
+        if self.var_n == 0:
+            return dict(available=False, reason="kein K-V-Lauf", n_A=int(self.S["A"][2]), n_V=0)
+        r = pca_from_sums(tuple(self.S["A"]), tuple(self.S["KV"]), self.var_s / self.var_n, self.spec, self.half_ns,
+                          self.B)
+        r["streaming"] = dict(incremental_covariance=True,
+                              max_records=None if not np.isfinite(self.cap) else int(self.cap))
+        return r
+
+
 class _Mom:
     """Summen der Rohquadratur (verschoben um den ersten Blockmittelwert) und des LO-Monitors."""
 
@@ -215,7 +265,7 @@ def _sync_slice(g, name, sl):
     return g[name][sl] if name in g else None
 
 
-def _pass1(session, rep, h5s, ap, spec, bank, off, qf, chunk):
+def _pass1(session, rep, h5s, ap, spec, bank, off, qf, chunk, pca=None):
     """Rohquadraturen je Lauf blockweise; schreibt nach ``qf`` (quadratures.h5), liefert Summen je Lauf."""
     dT = float(rep.get("delta", {}).get("delta_T_s", np.nan)) if rep.get("delta", {}).get("available") else np.nan
     if not np.isfinite(dT):
@@ -239,6 +289,7 @@ def _pass1(session, rep, h5s, ap, spec, bank, off, qf, chunk):
         mom = _Mom()
         lo_b_all = _lo_b_iter(r, chunk)
         n_low = 0
+        pst = pca.start_run({"heralded": "A", "vacuum": "KV"}.get(r.dataset_type)) if pca is not None else None
         for i0, hd in r.iter_headers(chunk):
             sl = slice(i0, i0 + len(hd["timestamp"]))
             tu = r.time_unit
@@ -258,7 +309,6 @@ def _pass1(session, rep, h5s, ap, spec, bank, off, qf, chunk):
                     clean = m & (g["seg_n_secondary"][sl] == 0) & ~g["seg_overlap_prev"][sl].astype(bool)
             data = r.read_records(sl)
             q, cov = project_records(data, (c - first) * r.fs, bank, off)
-            del data
             lo_b = next(lo_b_all)
             clean &= cov >= 0.99
             n_low += int(np.sum(cov < 0.99))
@@ -271,6 +321,9 @@ def _pass1(session, rep, h5s, ap, spec, bank, off, qf, chunk):
                 main = (sc == A.SEG_STATE) & (cov >= 0.99); rnd = np.zeros(len(sc), bool)
             else:
                 main = cov >= 0.99; rnd = np.zeros(len(sc), bool)
+            if pst is not None:
+                pca.add(pst, data, main if pst["group"] == "A" else np.ones(len(main), bool), c, first, r.fs)
+            del data
             vals = dict(q_raw_lsb=q, coverage=cov, clean=clean, seg_class=sc, t_session_s=g["record_time_session_s"][sl],
                         lo_b_lsb=lo_b, centre_D_s=c, main=main, random=rnd)
             for k, v in vals.items():
@@ -498,7 +551,8 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
     with h5py.File(sync_dir / "sync.h5", "r") as h5s, h5py.File(qpath, "w") as qf:
         qf.attrs["schema"] = "hhd-quadratures/1.0"
         qf.attrs["streaming"] = True
-        moms, info = _pass1(session, rep, h5s, ap, spec, bank, off, qf, chunk)
+        pacc = _PCAAcc(spec, off, ap.pca_max_records) if ap.pca else None
+        moms, info = _pass1(session, rep, h5s, ap, spec, bank, off, qf, chunk, pacc)
         timing["extract"] = time.time() - t
         kinds = {b: kinds[b] for b in moms}
         t = time.time()
@@ -533,6 +587,14 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
         for r in session.runs:
             r.release()
     warnings += cal.warnings + xt.get("flags", [])
+    pca = None
+    if pacc is not None and "A" in H and any(kinds[b] == "vacuum" for b in moms):
+        t = time.time()
+        pca = pacc.result()
+        timing["pca"] = time.time() - t
+        if not pca["available"]:
+            warnings.append("PCA nicht möglich: " + pca["reason"])
+            pca = None
     groups = {k: dict(runs=list(v), n=int(sum(h.n for h in v.values()))) for k, v in H.items() if not k.startswith("_")}
     if n_el:
         groups["EL"] = dict(runs=list(n_el), n=int(sum(n_el.values())))
@@ -540,7 +602,7 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
                         session_id=session.session_id, campaign_id=session.campaign_id,
                         calibration_id=session.calibration_id, params=asdict(ap),
                         mode=dict(spec.to_dict(), bandwidth_effect=float(bank.bandwidth_effect), adc_offset_lsb=off),
-                        calibration=cal.to_dict(), drift_vacuum_lo=drift_kv, crosstalk=xt, pca=None, groups=groups,
+                        calibration=cal.to_dict(), drift_vacuum_lo=drift_kv, crosstalk=xt, pca=pca, groups=groups,
                         streaming=dict(chunk_records=chunk, hist_lim=LIM, hist_bin=1 / FINE, maxlik_bin=REBIN / FINE,
                                        bootstrap="Poisson je Bin und Lauf, Vakuum aus K-V-Momenten",
                                        n_outside=n_out))
@@ -603,7 +665,7 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
         result["comparison"] = comp
         timing["compare"] = time.time() - t
     sd = SimpleNamespace(runs={b: SimpleNamespace(report=rep["runs"].get(b, {})) for b in runs})
-    result["efficiency_budget"] = efficiency_budget(session, sd, cal, res_groups, None, comp, ap)
+    result["efficiency_budget"] = efficiency_budget(session, sd, cal, res_groups, pca, comp, ap)
     result["warnings"] = warnings
     timing["total"] = time.time() - t0
     result["performance"] = dict(timing_s=timing, n_records=int(sum(m.n for m in moms.values())))

@@ -13,50 +13,83 @@ import numpy as np
 from .extract import ModeSpec, mode_function
 
 
-def _accumulate(run, idx, centre_D, half, B, offset, scale, chunk=1024):
-    """Summe und Summe der äußeren Produkte der gebinnten Fenster."""
+def window_sums(data, st, nb, B, offset):
+    """Gebinnte Fenster (Rohsummen je Bin, LSB, ohne Skalierung) ab Startsample ``st``; nur vollständige Fenster.
+
+    Liefert (Σw, Σwwᵀ, n) – additiv über Blöcke, daher für die Datenstrom-Auswertung geeignet."""
+    L = data.shape[1]
+    ok = (st >= 0) & (st + nb * B <= L)
+    if not ok.any():
+        return np.zeros(nb), np.zeros((nb, nb)), 0
+    cols = st[ok, None] + np.arange(nb * B)[None, :]
+    w = np.take_along_axis(np.asarray(data[ok], dtype=np.float64), cols, axis=1)
+    w = (w - offset).reshape(ok.sum(), nb, B).sum(-1)
+    return w.sum(0), w.T @ w, int(len(w))
+
+
+def window_start(centre_D, first_D, fs, half):
+    return np.rint((centre_D - first_D) * fs).astype(np.int64) - half
+
+
+def pca_geometry(spec: ModeSpec, half_ns: float = 320.0, bin_samples: int = 8):
+    """(half, nb): halbe Fensterlänge in Samples (Vielfaches von ``bin_samples``) und Zahl der Bins."""
+    half = int(round(half_ns * 1e-9 * spec.fs / bin_samples)) * bin_samples
+    return half, (2 * half) // bin_samples
+
+
+def _accumulate(run, idx, centre_D, half, B, offset, chunk=1024):
+    """Summe und Summe der äußeren Produkte der gebinnten Fenster (Rohsummen)."""
     nb = (2 * half) // B
     s1 = np.zeros(nb); s2 = np.zeros((nb, nb)); n = 0
     first = run.first_sample_D()
-    L = run.record_length
     idx = np.sort(idx)
     for s in range(0, len(idx), chunk):
         ii = idx[s:s + chunk]
-        data = run.read_records(ii).astype(np.float64)
-        st = np.rint((centre_D[ii] - first[ii]) * run.fs).astype(np.int64) - half
-        ok = (st >= 0) & (st + nb * B <= L)
-        if not ok.any():
-            continue
-        cols = st[ok, None] + np.arange(nb * B)[None, :]
-        w = np.take_along_axis(data[ok], cols, axis=1)
-        w = (w - offset).reshape(ok.sum(), nb, B).sum(-1) / (scale * np.sqrt(B))   # Var ≈ ½ je Bin im Vakuum
-        s1 += w.sum(0); s2 += w.T @ w; n += len(w)
+        data = run.read_records(ii)
+        a, b, k = window_sums(data, window_start(centre_D[ii], first[ii], run.fs, half), nb, B, offset)
+        s1 += a; s2 += b; n += k
     return s1, s2, n
 
 
 def pca_mode(groups_A, groups_V, offset: float, var_kv_sample: float, spec: ModeSpec, half_ns: float = 320.0,
              bin_samples: int = 8, max_records: int = 20000) -> dict:
-    """``groups_*``: Liste (run, idx, centre_D). ``var_kv_sample``: Vakuumvarianz je Sample (LSB²)."""
-    fs = spec.fs
-    half = int(round(half_ns * 1e-9 * fs / bin_samples)) * bin_samples
-    scale = np.sqrt(var_kv_sample / 0.5)
+    """``groups_*``: Liste (run, idx, centre_D). ``var_kv_sample``: Vakuumvarianz je Sample (LSB²).
+
+    ``max_records`` ≤ 0: alle Records."""
+    half, nb = pca_geometry(spec, half_ns, bin_samples)
+    cap = max_records if max_records and max_records > 0 else np.inf
 
     def acc(groups):
-        S1 = S2 = None; N = 0
-        nb_ = (2 * half) // bin_samples
-        for run, idx, c in groups:
-            if N >= max_records:
+        S1 = np.zeros(nb); S2 = np.zeros((nb, nb)); N = 0
+        for run, idx, c in groups or []:
+            if N >= cap:
                 break
-            idx = idx[: max(0, max_records - N)]
-            s1, s2, n = _accumulate(run, idx, c, half, bin_samples, offset, scale)
-            S1 = s1 if S1 is None else S1 + s1; S2 = s2 if S2 is None else S2 + s2; N += n
-        if N == 0:
-            return None, 0
-        m = S1 / N
-        return S2 / N - np.outer(m, m), N
+            if np.isfinite(cap):
+                idx = idx[: max(0, int(cap - N))]
+            s1, s2, n = _accumulate(run, idx, c, half, bin_samples, offset)
+            S1 += s1; S2 += s2; N += n
+        return S1, S2, N
 
-    CA, nA = acc(groups_A) if groups_A else (None, 0)
-    CV, nV = acc(groups_V) if groups_V else (None, 0)
+    return pca_from_sums(acc(groups_A), acc(groups_V), var_kv_sample, spec, half_ns, bin_samples)
+
+
+def pca_from_sums(sums_A, sums_V, var_kv_sample: float, spec: ModeSpec, half_ns: float = 320.0,
+                  bin_samples: int = 8) -> dict:
+    """PCA aus additiven Fenstersummen (Σw, Σwwᵀ, n) für A und K-V (Rohsummen, LSB, Offset abgezogen).
+
+    Gemeinsamer Kern der In-Memory- und der Datenstrom-Auswertung (inkrementelle Kovarianz)."""
+    fs = spec.fs
+    norm = var_kv_sample / 0.5 * bin_samples              # → Var ≈ ½ je Bin im Vakuum
+
+    def cov(S):
+        s1, s2, n = S
+        if n == 0:
+            return None, 0
+        m = s1 / n
+        return (s2 / n - np.outer(m, m)) / norm, int(n)
+
+    CA, nA = cov(sums_A)
+    CV, nV = cov(sums_V)
     if nA < 100 or nV < 100:
         return dict(available=False, reason=f"zu wenige vollständige Fenster (A {nA}, K-V {nV}; Fenster ±{half_ns} ns)",
                     n_A=int(nA), n_V=int(nV))
