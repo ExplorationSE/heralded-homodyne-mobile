@@ -4,4 +4,4 @@ Teilpakete: ``hhd.sim`` (Simulator, AP2), ``hhd.io`` (Dateiformate, Import), ``h
 Zuordnung). Die weiteren Teilpakete laut Gesamtplan (calib, modes, recon, compare, devices, run, ...) folgen.
 """
 
-__version__ = "0.13.0.dev0"
+__version__ = "0.14.0.dev0"

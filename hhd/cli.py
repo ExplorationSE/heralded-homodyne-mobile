@@ -215,6 +215,8 @@ def _aparams(a):
         ap.mode_shape = a.mode_shape
     ap.boot_vacuum = not a.no_boot_vacuum
     ap.pca = not a.no_pca or ap.mode_source in ("pca", "pca_raw")
+    if getattr(a, "pca_max_records", None) is not None:
+        ap.pca_max_records = int(a.pca_max_records)
     ap.bandwidth_model = not a.no_bandwidth
     return ap
 
@@ -376,6 +378,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--estimator", choices=("maxlik", "em", "binned", "moments"))
         p.add_argument("--nmax", type=int); p.add_argument("--n-boot", type=int); p.add_argument("--seed", type=int)
         p.add_argument("--mode-source", choices=("parametric", "pca", "pca_raw"))
+        p.add_argument("--pca-max-records", type=int, default=None,
+                       help="PCA: höchstens so viele Fenster je Gruppe (Standard 20000, 0 = alle)")
         p.add_argument("--no-pca", action="store_true"); p.add_argument("--no-bandwidth", action="store_true")
         p.add_argument("--no-boot-vacuum", action="store_true", help="Vakuumnormierung im Bootstrap festhalten (alt)")
         p.add_argument("--dark-count-rate", type=float, help="Herald-Dunkelzählrate 1/s für ξ (Standard 100)")

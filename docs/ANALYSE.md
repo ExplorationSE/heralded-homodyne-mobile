@@ -356,7 +356,16 @@ Server ab `streaming_records` Records). Der Speicher hängt nur von der Blockgr�
    - die Vakuumnormierung wird je Ziehung aus den K-V-Momenten neu gezogen.
 
    KS-Test und χ² A/B kommen aus den Histogramm-CDFs. Nulltests laufen über die Lauf-Hälften. Konfidenzintervalle
-   sind normal/Perzentil; es gibt keine PCA, und die Mode ist parametrisch.
+   sind normal/Perzentil; die Mode ist parametrisch (`mode_source = pca` wird nicht unterstützt).
+5. **PCA/Modenüberlapp (0.14)** im Durchgang 1 (`_PCAAcc`, `modes.pca.window_sums`/`pca_from_sums`):
+   - je Block werden die gebinnten Fenster (±320 ns, 8 Samples je Bin) der sauberen A-Records und der K-V-Records
+     zu Σw und Σwwᵀ aufsummiert (inkrementelle Kovarianz, Speicher nb² ≈ 200² Werte je Gruppe);
+   - Vakuumvarianz je Sample aus den ersten 2000 Records je K-V-Lauf, wie im Speicher;
+   - Auswahl und Obergrenze `pca_max_records` (Standard 20 000 Fenster je Gruppe, 0 = alle;
+     `--pca-max-records`) wie im Speicher; λ, Überlapp, Rauschkorrektur, τ/Versatz aus demselben Kern
+     `pca_from_sums` → Ergebnis gleich der In-Memory-PCA (Test `test_streaming_pca_matches_in_memory`,
+     rel. 10⁻⁷);
+   - der rauschkorrigierte Überlapp erscheint im Effizienzbudget (`eta_mode_pca`, vorher „–“).
 
 **Drift über Wiedergabe** `hhd.analysis.replaydrift.drift_over_replay` (`hhd drift <sitzung>`):
 - `ReplayBackend` ohne Echtzeit liefert Fenster von 1 s an `DriftMonitor` (LO aus Kanal B, Vakuumvarianz, η).
