@@ -460,7 +460,7 @@ def _json_default(o):
 
 def _write_json(out: Path, rep: dict) -> None:
     js = {k: v for k, v in rep.items() if not k.startswith("_")}
-    (out / "sync.json").write_text(json.dumps(js, indent=1, ensure_ascii=False, default=_json_default))
+    (out / "sync.json").write_text(json.dumps(js, indent=1, ensure_ascii=False, default=_json_default), encoding="utf-8")
 
 
 def _write_h5_header(f: h5py.File, sess) -> None:
