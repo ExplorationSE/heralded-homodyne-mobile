@@ -55,6 +55,7 @@ class AnalysisParams:
     phase: bool = True
     phase_ref_max_records: int = 50000      # je K-θ-Lauf für den Kalibrierfit
     phase_cal_deg: int = 3                  # Polynomgrad V → θ je Rampenrichtung
+    theta_noise_prior_rad: float = 0.03     # angenommenes Phasenrauschen je Record (Untergrenze in σ_θ; aus K-θ kaum messbar)
     theta_sign: int = 1                     # +1: θ steigt mit der Rampenspannung (Vorzeichen nicht messbar, Aufbau)
     tomo_eta_extra: float = 1.0             # zusätzlich bekannte Detektionseffizienz in der POVM (× η_el)
     tomo_nmax: int = 30
@@ -486,13 +487,14 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
     result["state"] = session_state(session)
     if "reconstruct" in stages and ap.phase:
         t = time.time()
-        from .phase import MemorySource, phase_analysis
+        from .phase import MemorySource, annotate_warnings, phase_analysis
         od_ph = (Path(out_dir) if out_dir else Path(session.path) / "analysis") if write else None
         if od_ph is not None:
             od_ph.mkdir(parents=True, exist_ok=True)
         result["phase"] = phase_analysis(session, MemorySource(quads, cal, groups), cal, ap,
                                          (result.get("efficiency_budget") or {}).get("xi"), result["state"], od_ph)
         warnings += result["phase"].get("warnings", [])
+        warnings[:] = annotate_warnings(warnings, result["phase"], result["state"])
         timing["phase"] = time.time() - t
     result["warnings"] = warnings
     timing["total"] = time.time() - t0

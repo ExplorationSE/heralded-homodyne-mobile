@@ -101,6 +101,7 @@ class PhaseCalibration:
             br = np.where(inside, (t - a) * (b - t) / np.maximum(b - a, 1e-9),
                           np.minimum(np.abs(t - tr[0]), np.abs(t - tr[-1])))
             var = var + self.q_drift ** 2 * np.clip(br, 0, None)
+        var = var + self.phase_noise_rad ** 2            # Phasenrauschen je Record (aus dem K-θ-Fit, nicht vorhersagbar)
         th = np.mod(th, 2 * np.pi) if wrap else th
         return th, np.sqrt(np.clip(var, 0, None))
 
@@ -233,10 +234,20 @@ def fit_phase_calibration(refs: list[dict], V_max: float, waveform: str = "trian
     if A < 1.0:
         warn.append(f"Referenzamplitude A = {A:.2f} klein: θ-Fit unsicher")
     q["warnings"] = warn
+    # Zufallsdrift q (rad/√s) für die Brownsche Brücke: die lineare Interpolation nimmt die gleichmäßige Drift heraus,
+    # daher ab drei Referenzläufen aus den zweiten Differenzen; bei zwei Läufen konservativ aus der ersten Differenz.
     qd = 0.0
-    if K > 1:
-        dd = np.diff(dl); dt = np.diff(t_ref)
-        qd = float(np.sqrt(np.sum(dd ** 2) / max(np.sum(dt), 1e-9)))
+    dt = np.diff(t_ref)
+    if K > 2:
+        sl = np.diff(dl) / np.maximum(dt, 1e-9)
+        d2 = np.diff(sl)
+        w = 1 / np.maximum(dt[:-1], 1e-9) + 1 / np.maximum(dt[1:], 1e-9)
+        qd = float(np.sqrt(np.mean(d2 ** 2 / w)))
+        q["drift_estimate"] = "zweite Differenzen"
+    elif K == 2:
+        qd = float(abs(dl[1] - dl[0]) / np.sqrt(max(dt[0], 1e-9)))
+        q["drift_estimate"] = "erste Differenz (konservativ)"
+    q["q_drift_rad_per_sqrt_s"] = qd
     return PhaseCalibration(deg=deg, branches=branches, coef=coef, t_ref=t_ref, delta=dl, cov=covp, A=float(A),
                             V_max=float(V_max), waveform=waveform, sign=int(sign), phase_noise_rad=float(np.sqrt(sphi2)),
                             q_drift=qd, quality=q, ref_blocks=[r.get("block", "") for r in refs])

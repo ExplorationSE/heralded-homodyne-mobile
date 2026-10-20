@@ -116,6 +116,10 @@ def phase_analysis(session, src, cal, ap, xi: float | None, state: dict | None, 
         refs.append(dict(block=r.block_id, x=x[m], V=V[m], d=d[m], t=t[m]))
     pc = fit_phase_calibration(refs, V_max=V_max, waveform=waveform, deg=ap.phase_cal_deg, sign=ap.theta_sign)
     warnings = list(pc.quality.get("warnings", []))
+    # Phasenrauschen je Record ist mit K-θ (α ≈ 2, einige 10³ Records) kaum auflösbar → angenommene Untergrenze
+    pc.quality["phase_noise_fit_rad"] = pc.phase_noise_rad
+    pc.phase_noise_rad = max(pc.phase_noise_rad, float(ap.theta_noise_prior_rad))
+    pc.quality["phase_noise_used_rad"] = pc.phase_noise_rad
     # θ je Record, phase.h5, Histogramm der A-Records
     H = T.PhaseHist(n_theta=96, dx=0.05, xmax=8.0)
     err_A = []
@@ -184,13 +188,16 @@ def phase_analysis(session, src, cal, ap, xi: float | None, state: dict | None, 
             n_id = float(state.get("mean_n_ideal") or np.real(np.trace(rt @ np.diag(np.arange(rt.shape[0])))))
             xx = xi if (xi is not None and np.isfinite(xi) and xi > 0) else 1.0
             eta_o = float(np.clip(met["mean_n"] / (xx * n_id), 0.05, 1.0)) if n_id > 0 else 1.0
-            lm = loss_channel(rt, eta_o)[:N, :N]
+            sd = float(np.median(eA)) if len(eA) else 0.0      # Dephasierung durch die θ-Unsicherheit
+            kk = np.arange(rt.shape[0])
+            lm = (loss_channel(rt, eta_o) * np.exp(-0.5 * sd ** 2 * (kk[:, None] - kk[None, :]) ** 2))[:N, :N]
             model = xx * lm; model[0, 0] += 1 - xx
             model = model / np.real(np.trace(model))
             F_i, phi_i = T.fidelity_max_rotation(rho, target, pure=True)
             F_m, phi_m = T.fidelity_max_rotation(rho, model)
             fid = dict(F_ideal=F_i, F_ideal_rotation_rad=phi_i, F_model=F_m, F_model_rotation_rad=phi_m,
-                       model=dict(xi=xx, eta_optical=eta_o, note="ξ·L_η(ρ_soll) + (1−ξ)|0⟩⟨0|, η aus ⟨n⟩"))
+                       model=dict(xi=xx, eta_optical=eta_o, dephasing_rad=sd,
+                                  note="ξ·D_σθ(L_η(ρ_soll)) + (1−ξ)|0⟩⟨0|, η aus ⟨n⟩, σ_θ = Median der θ-Unsicherheit"))
         except Exception as e:                       # Sollzustand unbekannt: keine Treue
             warnings.append(f"Treue zum Sollzustand nicht berechnet: {e}")
     boot = _boot(tm, rho, counts, ap.n_boot_tomo, rng, target, model, ap.tomo_boot_iter) if ap.n_boot_tomo > 1 else {}
@@ -219,6 +226,18 @@ def phase_analysis(session, src, cal, ap, xi: float | None, state: dict | None, 
                rho=dict(re=np.round(np.real(rho), 6).tolist(), im=np.round(np.imag(rho), 6).tolist()),
                warnings=warnings, file="phase.h5" if ph_path else None)
     return out
+
+
+VAR_TESTS = ("A-Läufe: Varianz", "A-B-A: A-Varianz", "Nulltest AA")
+
+
+def annotate_warnings(warnings: list, phase: dict, state: dict | None) -> list:
+    """Varianz-Nulltests der phasengemittelten Auswertung kennzeichnen: Bei Piezo-Rampe und phasenempfindlichem Zustand
+    hängt die gepoolte Varianz eines Laufs von seiner θ-Abdeckung ab (Hub ≠ ganzzahlige Wellenlängen, Drift)."""
+    if not (phase or {}).get("available") or not (state or {}).get("phase_sensitive"):
+        return warnings
+    note = " – erwartet bei Piezo-Rampe (θ-Abdeckung je Lauf ungleich), maßgeblich ist die phasenaufgelöste Auswertung"
+    return [w + note if isinstance(w, str) and w.startswith(VAR_TESTS) else w for w in warnings]
 
 
 def _tolist(o):

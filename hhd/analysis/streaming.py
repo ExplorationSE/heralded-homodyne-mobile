@@ -669,10 +669,11 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
     result["state"] = session_state(session)
     if ap.phase:
         t = time.time()
-        from .phase import FileSource, phase_analysis
+        from .phase import FileSource, annotate_warnings, phase_analysis
         result["phase"] = phase_analysis(session, FileSource(qpath), cal, ap,
                                          (result.get("efficiency_budget") or {}).get("xi"), result["state"], od)
         warnings += result["phase"].get("warnings", [])
+        warnings[:] = annotate_warnings(warnings, result["phase"], result["state"])
         timing["phase"] = time.time() - t
     result["warnings"] = warnings
     timing["total"] = time.time() - t0
