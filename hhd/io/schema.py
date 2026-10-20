@@ -1,4 +1,4 @@
-"""HDF5-Schema v1.2 für Digitizer-Daten (Strom 2) und Wahrheitsdateien des Simulators.
+"""HDF5-Schema v1.3 für Digitizer-Daten (Strom 2) und Wahrheitsdateien des Simulators.
 
 Das Schema ist ein **[Vorschlag]** (Gesamtplan, Kap. 6 „Datenformate“), angelehnt an die Record-Header des
 ADQ3 User Guide 21-2539, Kap. 9.3: ``timestamp`` und ``record_start`` als ganze Zahlen in ``time_unit``,
@@ -6,7 +6,7 @@ Zeit des ersten Samples ``t_x[0] = timestamp + record_start`` **[Spez.]**.
 
 Aufbau ``digitizer.h5``::
 
-    /                      attrs: format="hhd-digitizer", schema_version="1.2", simulated, software, created,
+    /                      attrs: format="hhd-digitizer", schema_version="1.3", simulated, software, created,
                                   session_id, campaign_id, calibration_id
     /device                attrs: model, form_factor, clock_option, channel_mode, f_adc_Hz, skip_factor,
                                   sampling_rate_Hz, time_unit_s, sampling_period_tu, adc_bits, record_length,
@@ -23,6 +23,9 @@ Aufbau ``digitizer.h5``::
         records/data            int16 (n, L)   ADC-Werte Kanal A (Homodyn) in LSB
         records/data_b          int16 (n, L_B) optional: Kanal B (LO-Monitor, Photodiode), gleicher Trigger;
                                                L_B = channel_b_record_length (eigener Sample Skip)
+        records/ramp_raw        int16 (n)      optional (ab 1.3): Rampenspannung des LO-Piezos je Record, Rohwert des
+                                               Hilfs-ADC (``ramp_channel`` = aux_adc); attrs units, channel, lsb_V,
+                                               range_V, bits. Blockattribute phase_piezo_*, phase_ramp_*
         records/timestamp       int64 (n)      Trigger-Zeitpunkt in time_unit (Zähler seit Start)
         records/record_start    int64 (n)      erstes Sample relativ zu timestamp (≤ 0 bei Pretrigger)
         records/record_number   uint32 (n)
@@ -38,6 +41,10 @@ v1.0 → v1.1 (additiv): Sitzungs-/Lauf-IDs, dataset_type ``free_running``, Grup
 v1.1 → v1.2 (additiv): Kanal B ``records/data_b`` (LO-Monitor), Kanalrollen von Harp und ADQ32.
 1.2 (additiv, ohne Versionswechsel): ``markers/data_b`` und Geräteattribut ``channel_b_trigger``; Wurzelattribute
 ``device_mode_harp``, ``device_mode_digitizer``, ``acquisition_mode`` (Betriebsart je Gerät).
+v1.2 → v1.3 (additiv, ab hhd 0.15): ``records/ramp_raw`` (Piezo-Rampenspannung je Record), dataset_type
+``phase_reference`` (Lauf K-θ, kohärente Phasenreferenz), Blockattribute ``phase_piezo_*``/``phase_ramp_*``.
+Dateien 1.0–1.2 werden weiter gelesen und als gültig geprüft (ohne Phaseninformation).
+Kalibriertes θ je Record steht nicht hier, sondern in der Auswertung (``analysis/phase.h5``).
 """
 from __future__ import annotations
 
@@ -48,7 +55,8 @@ from typing import Any
 import h5py
 import numpy as np
 
-SCHEMA_VERSION = "1.2"         # 1.2: Kanal B (LO-Monitor), Kanalrollen (Gesamtplan v1.5)
+SCHEMA_VERSION = "1.3"         # 1.3: Rampenspannung je Record, Lauf K-θ (0.15); 1.2: Kanal B, Kanalrollen
+READABLE_VERSIONS = ("1.0", "1.1", "1.2", "1.3")
 FORMAT_DIGITIZER = "hhd-digitizer"
 FORMAT_TRUTH = "hhd-truth"
 
@@ -60,7 +68,9 @@ DATASET_TYPES = (
     "herald_blocked",    # K-H: Signal blockiert, Herald triggert
     "electronic",        # LO aus: nur elektronisches Rauschen
     "prepared_state",    # getriggerter Testzustand (kohärent, thermisch, Fock, Katze)
+    "phase_reference",   # K-θ: kohärente Phasenreferenz zur Kalibrierung Rampenspannung → θ (ab 1.3)
 )
+AUX_RECORD_SETS = {"ramp_raw": (np.int16, np.int32)}
 
 TRIGGER_SOURCES = {"TRIG": 0, "SYNC": 1, "GPIO": 2, "PERIODIC": 3, "SOFTWARE": 4, "UNKNOWN": 255}
 
@@ -85,7 +95,7 @@ def _attrs(obj, d: dict[str, Any]) -> None:
 
 def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.ndarray, timestamp: np.ndarray,
                 record_start: np.ndarray, trigger_source: np.ndarray, marker_ts: np.ndarray,
-                monitor: dict | None = None, data_b: np.ndarray | None = None) -> None:
+                monitor: dict | None = None, data_b: np.ndarray | None = None, aux: dict | None = None) -> None:
     g = f.require_group("blocks").create_group(block_id)
     _attrs(g, attrs)
     r = g.create_group("records")
@@ -105,6 +115,10 @@ def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.nda
         r.create_dataset("data_b", data=db, chunks=(max(1, min(1024, n)), Lb) if n and Lb else None,
                          compression="gzip" if n else None, compression_opts=4 if n else None)
         r["data_b"].attrs.update(units="ADC LSB", channel="B", role=str(f["device"].attrs.get("channel_b_role", "")))
+    for name, v in (aux or {}).items():                     # Zusatzspuren je Record (ab 1.3: ramp_raw)
+        if v is not None:
+            r.create_dataset(name, data=np.asarray(v).reshape(n))
+            _attrs(r[name], aux_attrs(name, attrs))
     r["timestamp"].attrs["units"] = "time_unit"
     r["record_start"].attrs["units"] = "time_unit"
     m = g.create_group("markers")
@@ -114,6 +128,16 @@ def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.nda
         mo = g.create_group("monitor")
         mo.create_dataset("t_s", data=np.asarray(monitor["t_s"], float)).attrs["units"] = "s seit Laufbeginn"
         mo.create_dataset("lo_power_rel", data=np.asarray(monitor["lo_power_rel"], float)).attrs["units"] = "relativ"
+
+
+def aux_attrs(name: str, block_attrs: dict) -> dict:
+    """Attribute einer Zusatzspur aus den Blockattributen (Kanal, LSB in V)."""
+    if name == "ramp_raw":
+        return dict(units="ADC LSB (Hilfs-ADC)", channel=str(block_attrs.get("phase_ramp_channel", "aux_adc")),
+                    lsb_V=float(block_attrs.get("phase_ramp_lsb_V", float("nan"))),
+                    range_V=float(block_attrs.get("phase_ramp_adc_range_V", float("nan"))),
+                    bits=int(block_attrs.get("phase_ramp_adc_bits", 16)), role="piezo_ramp")
+    return dict(units="")
 
 
 def open_new(path: str | Path, root_attrs: dict[str, Any], device_attrs: dict[str, Any]) -> h5py.File:
@@ -133,8 +157,8 @@ def validate_digitizer_file(path: str | Path) -> list[str]:
     with h5py.File(path, "r") as f:
         if f.attrs.get("format") != FORMAT_DIGITIZER:
             err.append(f"/: format != {FORMAT_DIGITIZER!r}")
-        if f.attrs.get("schema_version") != SCHEMA_VERSION:
-            err.append(f"/: schema_version != {SCHEMA_VERSION!r}")
+        if _s(f.attrs.get("schema_version", "")) not in READABLE_VERSIONS:
+            err.append(f"/: schema_version nicht in {READABLE_VERSIONS}")
         for a in REQ_ROOT_ATTRS:
             if a not in f.attrs:
                 err.append(f"/: Attribut {a} fehlt")
@@ -185,6 +209,12 @@ def validate_digitizer_file(path: str | Path) -> list[str]:
                     err.append(f"/blocks/{bid}/markers/data_b: Länge/dtype passt nicht zu markers/timestamp")
             elif dev.get("channel_b_role", "off") not in ("off", b"off"):
                 err.append(f"/blocks/{bid}/records/data_b fehlt (channel_b_role = {dev.get('channel_b_role')})")
+            for name, typs in AUX_RECORD_SETS.items():
+                if name in r:
+                    if r[name].dtype not in [np.dtype(t) for t in typs]:
+                        err.append(f"/blocks/{bid}/records/{name}: dtype {r[name].dtype}")
+                    if n is not None and r[name].shape != (n,):
+                        err.append(f"/blocks/{bid}/records/{name}: Länge {r[name].shape} != ({n},)")
             if "timestamp" in r and r["timestamp"].shape[0] > 1 and np.any(np.diff(r["timestamp"][:]) <= 0):
                 err.append(f"/blocks/{bid}/records/timestamp nicht streng monoton")
             if "timestamp" not in g["markers"]:

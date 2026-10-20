@@ -91,7 +91,7 @@ class SessionRecorder:
         if d is not None and d.raw is not None and self.h5.g is not None:
             r = d.raw
             self.h5.append(d.data, r["timestamp"], r["record_start"], r["trigger_source"], r.get("markers"),
-                           r.get("data_b"), r.get("marker_b"))
+                           r.get("data_b"), r.get("marker_b"), aux=r.get("aux"))
 
     def end_run(self, complete: bool = True) -> None:
         run, a = self._run, self._attrs
@@ -118,7 +118,7 @@ class SessionRecorder:
                            vacuum_blocks=[r["id"] for r in self.runs if r["dataset_type"] == "vacuum"],
                            electronic_blocks=[r["id"] for r in self.runs if r["dataset_type"] == "electronic"]))
         files = {"digitizer.h5": "digitizer"} | {r["ptu_file"]: "harp" for r in self.runs}
-        man = dict(format="hhd-session", schema_version="1.2", software=f"hhd {__version__}", simulated=self.simulated,
+        man = dict(format="hhd-session", schema_version=S.SCHEMA_VERSION, software=f"hhd {__version__}", simulated=self.simulated,
                    device_modes=dict(self.modes), acquisition_mode=M.acquisition_mode(self.modes),
                    session_id=self.meta["session_id"], campaign_id=self.meta["campaign_id"],
                    calibration=dict(calibration_id=self.meta["calibration_id"], mode="shared", vacuum_runs=vac),

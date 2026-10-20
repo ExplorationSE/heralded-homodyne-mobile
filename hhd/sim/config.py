@@ -153,12 +153,29 @@ class SourceCfg:
 
 @dataclass
 class PhaseCfg:
-    mode: str = P("random", doc="random (phasengemittelt), fixed, ramp (Sägezahn), steps", status="Vorschlag")
+    mode: str = P("random", doc="random (phasengemittelt), fixed, ramp (Sägezahn), steps, piezo (Piezo-Rampe im LO-Arm mit Rampenspannung je Record, ab 0.15)", status="Vorschlag")
     theta0: float = P(0.0, "rad", doc="Phase bei fixed bzw. Startphase von ramp/steps", status="Vorschlag")
     ramp_Hz: float = P(10.0, "Hz", doc="Sägezahnfrequenz der Phasenrampe (2π je Periode)", status="Annahme")
     steps: list = P([0.0, 0.7853981633974483, 1.5707963267948966, 2.356194490169959], "rad", doc="Phasenwerte bei steps", status="Vorschlag")
     dwell_s: float = P(0.25, "s", doc="Verweildauer je Phasenstufe", status="Vorschlag")
     marker_bit: int = P(2, "", doc="Harp-Marker-Bitmaske für Rampen-/Stufenbeginn (0 = aus)", status="Vorschlag")
+    # Piezo-Rampe im LO-Arm (mode = piezo, ab 0.15): θ(t) = θ0 + 2π·Hub·g_r(u(t)) + Drift(t) + Rauschen,
+    # u = Rampenspannung/V_max ∈ [0, 1], g_r(u) = u + a·u(u−1) ∓ h·4u(1−u) (Zweig r = Rampenrichtung auf/ab)
+    piezo_waveform: str = P("triangle", doc="Rampenform: triangle (Dreieck, auf/ab) oder sawtooth (Sägezahn, nur auf)", status="Vorschlag")
+    piezo_Hz: float = P(5.0, "Hz", doc="Rampenfrequenz (volle Periode); läuft über die ganze Sitzung durch", status="Annahme")
+    piezo_stroke_lambda: float = P(1.25, "λ", doc="Hub der optischen Weglänge je Rampe in Wellenlängen (θ-Bereich 2π·Hub)", status="Annahme")
+    piezo_V_max: float = P(10.0, "V", doc="Rampenspannung am Monitorausgang des Piezotreibers (0 … V_max)", status="Annahme")
+    piezo_nonlin: float = P(0.08, "", doc="quadratische Nichtlinearität a des Piezos (|a| < 1)", status="Annahme")
+    piezo_hysteresis: float = P(0.03, "", doc="Hysterese h (Anteil des Hubs): Abstand der Zweige auf/ab = 8h·u(1−u)·2π·Hub", status="Annahme")
+    drift_rad_per_s: float = P(0.02, "rad/s", doc="langsame lineare Phasendrift (Temperatur, Luft)", status="Annahme")
+    drift_rw_rad_per_sqrt_s: float = P(0.01, "rad/√s", doc="Irrfahrt der Phase (Streuung nach τ: q·√τ)", status="Annahme")
+    noise_rad: float = P(0.03, "rad", doc="schnelles Phasenrauschen je Mode (weiß, rms)", status="Annahme")
+    ramp_channel: str = P("aux_adc", doc="Aufzeichnung der Rampenspannung: aux_adc (Hilfs-ADC, je Record ein Wert → records/ramp_raw) oder none", status="Vorschlag")
+    ramp_adc_bits: int = P(16, "", doc="Auflösung des Hilfs-ADC für die Rampenspannung", status="Annahme")
+    ramp_adc_range_V: float = P(10.0, "V", doc="Messbereich ±range des Hilfs-ADC", status="Annahme")
+    ramp_adc_noise_V: float = P(0.002, "V", doc="Rauschen des Hilfs-ADC (rms)", status="Annahme")
+    ref_alpha: float = P(2.0, "", doc="Amplitude α des kohärenten Phasenreferenzstrahls im Lauf K-θ (kind phase_ref)", status="Vorschlag")
+    ref_rate: float = P(2000.0, "1/s", doc="Triggerrate des K-θ-Laufs (periodisch)", status="Vorschlag")
 
 
 @dataclass
@@ -244,7 +261,7 @@ class MarkerCfg:
 @dataclass
 class BlockCfg:
     id: str = P("heralded", doc="eindeutiger Blockname", status="Vorschlag")
-    kind: str = P("heralded", doc="heralded | random | free_running | vacuum | herald_blocked | electronic | state", status="Vorschlag")
+    kind: str = P("heralded", doc="heralded | random | free_running | vacuum | herald_blocked | electronic | state | phase_ref (K-θ, kohärente Phasenreferenz, ab 0.15)", status="Vorschlag")
     duration_s: float = P(5.0, "s", doc="Messdauer des Laufs", status="Vorschlag")
     run_id: str = P("", doc="Lauf-ID; leer = automatisch <session.id>-R<nn>", status="Vorschlag")
     random_rate: float = P(0.0, "1/s", doc="Zufallstrigger (Poisson): Lauftrigger (random) bzw. eingestreut in heralded (Option, ED-12)", status="Vorschlag")
@@ -279,7 +296,7 @@ def default_blocks(time_scale: float = SIM_TIME_SCALE) -> list[dict]:
     return blocks
 
 
-BLOCK_KINDS = ("heralded", "random", "free_running", "vacuum", "herald_blocked", "electronic", "state")
+BLOCK_KINDS = ("heralded", "random", "free_running", "vacuum", "herald_blocked", "electronic", "state", "phase_ref")
 BANDWIDTH = {"BW1G0": 1.0e9, "BW2G5": 2.5e9}
 
 
@@ -361,7 +378,7 @@ class SimConfig:
             roles[str(h.trigger_copy_channel)] = "adq32_trigger_copy"
         if h.herald2_channel:
             roles[str(h.herald2_channel)] = "herald2_reserved"
-        aux = {"state": "state_tag", "random": "random_tag"}.get(kind or "", "")
+        aux = {"state": "state_tag", "phase_ref": "state_tag", "random": "random_tag"}.get(kind or "", "")
         if kind == "heralded":
             aux = "random_tag (nur bei random_rate > 0)"
         if aux.startswith("state"):
@@ -548,8 +565,19 @@ class SimConfig:
             trig_rate = (s.R_herald + s.R_dark if b.kind in ("heralded", "herald_blocked") else 0) + b.random_rate
             if trig_rate > d.trig_max_rate:
                 e.append(f"blocks[{b.id}]: Triggerrate über 10 MHz (TRIG)")
-        if self.phase.mode not in ("random", "fixed", "ramp", "steps"):
-            e.append("phase.mode: random, fixed, ramp oder steps")
+        for b in self.blocks:
+            pc = self.phase_for(b)
+            if pc.mode not in ("random", "fixed", "ramp", "steps", "piezo"):
+                e.append(f"blocks[{b.id}]: phase.mode: random, fixed, ramp, steps oder piezo")
+            if pc.mode == "piezo":
+                if pc.piezo_waveform not in ("triangle", "sawtooth"):
+                    e.append("phase.piezo_waveform: triangle oder sawtooth")
+                if pc.piezo_Hz <= 0 or pc.piezo_stroke_lambda <= 0 or pc.piezo_V_max <= 0 or abs(pc.piezo_nonlin) >= 1:
+                    e.append("phase.piezo_*: Hz, stroke_lambda, V_max > 0, |nonlin| < 1")
+                if pc.ramp_channel not in ("aux_adc", "none"):
+                    e.append("phase.ramp_channel: aux_adc oder none")
+            if b.kind == "phase_ref" and pc.mode != "piezo":
+                e.append(f"blocks[{b.id}]: kind=phase_ref braucht phase.mode = piezo")
         if e:
             raise ConfigError("; ".join(e))
         return w

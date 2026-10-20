@@ -51,9 +51,10 @@ from .phase import PhaseModel
 from .states import make_state, state_info
 
 KIND_TO_DATASET = dict(heralded="heralded", random="random_trigger", free_running="free_running",
-                       herald_blocked="herald_blocked", vacuum="vacuum", electronic="electronic", state="prepared_state")
+                       herald_blocked="herald_blocked", vacuum="vacuum", electronic="electronic", state="prepared_state",
+                       phase_ref="phase_reference")
 KIND_TO_ROLE = dict(heralded="heralded", random="unheralded", free_running="unheralded", herald_blocked="control",
-                    vacuum="control", electronic="control", state="test_state")
+                    vacuum="control", electronic="control", state="test_state", phase_ref="calibration")
 MODE_HERALDED, MODE_UNHERALDED, MODE_STATE = 0, 1, 2
 MANIFEST = "session.json"
 
@@ -124,16 +125,30 @@ def heralded_state_info(cfg: SimConfig) -> dict:
     if k not in _STATE_INFO:
         _STATE_INFO[k] = state_info(k)
     out = dict(_STATE_INFO[k])
-    out["phase_averaged"] = (not out["phase_sensitive"]) or cfg.phase.mode in ("random", "ramp")
+    out["phase_averaged"] = (not out["phase_sensitive"]) or cfg.phase.mode in ("random", "ramp", "piezo")
+    out["phase_known"] = cfg.phase.mode == "piezo" and cfg.phase.ramp_channel != "none"
     return out
+
+
+def block_test_state(cfg: SimConfig, b: BlockCfg):
+    """Getriggerter Zustand eines Laufs: Testzustand (kind state) bzw. kohärente Phasenreferenz (kind phase_ref)."""
+    if b.kind == "state":
+        return make_state(b.state)
+    if b.kind == "phase_ref":
+        return make_state({"type": "coherent", "alpha": float(cfg.phase_for(b).ref_alpha)})
+    return None
+
+
+def _phase_model(cfg: SimConfig, b: BlockCfg, t0: float) -> PhaseModel:
+    return PhaseModel(cfg.phase_for(b), t0, b.duration_s, seed=int(cfg.session.seed), session_start=cfg.session.start_s)
 
 
 def plan_block_attrs(cfg: SimConfig, b: BlockCfg, index: int, t0: float, calibration_id: str, run_id: str,
                      phase: PhaseModel | None = None) -> dict:
     """Attribute eines Laufs (Gruppe ``/blocks/<id>``) aus der Konfiguration – auch für Live-Läufe ohne Simulation."""
     kind = b.kind
-    phase = phase or PhaseModel(cfg.phase_for(b), t0, b.duration_s)
-    test_state = make_state(b.state) if kind == "state" else None
+    phase = phase or _phase_model(cfg, b, t0)
+    test_state = block_test_state(cfg, b)
     periodic = b.periodic_rate if kind in ("vacuum", "electronic", "free_running") else 0.0
     xt_amp = cfg.digitizer.crosstalk_amp if b.crosstalk_amp is None else b.crosstalk_amp
     return dict(dataset_type=KIND_TO_DATASET[kind], kind=kind, sequence_index=index, calibration_id=calibration_id,
@@ -143,9 +158,9 @@ def plan_block_attrs(cfg: SimConfig, b: BlockCfg, index: int, t0: float, calibra
                 duration_s=b.duration_s, ptu_file=f"harp_{b.id}.ptu",
                 random_rate=b.random_rate, periodic_rate=periodic, crosstalk_amp=xt_amp,
                 state=json.dumps(test_state.describe()) if test_state else "",
-                heralded_state=json.dumps(heralded_state_info(cfg)) if kind != "state" else "",
+                heralded_state=json.dumps(heralded_state_info(cfg)) if kind not in ("state", "phase_ref") else "",
                 harp_channel_roles=json.dumps(cfg.channel_roles(kind)), harp_marker_roles=json.dumps(cfg.marker_roles()),
-                adq32_trigger_source="TRIG" if kind in ("heralded", "herald_blocked", "random", "state") else "PERIODIC",
+                adq32_trigger_source="TRIG" if kind in ("heralded", "herald_blocked", "random", "state", "phase_ref") else "PERIODIC",
                 **phase.metadata())
 
 
@@ -158,7 +173,7 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     T = b.duration_s
     kind = b.kind
     pcfg = cfg.phase_for(b)
-    phase = PhaseModel(pcfg, t0, T)
+    phase = _phase_model(cfg, b, t0)
     signal_blocked = kind in ("herald_blocked", "vacuum", "electronic")
     lo_fn = lo_scale_fn(cfg, b, drift_path)
     t_mid = t0 + T / 2
@@ -166,7 +181,7 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     eta_run = eta_of_run(cfg, b, t_mid, drift_path)
     mon_fn = drift_path.monitor_gain if (drift_path is not None and drift_path.stochastic) else None
     lo_on = kind != "electronic"
-    spdc_on = kind != "state"
+    spdc_on = kind not in ("state", "phase_ref")
     warnings: list[str] = []
 
     # ---------------------------------------------------------------- SPDC-Paare und Heralds (wahre Zeit)
@@ -201,9 +216,10 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         mode_src.append(np.arange(len(t_pair)))
     t_state = np.empty(0)
     test_state = None
-    if kind == "state":
-        test_state = make_state(b.state)
-        t_state = t0 + (np.arange(int(np.floor(T * b.state_rate))) + 0.5) / b.state_rate
+    if kind in ("state", "phase_ref"):
+        test_state = block_test_state(cfg, b)
+        rate = b.state_rate if kind == "state" else pcfg.ref_rate
+        t_state = t0 + (np.arange(int(np.floor(T * rate))) + 0.5) / rate
         th = phase.theta(t_state + d.d_S, r_phase)
         x = test_state.measure(r_state, th, eta_run)
         mode_t.append(t_state + d.d_S); mode_x.append(x); mode_th.append(th)
@@ -268,6 +284,27 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     dig = adq.acquire(r_dig, t0, T, trig, periodic, mode_t, mode_x, t_m + d.d_MD,
                       t_det + d.d_T, xt_amp, lo_on=lo_on, lo_scale_fn=lo_fn,
                       monitor_gain_fn=mon_fn)
+    # Piezo-Rampe: Rampenspannung je Record (Hilfs-ADC, gleicher Trigger), wahre Phase je Record
+    rec_theta = np.full(len(dig.rec_kind), np.nan)
+    if pcfg.mode == "piezo":
+        if pcfg.ramp_channel == "aux_adc":
+            t_tr = np.asarray(dig.rec_trigger_true, float).copy()
+            nan = ~np.isfinite(t_tr)
+            if nan.any():                                  # periodische Trigger: wahre Zeit aus dem Zeitstempel
+                t_tr[nan] = t0 + (dig.timestamp[nan] * adq.tu - clk(t0)) / (1 + clk.eps)
+            dig.ramp_raw, _ = phase.ramp_raw(t_tr, r_misc)
+        n_spdc = len(t_pair) if (spdc_on and not signal_blocked) else 0
+        for kconst in (TRIG_HERALD, TRIG_STATE):
+            m = np.flatnonzero(dig.rec_kind == kconst)
+            if not len(m):
+                continue
+            src_i = dig.rec_index[m]
+            if kconst == TRIG_HERALD and n_spdc:
+                pr = pair_of_h[src_i]
+                ok = pr >= 0
+                rec_theta[m[ok]] = mode_th[pr[ok]]
+            elif kconst == TRIG_STATE and len(t_state):
+                rec_theta[m] = mode_th[n_spdc + src_i]
     # LO-Leistungsmonitor (Photodiode), relative Leistung
     if cfg.drift.monitor:
         t_mon = t0 + np.arange(0.0, T, 1.0 / cfg.drift.monitor_rate_Hz)
@@ -302,7 +339,7 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         lo_monitor=dict(lo_rel_true=dig.lo_rel_true if dig.lo_rel_true is not None else np.empty(0)),
         drift=dict(lo_scale_mid=np.array([lo_mid]), eta_run=np.array([eta_run])),
         records=dict(kind=dig.rec_kind, source_index=dig.rec_index, trigger_true=dig.rec_trigger_true,
-                     n_modes=dig.n_modes_in_record),
+                     n_modes=dig.n_modes_in_record, theta_true=rec_theta),
     )
     # Abbildung Harp-Zeit (s, relativ zum Block) → Digitizer-Zeit (s): t_D = (1+ε)(t_H + t0 − t_arm) + φ
     mapping = dict(slope=1 + eps, offset_s=(1 + eps) * (t0 - clk.t_arm), random_walk=bool(clk.D > 0))
@@ -316,6 +353,14 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         e = heralded_state.expected(eta_run * eta_el, theta=float(pcfg.theta0))
         # phasengemittelt (Phase zufällig/Rampe): Var x = ⟨n⟩ + ½; p_n und W(0,0) phasenunabhängig
         var_s = e["var_x_phase_avg"] if hinfo["phase_averaged"] else e["var_x"]
+        if pcfg.mode == "piezo" and hinfo["phase_sensitive"] and spdc_on and herald_of_pair.any():
+            # Piezo: θ nicht gleichverteilt → gepoolte Varianz mit den wahren Phasen der geheraldeten Moden
+            ma, ma2, mn = heralded_state.quad_moments(eta_run * eta_el)
+            th_h = mode_th[:len(t_pair)][herald_of_pair]
+            mu = np.sqrt(2) * np.real(ma * np.exp(-1j * th_h))
+            var_s = float(np.mean(np.real(ma2 * np.exp(-2j * th_h)) + mn + 0.5) - np.mean(mu) ** 2)
+            expected.update(phase_known=hinfo["phase_known"], eta_tomo=eta_run, phase_noise_rad=float(pcfg.noise_rad),
+                            state_preset=src.heralded_state)
         p_n = np.array(e["p_n"]) * xi; p_n[0] += 1 - xi
         expected.update(xi=xi, eta_eff=eta_run * eta_el * xi,
                         W00=xi * e["W00"] + (1 - xi) / np.pi, var_x=xi * var_s + (1 - xi) * 0.5,
@@ -334,7 +379,7 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
             * hinfo["mean_n_ideal"]                       # Zusatzvarianz ∝ ⟨n⟩ des Zustands (phasengemittelt)
         expected.update(W00=(1 / np.pi) * (1 - 2 * n_eff), var_x=0.5 + n_eff, n_eff=n_eff,
                         note="unbedingter Zustand ≈ Vakuum (CW-SPDC, kleine mittlere Photonenzahl je Mode)")
-    elif kind == "state":
+    elif kind in ("state", "phase_ref"):
         e = test_state.expected(eta_run * eta_el, theta=float(pcfg.theta0))
         expected.update(state=test_state.describe(), W00=e["W00"], p_n=e["p_n"], mean_x_at_theta0=e["mean_x"],
                         var_x_at_theta0=e["var_x"], eta_total=eta_run * eta_el, phase_sensitive=test_state.phase_sensitive)
@@ -408,7 +453,8 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
         for br in res.blocks:
             dg = br.digitizer
             S.write_block(f, br.cfg.id, br.attrs, dg.data, dg.timestamp, dg.record_start, dg.trigger_source, dg.marker_ts,
-                          monitor=br.monitor, data_b=dg.data_b)
+                          monitor=br.monitor, data_b=dg.data_b,
+                          aux=dict(ramp_raw=dg.ramp_raw) if dg.ramp_raw is not None else None)
         cal = f.create_group("calibration")
         cal.attrs["calibration_id"] = res.calibration_id
         cal.attrs["mode"] = "shared"                       # eine Kalibrierung für alle Läufe der Sitzung (ED-12)

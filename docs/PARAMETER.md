@@ -20,12 +20,27 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `source.mode_shape` | double_exponential |  | Vorschlag |  | Temporale Mode: double_exponential f(t)=√γ·e^(−γ\|t\|) (CW-SPDC) oder gauss |
 | `source.gamma` | 2.5e+07 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Abklingrate der Mode (1/γ = 40 ns); bei gauss: 1/σ |
 | `source.sigma_spd` | 1.6986e-11 | s | **Spez.** | ID Quantique ID281 (Produktseite); ID Quantique ID Qube NIR Free-Running (Broschüre) | Jitter des Herald-Detektors (rms), gemeinsam für Harp und TRIG; Preset SNSPD 40 ps FWHM (ID281 Standard; Eos ≤ 15 ps), InGaAs-APD 150 ps FWHM |
-| `phase.mode` | random |  | Vorschlag |  | random (phasengemittelt), fixed, ramp (Sägezahn), steps |
+| `phase.mode` | random |  | Vorschlag |  | random (phasengemittelt), fixed, ramp (Sägezahn), steps, piezo (Piezo-Rampe im LO-Arm mit Rampenspannung je Record, ab 0.15) |
 | `phase.theta0` | 0 | rad | Vorschlag |  | Phase bei fixed bzw. Startphase von ramp/steps |
 | `phase.ramp_Hz` | 10 | Hz | Annahme |  | Sägezahnfrequenz der Phasenrampe (2π je Periode) |
 | `phase.steps` | [0.0, 0.7853981633974483, 1.5707963267948966, 2.356194490169959] | rad | Vorschlag |  | Phasenwerte bei steps |
 | `phase.dwell_s` | 0.25 | s | Vorschlag |  | Verweildauer je Phasenstufe |
 | `phase.marker_bit` | 2 |  | Vorschlag |  | Harp-Marker-Bitmaske für Rampen-/Stufenbeginn (0 = aus) |
+| `phase.piezo_waveform` | triangle |  | Vorschlag |  | Rampenform: triangle (Dreieck, auf/ab) oder sawtooth (Sägezahn, nur auf) |
+| `phase.piezo_Hz` | 5 | Hz | Annahme |  | Rampenfrequenz (volle Periode); läuft über die ganze Sitzung durch |
+| `phase.piezo_stroke_lambda` | 1.25 | λ | Annahme |  | Hub der optischen Weglänge je Rampe in Wellenlängen (θ-Bereich 2π·Hub) |
+| `phase.piezo_V_max` | 10 | V | Annahme |  | Rampenspannung am Monitorausgang des Piezotreibers (0 … V_max) |
+| `phase.piezo_nonlin` | 0.08 |  | Annahme |  | quadratische Nichtlinearität a des Piezos (\|a\| < 1) |
+| `phase.piezo_hysteresis` | 0.03 |  | Annahme |  | Hysterese h (Anteil des Hubs): Abstand der Zweige auf/ab = 8h·u(1−u)·2π·Hub |
+| `phase.drift_rad_per_s` | 0.02 | rad/s | Annahme |  | langsame lineare Phasendrift (Temperatur, Luft) |
+| `phase.drift_rw_rad_per_sqrt_s` | 0.01 | rad/√s | Annahme |  | Irrfahrt der Phase (Streuung nach τ: q·√τ) |
+| `phase.noise_rad` | 0.03 | rad | Annahme |  | schnelles Phasenrauschen je Mode (weiß, rms) |
+| `phase.ramp_channel` | aux_adc |  | Vorschlag |  | Aufzeichnung der Rampenspannung: aux_adc (Hilfs-ADC, je Record ein Wert → records/ramp_raw) oder none |
+| `phase.ramp_adc_bits` | 16 |  | Annahme |  | Auflösung des Hilfs-ADC für die Rampenspannung |
+| `phase.ramp_adc_range_V` | 10 | V | Annahme |  | Messbereich ±range des Hilfs-ADC |
+| `phase.ramp_adc_noise_V` | 0.002 | V | Annahme |  | Rauschen des Hilfs-ADC (rms) |
+| `phase.ref_alpha` | 2 |  | Vorschlag |  | Amplitude α des kohärenten Phasenreferenzstrahls im Lauf K-θ (kind phase_ref) |
+| `phase.ref_rate` | 2000 | 1/s | Vorschlag |  | Triggerrate des K-θ-Laufs (periodisch) |
 | `harp.model` | HydraHarp 500 S |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | HydraHarp 500 S (4–8 Kanäle) oder M (8–16 Kanäle); Festlegung: S |
 | `harp.n_channels` | 4 |  | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Anzahl Eingangskanäle CH1..CHn (S: 4..8, M: 8..16), zusätzlich der Sync-Eingang (Kanal 0) |
 | `harp.resolution` | 1e-12 | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | T2-Auflösung (fest 1 ps) |
@@ -122,7 +137,7 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `optics.homodyne_pd` | InGaAs-PIN |  | Vorschlag | Entscheidung Herr Eilers (Gesamtplan v1.6) | Photodioden des balancierten Homodyndetektors |
 | `optics.eta_hd_qe` | 0.95 |  | Annahme | PRL 117, 110801 (2016); Opt. Express 30, 7, 10.1364/OE.447091 | Quanteneffizienz der InGaAs-Homodyn-Photodioden; Literatur bis 99,5 % (Vahlbruch 2016) bzw. > 98 % bei 1510–1575 nm (Opt. Express 2022); source.eta = η_QE · η_Rest muss ≤ η_QE sein |
 | `blocks[].id` | heralded |  | Vorschlag |  | eindeutiger Blockname |
-| `blocks[].kind` | heralded |  | Vorschlag |  | heralded \| random \| free_running \| vacuum \| herald_blocked \| electronic \| state |
+| `blocks[].kind` | heralded |  | Vorschlag |  | heralded \| random \| free_running \| vacuum \| herald_blocked \| electronic \| state \| phase_ref (K-θ, kohärente Phasenreferenz, ab 0.15) |
 | `blocks[].duration_s` | 5 | s | Vorschlag |  | Messdauer des Laufs |
 | `blocks[].run_id` |  |  | Vorschlag |  | Lauf-ID; leer = automatisch <session.id>-R<nn> |
 | `blocks[].random_rate` | 0 | 1/s | Vorschlag |  | Zufallstrigger (Poisson): Lauftrigger (random) bzw. eingestreut in heralded (Option, ED-12) |

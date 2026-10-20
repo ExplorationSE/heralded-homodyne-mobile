@@ -306,8 +306,10 @@ class SimBackend:
         if "digitizer" in self.kinds:
             tu = self._tu
             db = self._data_b(c)
+            rr = self._br.digitizer.ramp_raw
             raw = dict(timestamp=c.rec_timestamp, record_start=c.rec_record_start, trigger_source=c.rec_trigger_source,
-                       markers=c.marker_timestamp, data_b=db, marker_b=None)
+                       markers=c.marker_timestamp, data_b=db, marker_b=None,
+                       aux=dict(ramp_raw=rr[c.rec_number]) if rr is not None else None)
             self._q["digitizer"].append(DigData(c.rec_data, db, c.rec_timestamp.astype(float) * tu,
                                                 (c.rec_timestamp + c.rec_record_start).astype(float) * tu,
                                                 np.sort(c.marker_timestamp).astype(float) * tu, c.rec_number,
@@ -405,7 +407,8 @@ class StreamSimBackend(SimBackend):
             tu = self._tu
             ts, rs = dg.timestamp.astype(np.int64), dg.record_start.astype(np.int64)
             raw = dict(timestamp=dg.timestamp, record_start=dg.record_start, trigger_source=dg.trigger_source,
-                       markers=dg.marker_ts, data_b=dg.data_b, marker_b=None)
+                       markers=dg.marker_ts, data_b=dg.data_b, marker_b=None,
+                       aux=dict(ramp_raw=dg.ramp_raw) if dg.ramp_raw is not None else None)
             self._rn = getattr(self, "_rn", 0) if info["slice"] else 0
             rn = np.arange(self._rn, self._rn + len(ts), dtype=np.uint32)
             self._rn += len(ts)
@@ -620,7 +623,11 @@ class ReplayBackend:
         ts = w.timestamp if w is not None else np.empty(0, np.int64)
         rs = w.record_start if w is not None else np.empty(0, np.int64)
         trs = w.trigger_source if w is not None else np.empty(0, np.uint8)
-        raw = dict(timestamp=ts, record_start=rs, trigger_source=trs, markers=mts, data_b=db, marker_b=mb)
+        aux = None
+        if getattr(run, "has_ramp", False):
+            aux = dict(ramp_raw=run.read_ramp_raw(slice(int(rm[0]), int(rm[-1]) + 1)) if len(rm)
+                       else np.empty(0, np.int16))
+        raw = dict(timestamp=ts, record_start=rs, trigger_source=trs, markers=mts, data_b=db, marker_b=mb, aux=aux)
         lo_b = db if db is not None else (mb if mb is not None and len(mb) else None)
         self._q["digitizer"].append(DigData(data, lo_b, ts.astype(float) * tu, (ts + rs).astype(float) * tu,
                                             mts.astype(float) * tu, rm.astype(np.uint32), last, raw=raw))

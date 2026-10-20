@@ -98,9 +98,11 @@ class DigitizerStreamWriter:
                 r["data_b"].attrs.update(units="ADC LSB", channel="B", role=role_b)
                 self.b_mode = "records"
         self.g, self.bid, self.n = g, block_id, 0
+        self.block_attrs = dict(attrs)
         self.block_ids.append(block_id)
 
-    def append(self, data, timestamp, record_start, trigger_source, markers=None, data_b=None, marker_b=None) -> None:
+    def append(self, data, timestamp, record_start, trigger_source, markers=None, data_b=None, marker_b=None,
+               aux: dict | None = None) -> None:
         r, m = self.g["records"], self.g["markers"]
         data = np.asarray(data, np.int16)
         k = len(timestamp)
@@ -114,6 +116,18 @@ class DigitizerStreamWriter:
                 if data_b is None or len(data_b) != k:
                     raise ValueError("Kanal B: Records fehlen (channel_b_trigger = Kanal-A-Trigger)")
                 _ext(r["data_b"], np.asarray(data_b, np.int16))
+            for name, v in (aux or {}).items():          # Zusatzspur je Record (ramp_raw), beim ersten Auftreten anlegen
+                if v is None:
+                    continue
+                v = np.asarray(v)
+                if name not in r:
+                    if self.n:
+                        raise ValueError(f"Zusatzspur {name} beginnt nicht mit dem ersten Record")
+                    r.create_dataset(name, (0,), v.dtype, maxshape=(None,), chunks=(4096,))
+                    S._attrs(r[name], S.aux_attrs(name, self.block_attrs))
+                if len(v) != k:
+                    raise ValueError(f"Zusatzspur {name}: Länge {len(v)} != {k}")
+                _ext(r[name], v)
             self.n += k
         if markers is not None and len(markers):
             _ext(m["timestamp"], np.asarray(markers, np.int64))

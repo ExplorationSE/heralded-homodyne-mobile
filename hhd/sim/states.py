@@ -84,6 +84,13 @@ class State:
                     mean_x=mean, var_x=var, mean_n=mean_n, var_x_phase_avg=mean_n + 0.5,
                     trunc_error=float(max(0.0, 1 - p.sum())))
 
+    def quad_moments(self, eta: float = 1.0) -> tuple[complex, complex, float]:
+        """(⟨a⟩, ⟨a²⟩, ⟨a†a⟩) nach Verlust η: ⟨x_θ⟩ = √2·Re(⟨a⟩e^{−iθ}), ⟨x_θ²⟩ = Re(⟨a²⟩e^{−2iθ}) + ⟨n⟩ + ½."""
+        r = loss_channel(self.rho(), eta) if eta < 1 else self.rho().astype(complex)
+        N = r.shape[0]
+        a = np.diag(np.sqrt(np.arange(1, N)), 1)
+        return complex(np.trace(r @ a)), complex(np.trace(r @ a @ a)), float(np.real(np.trace(r @ a.T @ a)))
+
     def describe(self) -> dict:
         return dict(type=self.name)
 

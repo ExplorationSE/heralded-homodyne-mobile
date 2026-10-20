@@ -86,6 +86,7 @@ class DigitizerRecording:
     cand_accepted: np.ndarray        # je TRIG-Kandidat: Recordnummer oder −1
     data_b: np.ndarray | None = None  # Kanal B (LO-Monitor), int16 (n, L_B)
     lo_rel_true: np.ndarray | None = None  # wahre relative LO-Leistung je Record
+    ramp_raw: np.ndarray | None = None     # Hilfs-ADC: Rampenspannung des Piezos je Record (LSB), ab 0.15
 
 
 class ADQ32:

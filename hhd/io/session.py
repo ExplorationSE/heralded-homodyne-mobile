@@ -130,6 +130,8 @@ class RunData:
     n_records_file: int = 0                   # Records laut digitizer.h5 (auch ohne geladene Köpfe)
     has_data_b: bool = False
     has_marker_b: bool = False                # Kanal B an den SYNC-Markern (live, channel_b_trigger = SYNC)
+    has_ramp: bool = False                    # records/ramp_raw (Piezo-Rampenspannung, Schema 1.3)
+    ramp_lsb_V: float = float("nan")
     _harp: HarpStream | None = None
     _hdr: dict | None = None                  # Digitizer-Köpfe (timestamp, record_start, …); lazy, freigebbar
 
@@ -247,6 +249,18 @@ class RunData:
                     pos += len(part)
                 return out
             return ds[idx] if cols is None else ds[idx, cols]
+
+    def read_ramp(self, idx: slice | None = None) -> np.ndarray:
+        """Rampenspannung je Record in V (Hilfs-ADC, ``records/ramp_raw`` × lsb_V); leer ohne Rampenspur."""
+        if not self.has_ramp:
+            return np.empty(0)
+        with h5py.File(self.session.h5_path, "r") as f:
+            ds = f["blocks"][self.block_id]["records"]["ramp_raw"]
+            return ds[idx if idx is not None else slice(None)].astype(np.float64) * self.ramp_lsb_V
+
+    def read_ramp_raw(self, idx: slice | None = None) -> np.ndarray:
+        with h5py.File(self.session.h5_path, "r") as f:
+            return f["blocks"][self.block_id]["records"]["ramp_raw"][idx if idx is not None else slice(None)]
 
     def iter_records(self, chunk: int = 1024, channel: str = "A") -> Iterator[tuple[int, np.ndarray]]:
         name = "data" if channel == "A" else "data_b"
@@ -387,6 +401,9 @@ def load_session(path: str | Path, verify: bool = True, lazy: bool = False) -> S
                           ptu, {k: _clean(v) for k, v in g.attrs.items()}, tags, int(rec["timestamp"].shape[0]),
                           "data_b" in rec)
             run.has_marker_b = "data_b" in g["markers"]
+            if "ramp_raw" in rec:
+                run.has_ramp = True
+                run.ramp_lsb_V = float(_clean(rec["ramp_raw"].attrs.get("lsb_V", run.attrs.get("phase_ramp_lsb_V", np.nan))))
             if not lazy:
                 run._hdr = dict(timestamp=rec["timestamp"][:].astype(np.int64),
                                 record_start=rec["record_start"][:].astype(np.int64),

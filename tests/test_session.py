@@ -99,7 +99,7 @@ def test_ids_and_shared_calibration(sep_run):
     assert [r["comparison_role"] for r in man["runs"]] == ["control", "control", "heralded", "unheralded", "heralded", "control"]
     with h5py.File(d / "digitizer.h5") as f:
         assert f.attrs["session_id"] == "S001" and f.attrs["calibration_id"] == cal
-        assert f.attrs["schema_version"] == "1.2"
+        assert f.attrs["schema_version"] == "1.3"
         for r in man["runs"]:
             g = f[f"blocks/{r['id']}"]
             assert g.attrs["run_id"] == r["run_id"] and g.attrs["calibration_id"] == cal

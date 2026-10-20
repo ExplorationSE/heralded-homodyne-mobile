@@ -413,7 +413,8 @@ class StreamingSimulator:
             for info, hrec, dg in self.iter_run(i):
                 rec.feed(_H(hrec), _D(dg.data, dict(timestamp=dg.timestamp, record_start=dg.record_start,
                                                     trigger_source=dg.trigger_source, markers=dg.marker_ts,
-                                                    data_b=dg.data_b, marker_b=None)))
+                                                    data_b=dg.data_b, marker_b=None,
+                                                    aux=dict(ramp_raw=dg.ramp_raw) if dg.ramp_raw is not None else None)))
                 if self.on_slice is not None:
                     self.on_slice({k: info[k] for k in ("block_id", "kind", "index", "slice", "t_session")}, dg,
                                   info["t_session"])
