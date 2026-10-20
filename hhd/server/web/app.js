@@ -3,7 +3,7 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const KC = { vacuum: "--kv", electronic: "--el", herald_blocked: "--kh", heralded: "--a", free_running: "--b", random: "--b", state: "--warn" };
+const KC = { vacuum: "--kv", electronic: "--el", herald_blocked: "--kh", heralded: "--a", free_running: "--b", random: "--b", state: "--warn", phase_reference: "--kt" };
 const fmt = (x, d = 3) => (x === null || x === undefined || Number.isNaN(x)) ? "–" : Number(x).toFixed(d);
 const fmtE = (x, e, d = 4) => (x === null || x === undefined) ? "–" : `${fmt(x, d)}${e != null ? " ± " + fmt(e, d) : ""}`;
 
@@ -268,7 +268,17 @@ function renderResult(R) {
   const neg = A.W00 != null && A.W00_err ? (-A.W00 / A.W00_err) : null;
   $("reswarn").innerHTML = (neg != null && neg > 0 ? `<span class="ok-t">W_A(0,0) &lt; 0 mit ${neg.toFixed(1)} σ (nichtklassisch)</span><br>` : "") +
     (R.warnings || []).map(w => "⚠ " + esc(typeof w === "string" ? w : JSON.stringify(w))).join("<br>");
-  drawWigner(A); drawWr(A, B); drawPn(A, B); drawAB(C);
+  const P = R.phase || {}, pk = !!P.available;
+  if (pk) {
+    $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +
+      ` · <span class="ok-t">${esc(P.label || "Phase bekannt (Piezo-Rampe, kalibriert)")}</span>`;
+    $("wiglbl").innerHTML = `<b>${esc(P.label)}</b>: W(x,p) aus ρ (MaxLik, N = ${P.N}, η = ${fmt(P.eta_tomo, 3)} korrigiert); orange &gt; 0, blau &lt; 0`;
+  } else if (ps) {
+    $("resstate").innerHTML += ` <small class="mut">(${esc(P.reason || "Phase unbekannt")})</small>`;
+  }
+  $("ph-var").classList.toggle("hidden", !pk); $("ph-cov").classList.toggle("hidden", !pk);
+  if (pk) { drawWigner2D(P.wigner2d, P.metrics.W00); drawVarTheta(P.var_theta); drawCoverage(P.coverage); phaseTable(P); } else drawWigner(A);
+  drawWr(A, B); drawPn(A, B); drawAB(C);
   const eb = R.efficiency_budget || {};
   const brow = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
   const ev = (o) => o && typeof o === "object" ? fmtE(o.value, o.err) : fmt(o, 4);
@@ -290,6 +300,58 @@ function drawWigner(A) {
   g.strokeStyle = "rgba(226,232,240,.25)"; g.beginPath(); g.moveTo(ox, oy + s / 2); g.lineTo(ox + s, oy + s / 2); g.moveTo(ox + s / 2, oy); g.lineTo(ox + s / 2, oy + s); g.stroke();
   g.fillStyle = css("--mut"); g.font = "11px system-ui"; g.fillText("x", ox + s - 10, oy + s / 2 - 4); g.fillText("p", ox + s / 2 + 4, oy + 12);
   g.fillText(`W(0,0) = ${fmt(A.W00, 3)}`, ox + 4, oy + s - 6);
+}
+function wcol(v) { return v >= 0 ? [Math.round(15 + 234 * v), Math.round(23 + 92 * v), Math.round(42 - 20 * v)] : [Math.round(15 + 20 * -v), Math.round(23 + 140 * -v), Math.round(42 + 213 * -v)]; }
+function drawWigner2D(W2, w00) {
+  const { g, w, h } = canvas("c-wig");
+  if (!W2 || !W2.W) return;
+  const xs = W2.x, M = W2.W, n = xs.length, xm = 3.2;
+  let vmax = 1e-9; for (const r of M) for (const v of r) vmax = Math.max(vmax, Math.abs(v));
+  const s = Math.min(w, h) - 20, ox = (w - s) / 2, oy = 10, k = 90, cell = s / k;
+  const at = (x, p) => { const f = (u) => (u - xs[0]) / (xs[n - 1] - xs[0]) * (n - 1); const fi = f(x), fj = f(p), i = Math.floor(fi), j = Math.floor(fj), a = fi - i, b = fj - j;
+    if (i < 0 || j < 0 || i >= n - 1 || j >= n - 1) return 0; return (M[j][i] * (1 - a) + M[j][i + 1] * a) * (1 - b) + (M[j + 1][i] * (1 - a) + M[j + 1][i + 1] * a) * b; };
+  for (let i = 0; i < k; i++) for (let j = 0; j < k; j++) {
+    const x = -xm + 2 * xm * (i + .5) / k, p = -xm + 2 * xm * (j + .5) / k;
+    g.fillStyle = `rgb(${wcol(at(x, p) / vmax)})`; g.fillRect(ox + i * cell, oy + (k - 1 - j) * cell, cell + .5, cell + .5);
+  }
+  g.strokeStyle = "rgba(226,232,240,.25)"; g.beginPath(); g.moveTo(ox, oy + s / 2); g.lineTo(ox + s, oy + s / 2); g.moveTo(ox + s / 2, oy); g.lineTo(ox + s / 2, oy + s); g.stroke();
+  g.fillStyle = css("--mut"); g.font = "11px system-ui"; g.fillText("x", ox + s - 10, oy + s / 2 - 4); g.fillText("p", ox + s / 2 + 4, oy + 12);
+  g.fillText(`W(0,0) = ${fmt(w00, 3)} · |W|max = ${fmt(vmax, 3)}`, ox + 4, oy + s - 6);
+}
+function drawVarTheta(V) {
+  const { g, w, h } = canvas("c-vth");
+  if (!V || !V.theta) return;
+  const all = [...V.var.map((v, i) => v + (V.var_err[i] || 0)), ...V.var.map((v, i) => v - (V.var_err[i] || 0)), ...(V.rho_var || []), 0.5];
+  const y1 = Math.max(...all.filter(Number.isFinite)) * 1.08, y0 = Math.max(0, Math.min(...all.filter(Number.isFinite)) * 0.9);
+  const { X, Y } = axes(g, w, h, 0, 2 * Math.PI, y0, y1, { nx: 5, fx: (v) => (v / Math.PI).toFixed(1) + "π" });
+  g.strokeStyle = "#475569"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(0), Y(0.5)); g.lineTo(X(2 * Math.PI), Y(0.5)); g.stroke(); g.setLineDash([]);
+  if (V.rho_theta) { g.strokeStyle = css("--b"); g.lineWidth = 2; g.beginPath(); V.rho_theta.forEach((t, i) => i ? g.lineTo(X(t), Y(V.rho_var[i])) : g.moveTo(X(t), Y(V.rho_var[i]))); g.stroke(); g.lineWidth = 1; }
+  g.strokeStyle = css("--a"); g.fillStyle = css("--a");
+  V.theta.forEach((t, i) => { const v = V.var[i], e = V.var_err[i] || 0; if (!Number.isFinite(v)) return; g.beginPath(); g.moveTo(X(t), Y(v - e)); g.lineTo(X(t), Y(v + e)); g.stroke(); g.beginPath(); g.arc(X(t), Y(v), 2.5, 0, 7); g.fill(); });
+  const f = V.fit || {};
+  $("vthlbl").innerHTML = `<span class="lg a"></span>Daten (Detektor) <span class="lg b"></span>aus ρ <span class="lg mut2"></span>Vakuum ½` +
+    (f.available ? `<br>Fit: min ${fmt(f.var_min, 3)} → <b>${fmt(f.squeezing_dB, 2)} ± ${fmt(f.squeezing_dB_err, 2)} dB</b>, Achse θ = ${fmt(f.axis_rad, 3)} rad, Anti ${fmt(f.antisqueezing_dB, 2)} dB` : "");
+}
+function drawCoverage(C) {
+  const { g, w, h } = canvas("c-cov");
+  if (!C || !C.counts) return;
+  const n = C.counts, m = Math.max(...n, 1), mean = n.reduce((a, b) => a + b, 0) / n.length;
+  const { X, Y } = axes(g, w, h, 0, 2 * Math.PI, 0, m * 1.1, { nx: 5, ny: 3, fx: (v) => (v / Math.PI).toFixed(1) + "π" });
+  const bw = (X(2 * Math.PI) - X(0)) / n.length;
+  n.forEach((c, i) => { g.fillStyle = C.gaps.includes(i) ? css("--warn") : css("--a"); g.fillRect(X(0) + i * bw + 1, Y(c), bw - 2, Y(0) - Y(c)); });
+  g.strokeStyle = "#475569"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(0), Y(0.25 * mean)); g.lineTo(X(2 * Math.PI), Y(0.25 * mean)); g.stroke(); g.setLineDash([]);
+  $("covlbl").innerHTML = C.ok ? `<span class="ok-t">θ vollständig abgedeckt</span> (min/Mittel ${fmt(C.min_rel, 2)})` :
+    `<span class="warn-t">⚠ Lücken in der Phasenabdeckung: ${C.gaps.length} Bins unter 25 % des Mittels</span>`;
+}
+function phaseTable(P) {
+  const m = P.metrics || {}, b = P.boot || {}, f = P.fidelity || {}, q = (P.calibration || {}).quality || {};
+  const e = (k) => (b[k] || {}).err, r = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
+  $("phtbl").innerHTML = r("W(0,0) aus ρ", fmtE(m.W00, e("W00"))) + r("Parität", fmtE(m.parity, e("parity"))) + r("⟨n⟩ aus ρ", fmtE(m.mean_n, e("mean_n"))) +
+    r("Quetschung ρ", `${fmt(m.squeezing_dB, 2)} ± ${fmt(e("squeezing_dB"), 2)} dB, Achse ${fmt(m.axis_rad, 3)} rad`) +
+    r("α aus √|⟨a²⟩|", fmtE(m.alpha_from_a2, e("alpha_from_a2"))) + r("Reinheit", fmt(m.purity, 3)) +
+    (f.F_ideal != null ? r("Treue Soll (ideal)", fmtE(f.F_ideal, e("F_ideal"))) + r("Treue Verlustmodell", fmtE(f.F_model, e("F_model"))) : "") +
+    r("K-θ", `${(P.calibration || {}).ref_blocks?.length || 0} Läufe, Hub ${fmt(q.stroke_rad, 2)} rad, Hysterese ${fmt(q.hysteresis_rad, 3)} rad`) +
+    r("σ<sub>θ</sub> (A, Median)", fmt((P.theta_err_A || {}).median, 3) + " rad") + r("Records (A)", P.n_records ?? "–");
 }
 function drawWr(A, B) {
   const { g, w, h } = canvas("c-wr");
