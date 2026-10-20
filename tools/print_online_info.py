@@ -13,13 +13,17 @@ __version__ = _m.group(1) if _m else "?"
 
 def main() -> None:
     url, code = sys.argv[1], sys.argv[2]
+    lokal = len(sys.argv) > 3 and sys.argv[3] == "lokal"     # start_messung ohne -Online
     pretty = code if len(code) != 10 else f"{code[:5]}-{code[5:]}"
     link = f"{url}/?token={code}"
     line = "=" * 76
     print("\n" + line)
-    print(f"  ExplorationSE Harp ADQ32 HHD Mobil {__version__} ist ONLINE (Cloudflare Quick Tunnel)")
+    if lokal:
+        print(f"  Heralded Homodyne Mobile {__version__} läuft LOKAL (nur an diesem PC erreichbar)")
+    else:
+        print(f"  ExplorationSE Harp ADQ32 HHD Mobil {__version__} ist ONLINE (Cloudflare Quick Tunnel)")
     print(line)
-    print(f"  Adresse (am Handy öffnen):  {url}")
+    print(f"  Adresse{' (am Handy öffnen)' if not lokal else ' (Browser hier)   '}:  {url}")
     print(f"  Zugangscode:                {pretty}")
     print(f"  Direkt-Link mit Code:       {link}")
     print(line)

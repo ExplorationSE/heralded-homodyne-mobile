@@ -175,3 +175,103 @@ def test_api_check_and_lock(tmp_path, mock_libs):
         assert cl.get("/api/devices/check").status_code == 200
         log = (tmp_path / "logs").glob("*.jsonl")
         assert any("check_devices" in f.read_text(encoding="utf-8") for f in log)
+
+
+# ---------------------------------------------------------------- Startskripte (ohne PowerShell: statische Prüfung)
+def _ps_balance(src: str) -> list[str]:
+    """Klammern/Anführungszeichen einer PowerShell-Datei grob prüfen: '…' (''-Escape), "…" (`-Escape, $( … )),
+    #-Kommentare; liefert Fehler und verdächtige "$name:"-Stellen (würden als Bereichs-Variable gelesen)."""
+    errs, stack, i, n, line = [], [], 0, len(src), 1
+    pairs = {")": "(", "}": "{", "]": "["}
+    mode = ["code"]
+    while i < n:
+        c = src[i]
+        if c == "\n":
+            line += 1
+        m = mode[-1]
+        if m == "code":
+            if c == "#":
+                while i < n and src[i] != "\n":
+                    i += 1
+                continue
+            if c == "'":
+                mode.append("sq")
+            elif c == '"':
+                mode.append("dq")
+            elif c == "`":
+                i += 2
+                continue
+            elif c in "({[":
+                stack.append((c, line))
+            elif c in ")}]":
+                if not stack or stack[-1][0] != pairs[c]:
+                    errs.append(f"Zeile {line}: unerwartetes {c}")
+                else:
+                    o = stack.pop()
+                    if o[0] == "(" and len(o) == 3:          # Ende einer $( … ) im String
+                        mode.pop()
+        elif m == "sq":
+            if c == "'":
+                if i + 1 < n and src[i + 1] == "'":
+                    i += 2
+                    continue
+                mode.pop()
+        elif m == "dq":
+            if c == "`":
+                i += 2
+                continue
+            if c == '"':
+                mode.pop()
+            elif c == "$" and src[i + 1:i + 2] == "(":
+                stack.append(("(", line, "sub"))
+                mode.append("code")
+                i += 2
+                continue
+            elif c == "$":
+                import re
+                mm = re.match(r"\$([A-Za-z_][A-Za-z0-9_]*):", src[i:])
+                if mm and mm.group(1).lower() not in ("env", "script", "global", "local", "private", "using"):
+                    errs.append(f"Zeile {line}: ${mm.group(1)}: im String (Bereichs-Variable?) – $(${mm.group(1)}) verwenden")
+        i += 1
+    if stack:
+        errs.append(f"offene Klammern: {stack}")
+    if mode != ["code"]:
+        errs.append(f"offener String/Ausdruck am Ende: {mode}")
+    return errs
+
+
+@pytest.mark.parametrize("name", ["start_messung.ps1", "start_online.ps1", "stop_online.ps1"])
+def test_ps1_static(name):
+    b = (ROOT / name).read_bytes()
+    src = b.decode("utf-8-sig")
+    assert _ps_balance(src) == [], name
+    if name == "start_messung.ps1":
+        assert b.startswith(b"\xef\xbb\xbf") and b.count(b"\n") == b.count(b"\r\n")      # BOM + CRLF
+        assert all(ch < 128 for ch in b[3:])                                             # PS 5.1-sicher
+        for s in ("-m hhd.server.check --config $cfgPath --json $chkJson", "$rc = $LASTEXITCODE",
+                  "config\\server_live.toml", "[switch]$Online", "[switch]$Trotzdem", "'--harp-mode', 'sim'",
+                  "'--digitizer-mode', 'sim'", "stop_online.ps1", "PYTHONUTF8", "online.pids",
+                  "print_online_info.py", "RandomNumberGenerator", "Start-Process \"$($localUrl)/?token=$code\""):
+            assert s in src, s
+        import re
+        used = set(re.findall(r"^\s*(?:if \(.*\) \{ )?(Say|Warn|Fail|Stop-All|Read-Shared|Get-Tail|Test-PortInUse)\b", src, re.M))
+        for f in used:
+            assert f"function {f}" in src
+        # Abbruch vor dem Serverstart, wenn die Prüfung fehlschlägt und -Trotzdem fehlt
+        assert src.index("if (-not $Trotzdem)") < src.index("Start-Process @spArgs")
+
+
+def test_ps_balance_detects_errors():
+    assert _ps_balance('Write-Host "a $(b"') != []
+    assert _ps_balance("if ($x) { 'a' ") != []
+    assert _ps_balance('Warn "Laufwerk $d: fehlt"') != []
+    assert _ps_balance('Warn "Laufwerk $($d): fehlt $env:OS"') == []
+
+
+@pytest.mark.parametrize("name,target", [("start_messung.bat", "start_messung.ps1"), ("stop_messung.bat", "stop_online.ps1")])
+def test_bat_static(name, target):
+    b = (ROOT / name).read_bytes()
+    assert b.count(b"\n") == b.count(b"\r\n") and all(ch < 128 for ch in b)
+    s = b.decode("ascii")
+    assert s.startswith("@echo off") and 'cd /d "%~dp0"' in s and f'-File "%~dp0{target}" %*' in s
+    assert (ROOT / target).exists()
