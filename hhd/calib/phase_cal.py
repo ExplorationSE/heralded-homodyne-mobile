@@ -194,7 +194,7 @@ def fit_phase_calibration(refs: list[dict], V_max: float, waveform: str = "trian
     r2 = (x - A * np.cos(th)) ** 2
     s2 = (A * np.sin(th)) ** 2
     # r² = v0 + σ_φ²·(A sin θ)²: Regression mit freiem Achsenabschnitt v0, damit ein kleiner Fehler der
-    # Vakuumnormierung nicht als Phasenrauschen erscheint; nur signifikante Werte (> 2σ) werden übernommen.
+    # Vakuumnormierung nicht als Phasenrauschen erscheint; nur signifikante Werte (> 3σ) werden übernommen.
     X = np.column_stack([np.ones_like(s2), s2])
     beta, *_ = np.linalg.lstsq(X, r2, rcond=None)
     res = r2 - X @ beta
@@ -204,7 +204,7 @@ def fit_phase_calibration(refs: list[dict], V_max: float, waveform: str = "trian
     except np.linalg.LinAlgError:
         sphi2_err = float("inf")
     sphi2_raw = float(beta[1])
-    sphi2 = max(0.0, sphi2_raw) if sphi2_raw > 2 * sphi2_err else 0.0
+    sphi2 = max(0.0, sphi2_raw) if sphi2_raw > 3 * sphi2_err else 0.0
     sig = np.sqrt(VAC + sphi2 * s2)
     sol = least_squares(resid, sol.x, method="lm", x_scale="jac")
     J = sol.jac
