@@ -15,6 +15,7 @@ from pathlib import Path
 from .. import __version__
 from . import modes as M
 from . import ptu as P
+from . import schema as S
 from .stream_writer import DigitizerStreamWriter, PtuStreamWriter
 
 
