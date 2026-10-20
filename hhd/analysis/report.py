@@ -89,6 +89,33 @@ def render_report(r: dict) -> str:
             L.append(f"* η_eff (Fit) = {eb['eta_eff_fit']['value']:.4f} ± {_f(eb['eta_eff_fit']['err'])}; "
                      f"(Var − ½) = {eb['eta_eff_var']['value']:.4f}; η_rest = {eb['eta_rest']['value']:.4f} "
                      f"± {_f(eb['eta_rest']['err'])}")
+    ph = r.get("phase") or {}
+    if ph.get("available"):
+        m, bt, c = ph["metrics"], ph.get("boot", {}), ph["calibration"]
+        e = lambda k: (bt.get(k) or {}).get("err")
+        q = c.get("quality", {})
+        L += ["", "## Phase bekannt (Piezo-Rampe, kalibriert)", "",
+              f"* K-θ-Kalibrierung: {len(c.get('ref_blocks', []))} Referenzläufe, Hub {_f(q.get('stroke_rad'), '{:.2f}')} rad, "
+              f"Nichtlinearität {_f(q.get('nonlinearity_rad'), '{:.3f}')} rad, Hysterese {_f(q.get('hysteresis_rad'), '{:.3f}')} rad, "
+              f"χ²/ndof {_f(q.get('chi2_ndof'), '{:.2f}')}; σ_θ(A) Median {_f(ph['theta_err_A']['median'], '{:.3f}')} rad",
+              f"* MaxLik (RρR): {ph['n_records']} Records, {ph['bins']['n_theta']}×{ph['bins']['n_x']} Bins, η_POVM = "
+              f"{ph['eta_tomo']:.3f}, N = {ph['N']}, {ph['n_iter']} Iterationen, Bootstrap {len(bt) and 'ja' or 'nein'}",
+              f"* W(0,0) = {m['W00']:.4f} ± {_f(e('W00'))}, Parität {m['parity']:.4f} ± {_f(e('parity'))}, "
+              f"⟨n⟩ = {m['mean_n']:.3f} ± {_f(e('mean_n'))}, Reinheit {m['purity']:.3f}",
+              f"* Quetschung (ρ) {m['squeezing_dB']:+.2f} ± {_f(e('squeezing_dB'), '{:.2f}')} dB, Achse "
+              f"{m['axis_rad']:.3f} rad; α aus ⟨a²⟩ = {m['alpha_from_a2']:.3f} ± {_f(e('alpha_from_a2'), '{:.3f}')}"]
+        vf = ph["var_theta"]["fit"]
+        if vf.get("available") and vf.get("squeezing_dB") is not None:
+            L.append(f"* Var(x_θ) der Daten: min {vf['var_min']:.4f}, max {vf['var_max']:.4f} → "
+                     f"{vf['squeezing_dB']:+.2f} ± {_f(vf.get('squeezing_dB_err'), '{:.2f}')} dB (Detektor), Achse {vf['axis_rad']:.3f} rad")
+        f = ph.get("fidelity") or {}
+        if f:
+            L.append(f"* Treue zum Sollzustand: ideal {f['F_ideal']:.4f} ± {_f(e('F_ideal'))}, Verlustmodell "
+                     f"{f['F_model']:.4f} ± {_f(e('F_model'))} (ξ = {f['model']['xi']:.3f}, η = {f['model']['eta_optical']:.3f})")
+        cv = ph["coverage"]
+        L.append(f"* Phasenabdeckung: min/Mittel {cv['min_rel']:.2f} ({'ok' if cv['ok'] else 'Lücken'})")
+    elif ph:
+        L += ["", "## Phase", "", f"* phasengemittelt: {ph.get('reason', 'Phase unbekannt')}"]
     L += ["", "## Warnungen", ""] + ([f"* {w}" for w in r["warnings"]] or ["* keine"])
     t = r["performance"]["timing_s"]
     L += ["", "## Laufzeit", "", "* " + ", ".join(f"{k} {v:.1f} s" for k, v in t.items())]
