@@ -716,4 +716,19 @@ def result_summary(r: dict) -> dict:
                 state=r.get("state") or (r.get("efficiency_budget") or {}).get("state"), groups=groups, comparison=keep, efficiency_budget=r.get("efficiency_budget"),
                 calibration={k: cal.get(k) for k in ("var_kv", "eta_el", "eta_el_err", "clearance", "normalization",
                                                     "n_kv", "n_el") if k in cal},
-                drift=r.get("drift_vacuum_lo"), warnings=r.get("warnings", []), performance=r.get("performance"))
+                drift=r.get("drift_vacuum_lo"), warnings=r.get("warnings", []), performance=r.get("performance"),
+                phase=phase_summary(r.get("phase")))
+
+
+def phase_summary(ph: dict | None) -> dict:
+    """Phasenaufgelöstes Ergebnis für die App (ohne ρ und Kalibrierkoeffizienten; 2D-Wigner, Var(x_θ), Abdeckung)."""
+    if not ph:
+        return dict(available=False, label="phasengemittelt", reason="keine phasenaufgelöste Auswertung")
+    if not ph.get("available"):
+        return dict(available=False, label="phasengemittelt", reason=ph.get("reason"))
+    c = ph.get("calibration") or {}
+    out = {k: ph.get(k) for k in ("available", "source", "label", "n_records", "eta_tomo", "N", "metrics", "fidelity",
+                                  "boot", "var_theta", "coverage", "wigner2d", "theta_err_A", "warnings")}
+    out["metrics"] = {k: v for k, v in (ph.get("metrics") or {}).items() if k != "p_n"} | {"p_n": (ph.get("metrics") or {}).get("p_n")}
+    out["calibration"] = dict(quality=c.get("quality"), ref_blocks=c.get("ref_blocks"), deg=c.get("deg"))
+    return out
