@@ -193,7 +193,18 @@ def fit_phase_calibration(refs: list[dict], V_max: float, waveform: str = "trian
     A = sol.x[0]; th = theta_of(sol.x)
     r2 = (x - A * np.cos(th)) ** 2
     s2 = (A * np.sin(th)) ** 2
-    sphi2 = max(0.0, float(np.sum((r2 - VAC) * s2) / max(np.sum(s2 * s2), 1e-12)))
+    # r² = v0 + σ_φ²·(A sin θ)²: Regression mit freiem Achsenabschnitt v0, damit ein kleiner Fehler der
+    # Vakuumnormierung nicht als Phasenrauschen erscheint; nur signifikante Werte (> 2σ) werden übernommen.
+    X = np.column_stack([np.ones_like(s2), s2])
+    beta, *_ = np.linalg.lstsq(X, r2, rcond=None)
+    res = r2 - X @ beta
+    try:
+        cb = np.linalg.inv(X.T @ X) * float(np.mean(res ** 2))
+        sphi2_err = float(np.sqrt(max(cb[1, 1], 0)))
+    except np.linalg.LinAlgError:
+        sphi2_err = float("inf")
+    sphi2_raw = float(beta[1])
+    sphi2 = max(0.0, sphi2_raw) if sphi2_raw > 2 * sphi2_err else 0.0
     sig = np.sqrt(VAC + sphi2 * s2)
     sol = least_squares(resid, sol.x, method="lm", x_scale="jac")
     J = sol.jac
@@ -225,7 +236,8 @@ def fit_phase_calibration(refs: list[dict], V_max: float, waveform: str = "trian
              stroke_rad=float(up[-1] - up[0]), nonlinearity_rad=float(np.max(np.abs(up - lin))),
              hysteresis_rad=float(np.max(np.abs(Pg @ cs[1] - up))) if nb > 1 else 0.0,
              v_range=[float(v.min()), float(v.max())], A=float(A), A_err=float(np.sqrt(max(C[0, 0], 0))),
-             drift_rad=dl.tolist(), phase_noise_rad=float(np.sqrt(sphi2)))
+             drift_rad=dl.tolist(), phase_noise_rad=float(np.sqrt(sphi2)),
+             phase_noise_var_fit=sphi2_raw, phase_noise_var_err=sphi2_err)
     warn = []
     if q["chi2_ndof"] > 1.5:
         warn.append(f"K-θ-Fit: χ²/ndof = {q['chi2_ndof']:.2f} (Modell passt schlecht)")
@@ -241,8 +253,12 @@ def fit_phase_calibration(refs: list[dict], V_max: float, waveform: str = "trian
     if K > 2:
         sl = np.diff(dl) / np.maximum(dt, 1e-9)
         d2 = np.diff(sl)
-        w = 1 / np.maximum(dt[:-1], 1e-9) + 1 / np.maximum(dt[1:], 1e-9)
-        qd = float(np.sqrt(np.mean(d2 ** 2 / w)))
+        i1, i2 = 1 / np.maximum(dt[:-1], 1e-9), 1 / np.maximum(dt[1:], 1e-9)
+        w = i1 + i2
+        # Messfehler der Versätze δ (Fit-Kovarianz) abziehen, sonst wird q bei kurzen K-θ-Läufen überschätzt
+        s2 = float(np.mean(np.clip(np.diag(covp)[-(K - 1):], 0, None))) if covp.size else 0.0
+        vm = s2 * (i1 ** 2 + (i1 + i2) ** 2 + i2 ** 2)
+        qd = float(np.sqrt(max(0.0, np.mean((d2 ** 2 - vm) / w))))
         q["drift_estimate"] = "zweite Differenzen"
     elif K == 2:
         qd = float(abs(dl[1] - dl[0]) / np.sqrt(max(dt[0], 1e-9)))
