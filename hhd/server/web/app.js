@@ -231,7 +231,7 @@ async function api(path) { const r = await fetch(path, { credentials: "same-orig
 async function loadSessions() {
   try {
     lastSessions = await (await api("/api/sessions")).json();
-    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")}${s.state && s.state !== "fock1" ? " · " + esc(s.state_label || s.state) + (s.phase_sensitive ? " (phasengem.)" : "") : ""} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
+    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")}${s.state && s.state !== "fock1" ? " · " + esc(s.state_label || s.state) + (s.phase_sensitive ? ((s.plan || "").startsWith("kurzphase_") ? " (Phase bekannt)" : " (phasengem.)") : "") : ""} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
     document.querySelectorAll(".sess").forEach(e => e.onclick = () => openSession(e.dataset.s));
     if (selSession && lastSessions.find(s => s.id === selSession)?.analyzed && !openSession.loaded) openSession(selSession);
     if (!selSession && lastSessions.length && lastSessions[0].analyzed) openSession(lastSessions[0].id);
@@ -272,7 +272,7 @@ function renderResult(R) {
   if (pk) {
     $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +
       ` · <span class="ok-t">${esc(P.label || "Phase bekannt (Piezo-Rampe, kalibriert)")}</span>`;
-    $("wiglbl").innerHTML = `<b>${esc(P.label)}</b>: W(x,p) aus ρ (MaxLik, N = ${P.N}, η = ${fmt(P.eta_tomo, 3)} korrigiert); orange &gt; 0, blau &lt; 0`;
+    $("wiglbl").innerHTML = `<b>${esc(P.label)}</b> · W(x,p) aus ρ (MaxLik, N = ${P.N}, η = ${fmt(P.eta_tomo, 3)} korrigiert); orange &gt; 0, blau &lt; 0`;
   } else if (ps) {
     $("resstate").innerHTML += ` <small class="mut">(${esc(P.reason || "Phase unbekannt")})</small>`;
   }
