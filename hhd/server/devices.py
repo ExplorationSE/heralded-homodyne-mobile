@@ -252,6 +252,11 @@ class SimBackend:
         cfg.session.campaign = "K-SERVER"
         if plan == "kurz":                    # schnelle Prüfsitzung: K-V, Dunkel, K-H, A, B, A, K-V
             cfg.blocks = short_plan(cfg.blocks)
+        elif plan.startswith("kurzphase_"):   # mit Phase (Piezo-Rampe, K-θ), hhd.sim.state_plans
+            from ..sim.state_plans import PHASE_PLANS, apply_phase_plan
+            if plan not in PHASE_PLANS:
+                raise ValueError(f"unbekannter Laufplan {plan!r}")
+            apply_phase_plan(cfg, plan)
         elif plan.startswith("kurz_"):        # kurze Sitzung für weitere Zustände (hhd.sim.state_plans)
             from ..sim.state_plans import STATE_PLANS, apply_state_plan
             if plan not in STATE_PLANS:

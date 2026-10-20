@@ -24,19 +24,22 @@ from .devices import SIM_ENGINES, DeviceError, ReplayBackend, RunSpec, SimBacken
 from .live import KIND_LABEL, LiveParams, LivePreview
 from ..io.recorder import SessionRecorder
 
-from ..sim.state_plans import STATE_PLANS, plan_doc, plan_label
+from ..sim.state_plans import (PHASE_PLANS, STATE_PLANS, phase_plan_doc, phase_plan_label, plan_doc,
+                                plan_label)
 
 PLANS = {"standard": "M1 Zeitraffer (18 Läufe)", "kurz": "Kurz (7 Läufe)"}
 PLAN_DOC = {"standard": "K-V, Dunkel, K-H, 6×(A, B) + A mit K-V nach jedem 3. Zyklus und am Ende",
             "kurz": "K-V, Dunkel, K-H, A, B, A, K-V (Einzelphoton |1⟩)"}
 for _p, _k in STATE_PLANS.items():
     PLANS[_p] = plan_label(_k); PLAN_DOC[_p] = plan_doc(_k)
+for _p, _k in PHASE_PLANS.items():
+    PLANS[_p] = phase_plan_label(_k); PLAN_DOC[_p] = phase_plan_doc(_k)
 
 
 def plan_state(plan: str) -> dict:
     """Vorgesehener geheraldeter Zustand eines Laufplans (Kurzinfo für Sitzungsliste/Metadaten)."""
     from ..sim.states import state_info
-    i = state_info(STATE_PLANS.get(plan, "fock1"))
+    i = state_info(STATE_PLANS.get(plan) or PHASE_PLANS.get(plan) or "fock1")
     return {k: i[k] for k in ("preset", "label", "phase_sensitive", "mean_n_ideal", "W00_ideal")}
 
 
@@ -46,7 +49,8 @@ PLAN_GROUPS = [dict(label="Einzelphoton |1⟩", plans=["standard", "kurz"]),
                dict(label="Katzen (phasengemittelt)", plans=["kurz_cat_even_1", "kurz_cat_odd_1", "kurz_cat_even_2",
                                                               "kurz_cat_odd_2", "kurz_kitten_3dB"]),
                dict(label="Gaußsche Zustände", plans=["kurz_coherent_1", "kurz_squeezed_3dB", "kurz_squeezed_6dB",
-                                                      "kurz_thermal_0.5"])]
+                                                      "kurz_thermal_0.5"]),
+               dict(label="Mit Phase (Piezo-Rampe)", plans=list(PHASE_PLANS))]
 assert sorted(p for g in PLAN_GROUPS for p in g["plans"]) == sorted(PLANS)
 STATES = {"bereit": "bereit", "vorbereitung": "Simulation/Vorbereitung", "messung": "Messung läuft",
           "pause": "Pause – wartet auf „Weiter“",
