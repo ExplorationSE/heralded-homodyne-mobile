@@ -155,7 +155,7 @@ def write_table(rows: list, out: Path) -> None:
                  f"{c['nonlinearity_rad']:.3f}, Hysterese {c['hysteresis_rad']:.3f} rad, χ²/ndof {c['chi2_ndof']:.2f}, "
                  f"θ-Bias {f((x['th'] or {}).get('bias'), 3)} rad; Var(x_θ)-Fit am Detektor "
                  f"{f(vf.get('squeezing_dB'), 2)} ± {f(vf.get('squeezing_dB_err'), 2)} dB"
-                 + (f", Achse {ax['value']:.3f} (Soll {ax['true']:.3f}) rad" if ax else "")
+                 + (f", Achse {ax['value']:.3f} rad, Abweichung zum Soll (mod π) {ax['diff']:+.3f} rad" if ax else "")
                  + f"; Abdeckung min/Mittel {cv['min_rel']:.2f} ({'ok' if cv['ok'] else 'Lücken'}); N = {x['N']}; "
                  f"Auswertung gesamt {x['t'].get('total', 0):.0f} s, davon Phase {x['t'].get('phase', 0):.1f} s"
                  + (f"; Warnungen: {'; '.join(x['warn'])}" if x["warn"] else ""))
