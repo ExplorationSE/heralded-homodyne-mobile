@@ -193,6 +193,8 @@ class MeasurementService:
         self.listeners: list = []             # Rückrufe bei Zustandswechsel (Server: sofort senden)
         self._continue = threading.Event()
         self.waiting_continue = False
+        self._checking = threading.Event()
+        self.last_check: dict | None = None
 
     # ------------------------------------------------------------------ Geräte
     def _live_cfg(self):
@@ -313,6 +315,9 @@ class MeasurementService:
                     simulated=self.simulated, live_any=self.live_any, fallback=self.fallback_msg,
                     sim_engine=self.sim_engine, sim_engines=list(SIM_ENGINES),
                     waiting_continue=self.waiting_continue, pause_between_runs=self.cfg.live_pause_between_runs,
+                    device_check=dict(running=self._checking.is_set(),
+                                      last=None if not self.last_check else dict(time=self.last_check["time"],
+                                                                                 ok=self.last_check["ok"])),
                     state=self.state, state_text=STATES.get(self.state, self.state), msg=self.msg,
                     session_id=self.session_id, run_index=self.run_idx,
                     plan=[dict(r.to_dict(), label=KIND_LABEL.get(r.kind, r.kind)) for r in self.plan],
@@ -359,6 +364,8 @@ class MeasurementService:
     def _cmd_start_session(self, p: dict, **kw) -> dict:
         if self._thread and self._thread.is_alive():
             raise CommandError("eine Sitzung läuft bereits")
+        if self._checking.is_set():
+            raise CommandError("Geräteprüfung läuft – bitte warten")
         if self.device_error:
             raise CommandError(f"Geräte nicht bereit: {self.device_error}")
         plan = p.get("plan", self.display["plan"])
@@ -657,6 +664,54 @@ class MeasurementService:
                 return True
             time.sleep(0.1)
         return False
+
+    # ------------------------------------------------------------------ Geräteprüfung
+    def check_devices(self, all_devices: bool = False, client: str = "api", addr: str = "?", local: bool = False) -> dict:
+        """Geräteprüfung wie ``python -m hhd.server.check`` (nur lesend, ohne Messung), nur ohne laufende Sitzung.
+
+        Vom Server geöffnete Live-Geräte werden dafür kurz geschlossen und danach wieder geöffnet (die Hersteller-
+        bibliotheken erlauben nur einen Nutzer je Gerät). Ergebnis auch in ``<log_dir>/geraetepruefung.json``."""
+        from . import check as CK
+        with self._mtx:
+            if self._thread and self._thread.is_alive():
+                raise CommandError("Geräteprüfung nur ohne laufende Sitzung")
+            if self._checking.is_set():
+                raise CommandError("Geräteprüfung läuft bereits")
+            self._checking.set()
+        try:
+            cfg = __import__("copy").copy(self.cfg)
+            cfg.adq_trace_dir = str(self._abs(cfg.adq_trace_dir)) if cfg.adq_trace_dir else ""
+            modes = CK.device_modes(cfg)
+            want = [k for k in ("harp", "digitizer") if all_devices or modes[k] == "live"]
+            held = [d for d in (self.harp, self.dig) if d.kind in want and self.modes.get(d.kind) == "live"]
+            for d in held:
+                try:
+                    d.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                res = CK.check_devices(cfg, self.root, all_devices=all_devices)
+            finally:
+                for d in held:                       # wieder öffnen wie beim Serverstart
+                    try:
+                        d.open()
+                        self.device_errors.pop(d.kind, None)
+                    except Exception as e:  # noqa: BLE001
+                        self.device_errors[d.kind] = str(e)
+                self.device_error = " ".join(f"[{k}] {v}" for k, v in self.device_errors.items())
+            res["config"] = "Server-Konfiguration"
+            res["server_devices_reopened"] = [d.kind for d in held]
+            try:
+                res["json_path"] = str(CK.write_json(res, self._abs(self.cfg.log_dir) / "geraetepruefung.json"))
+            except OSError as e:
+                res["json_error"] = str(e)
+            self.last_check = res
+            self.log.write(client, addr, "check_devices", {"alle": bool(all_devices)}, bool(res["ok"]),
+                           "Geräte in Ordnung" if res["ok"] else "Geräteprüfung: Fehler", local)
+            return res
+        finally:
+            self._checking.clear()
+            self._notify()
 
     # ------------------------------------------------------------------ Sitzungen/Ergebnisse
     def sessions(self) -> list[dict]:

@@ -120,6 +120,12 @@
     <span class="tag crit">kritisch</span> Parameter nur am Mess-PC oder mit ausdrücklicher Bestätigung;
     <span class="tag loc">nur Mess-PC</span> (Triggerausgänge) nie aus der Ferne. <span id="whereami"></span>
   </div>
+  <div class="card" id="chkcard">
+    <div class="row between"><h2>Geräteprüfung</h2><button id="chkbtn">Geräte prüfen</button></div>
+    <label class="mut"><input type="checkbox" id="chkall"> auch nicht als live konfigurierte Geräte prüfen</label>
+    <div class="mut small">Lädt die Treiber, öffnet und fragt die Geräte ab – ohne Messung; nur ohne laufende Sitzung.</div>
+    <div id="chkres"></div>
+  </div>
   <div id="devcards" class="grid"></div>
 </section>
 

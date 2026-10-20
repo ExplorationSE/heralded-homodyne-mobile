@@ -144,6 +144,16 @@ def create_app(cfg: ServerConfig, root: Path | None = None, service: Measurement
         except CommandError as e:
             _err(e)
 
+    @app.get("/api/devices/check")
+    async def devices_check(request: Request, alle: bool = Query(False)):
+        """Geräteprüfung ohne Messung (nur lesend); 409 während einer Sitzung oder einer anderen Prüfung."""
+        addr = request.client.host if request.client else "?"
+        try:
+            return await asyncio.to_thread(svc.check_devices, alle, "api", addr,
+                                           is_local(request.headers, addr))
+        except CommandError as e:
+            raise HTTPException(409, str(e)) from None
+
     @app.get("/api/log")
     async def cmdlog(n: int = Query(100, ge=1, le=1000)):
         return svc.log.tail(n)

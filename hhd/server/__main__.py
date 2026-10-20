@@ -26,6 +26,9 @@ def main(argv=None) -> int:
                      token=a.token, speed=a.speed, sim_engine=a.sim_engine).items():
         if v is not None:
             setattr(cfg, k, v)
+    from .check import resolve_paths
+    for m in resolve_paths(cfg, Path.cwd()):       # z. B. D:/hhd_data ohne Laufwerk D: → .\\hhd_data
+        print(m)
     import uvicorn
     from .app import create_app
     app = create_app(cfg, Path.cwd())

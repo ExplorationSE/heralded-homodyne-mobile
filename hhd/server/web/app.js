@@ -187,6 +187,8 @@ function renderJobs() {
 // ------------------------------------------------------------------ Geräte
 let devSig = "";
 function renderDevices() {
+  const runningS = ["vorbereitung", "messung", "schreiben", "pause"].includes(S.state);
+  const cb = $("chkbtn"); if (cb && cb.textContent === "Geräte prüfen") { cb.disabled = runningS || !!(S.device_check && S.device_check.running); cb.title = runningS ? "nur ohne laufende Sitzung" : ""; }
   const sig = JSON.stringify([S.devices, S.lock.holder === me, local]);
   if (sig === devSig) return; devSig = sig;
   $("whereami").textContent = local ? "Sie sind am Mess-PC." : "Sie sind entfernt verbunden.";
@@ -212,6 +214,34 @@ function renderDevices() {
     if (typeof spec.default === "boolean") val = val === "true"; else if (typeof spec.default === "number") val = Number(val);
     setDevice(dev, { [name]: val });
   });
+}
+const CHK_KAT = { ok: "in Ordnung", treiber_fehlt: "Treiber/Bibliothek nicht gefunden", belegt: "Gerät belegt", kein_geraet: "kein Gerät gefunden", fehler: "Fehler", nicht_geprueft: "nicht geprüft" };
+function renderCheck(R) {
+  const row = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
+  $("chkres").innerHTML = `<div class="${R.ok ? "ok-t" : "bad-t"}" style="margin:.5em 0"><b>${R.n_checked ? (R.ok ? "✔ alle geprüften Geräte in Ordnung" : "✘ nicht in Ordnung – Messung so nicht starten") : "kein Gerät als live konfiguriert – nichts geprüft"}</b><br><small class="mut">${esc(R.time)} · hhd ${esc(R.software)}${R.json_path ? " · " + esc(R.json_path) : ""}</small></div>` +
+    R.devices.map((d) => {
+      const x = d.details || {};
+      let rows = row("Betriebsart", esc(d.mode)) + row("Ergebnis", `<span class="${d.ok && d.checked ? "ok-t" : d.checked ? "bad-t" : "mut"}">${esc(CHK_KAT[d.category] || d.category)}</span>`);
+      if (d.checked) {
+        rows += row("Treiber", d.library_found ? esc(d.library_path) : "nicht gefunden") + (d.library_found ? row("Version", esc(d.library_version)) : "") + row("Gerät gefunden", d.device_found ? "ja" : "nein");
+        if (d.ok) {
+          rows += row("Modell", esc(d.model)) + row("Seriennummer", esc(d.serial)) + row("Firmware", esc(d.firmware));
+          rows += d.kind === "harp" ? row("Eingänge", `${x.n_inputs ?? "–"} + Sync`) + row("Sync-Rate", (x.sync_rate_per_s ?? "–") + " /s") + row("Basisauflösung", (x.base_resolution_ps ?? "–") + " ps")
+            : row("Kanäle", x.n_channels ?? "–") + row("Abtastrate", x.sampling_rate_Hz ? (x.sampling_rate_Hz / 1e9).toFixed(2) + " GS/s" : "–") + (x.product_options ? row("Optionen", esc(x.product_options)) : "");
+        } else rows += row("Meldung", esc(d.error)) + row("Abhilfe", esc(d.hint));
+      } else rows += row("Hinweis", esc(d.hint));
+      return `<h3 style="margin:.6em 0 .2em">${esc(d.name)}</h3><table class="tbl">${rows}</table>`;
+    }).join("");
+}
+async function checkDevices() {
+  const b = $("chkbtn"); b.disabled = true; b.textContent = "prüfe …";
+  try {
+    const r = await fetch(`/api/devices/check?alle=${$("chkall").checked ? "true" : "false"}`, { credentials: "same-origin" });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.status);
+    renderCheck(j); toast(j.ok ? "Geräte in Ordnung" : "Geräteprüfung: Fehler", !j.ok);
+  } catch (e) { toast("Geräteprüfung: " + e.message, true); }
+  finally { b.disabled = false; b.textContent = "Geräte prüfen"; }
 }
 function setDevice(dev, params, confirm) {
   send("set_device", { device: dev, params, ...(confirm ? { confirm } : {}) }, (m) => {
@@ -394,6 +424,7 @@ async function loadLog() {
 }
 
 // ------------------------------------------------------------------ Bedienung
+$("chkbtn").onclick = checkDevices;
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === b.dataset.v));
