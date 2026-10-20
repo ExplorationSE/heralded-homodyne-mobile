@@ -51,6 +51,20 @@ class AnalysisParams:
     drift_p: float = 0.0027                 # OP-6: p-Schwelle (χ² der Läufe, A-B-A, KS der Nulltests) ≙ 3σ
     hist_bins: int = 60
     hist_lim: float = 5.0
+    # phasenaufgelöste Auswertung (ab 0.15; nur mit Rampenspur und Lauf K-θ, sonst phasengemittelt)
+    phase: bool = True
+    phase_ref_max_records: int = 50000      # je K-θ-Lauf für den Kalibrierfit
+    phase_cal_deg: int = 3                  # Polynomgrad V → θ je Rampenrichtung
+    theta_sign: int = 1                     # +1: θ steigt mit der Rampenspannung (Vorzeichen nicht messbar, Aufbau)
+    tomo_eta_extra: float = 1.0             # zusätzlich bekannte Detektionseffizienz in der POVM (× η_el)
+    tomo_nmax: int = 30
+    tomo_theta_bins: int = 32
+    tomo_dx: float = 0.15
+    tomo_max_iter: int = 5000
+    tomo_boot_iter: int = 800
+    n_boot_tomo: int = 20
+    var_theta_bins: int = 24
+    wigner2d_points: int = 61
 
     def calib_params(self) -> CalibParams:
         return CalibParams(norm=self.norm, clearance_dB=self.clearance_dB, drift_z=self.drift_z)
@@ -470,6 +484,16 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
             timing["compare"] = time.time() - t
         result["efficiency_budget"] = efficiency_budget(session, sd, cal, res_groups, pca, comp, ap)
     result["state"] = session_state(session)
+    if "reconstruct" in stages and ap.phase:
+        t = time.time()
+        from .phase import MemorySource, phase_analysis
+        od_ph = (Path(out_dir) if out_dir else Path(session.path) / "analysis") if write else None
+        if od_ph is not None:
+            od_ph.mkdir(parents=True, exist_ok=True)
+        result["phase"] = phase_analysis(session, MemorySource(quads, cal, groups), cal, ap,
+                                         (result.get("efficiency_budget") or {}).get("xi"), result["state"], od_ph)
+        warnings += result["phase"].get("warnings", [])
+        timing["phase"] = time.time() - t
     result["warnings"] = warnings
     timing["total"] = time.time() - t0
     result["performance"] = dict(timing_s=timing, n_records=int(sum(len(q.q) for q in quads.values())))

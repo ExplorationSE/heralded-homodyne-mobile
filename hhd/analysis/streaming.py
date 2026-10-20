@@ -667,6 +667,13 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
     sd = SimpleNamespace(runs={b: SimpleNamespace(report=rep["runs"].get(b, {})) for b in runs})
     result["efficiency_budget"] = efficiency_budget(session, sd, cal, res_groups, pca, comp, ap)
     result["state"] = session_state(session)
+    if ap.phase:
+        t = time.time()
+        from .phase import FileSource, phase_analysis
+        result["phase"] = phase_analysis(session, FileSource(qpath), cal, ap,
+                                         (result.get("efficiency_budget") or {}).get("xi"), result["state"], od)
+        warnings += result["phase"].get("warnings", [])
+        timing["phase"] = time.time() - t
     result["warnings"] = warnings
     timing["total"] = time.time() - t0
     result["performance"] = dict(timing_s=timing, n_records=int(sum(m.n for m in moms.values())))
