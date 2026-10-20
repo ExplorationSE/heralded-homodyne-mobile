@@ -103,7 +103,93 @@ def validate_analysis(session_dir, result: dict) -> dict:
             out["eta_state"] = dict(value=eb["eta_rest"]["value"], err=eb["eta_rest"]["err"], true=t,
                                     pull=_pull(eb["eta_rest"]["value"], t, eb["eta_rest"]["err"]),
                                     eta_el_removed=cal.get("eta_el") is not None)
+    ph = result.get("phase") or {}
+    if ph.get("available"):
+        try:
+            out["phase"] = validate_phase(d, result, exp)
+        except Exception as e:                       # Validierung darf die Auswertung nicht abbrechen
+            out["phase"] = dict(error=f"{type(e).__name__}: {e}")
     return out
+
+
+def _true_theta(d: Path, b: str):
+    for fn in ("truth.h5", "truth_records.h5"):
+        p = d / fn
+        if p.exists():
+            with h5py.File(p, "r") as f:
+                k = f"blocks/{b}/records/theta_true" if fn == "truth.h5" else f"blocks/{b}/theta_true"
+                if k in f:
+                    return f[k][:].astype(float)
+    return None
+
+
+def validate_phase(d: Path, result: dict, exp: dict) -> dict:
+    """θ-Kalibrierung gegen ``theta_true`` je Record; ρ gegen ρ_soll = ξ·L_η(ρ_t, dephasiert) + (1−ξ)|0⟩⟨0|."""
+    from ..recon import tomo as T
+    from ..sim.states import loss_channel, make_state
+    ph = result["phase"]
+    o: dict = {}
+    pth = d / "analysis" / "phase.h5"
+    if not pth.exists() and result.get("out_dir"):
+        pth = Path(result["out_dir"]) / "phase.h5"
+    errs = {}
+    if pth.exists():
+        with h5py.File(pth, "r") as f:
+            for b in f["runs"]:
+                tt = _true_theta(d, b)
+                if tt is None:
+                    continue
+                th = f[f"runs/{b}/theta"][:].astype(float)
+                ee = f[f"runs/{b}/theta_err"][:].astype(float)
+                n = min(len(tt), len(th))
+                m = np.isfinite(tt[:n]) & np.isfinite(th[:n])
+                if m.sum() < 10:
+                    continue
+                dd = np.angle(np.exp(1j * (th[:n][m] - tt[:n][m])))
+                errs[b] = dict(n=int(m.sum()), mean=float(dd.mean()), rms=float(np.sqrt(np.mean(dd ** 2))),
+                               p95=float(np.percentile(np.abs(dd), 95)), sigma_reported=float(np.median(ee[:n][m])),
+                               kind=f[f"runs/{b}"].attrs.get("dataset_type"))
+    if errs:
+        alld = [v for v in errs.values()]
+        w = np.array([v["n"] for v in alld], float)
+        o["theta"] = dict(runs=errs, rms=float(np.sqrt(np.average([v["rms"] ** 2 for v in alld], weights=w))),
+                          bias=float(np.average([v["mean"] for v in alld], weights=w)),
+                          sigma_reported=float(np.average([v["sigma_reported"] for v in alld], weights=w)))
+    runs = result["groups"].get("A", {}).get("runs", [])
+    ea = [exp[b] for b in runs if b in exp]
+    if not ea or not ea[0].get("state_preset"):
+        return o
+    rt = make_state(ea[0]["state_preset"]).rho()
+    eta_t = float(np.mean([e.get("eta_tomo", e.get("eta_state", 1.0)) for e in ea]))
+    xi = float(np.mean([e.get("xi", 1.0) for e in ea]))
+    # θ_true enthält das Phasenrauschen; ρ wird nur durch den Fehler der θ-Zuordnung dephasiert (gemessen gegen θ_true)
+    ra = [v for bb, v in errs.items() if bb in runs]
+    if ra:
+        sig = float(np.sqrt(np.average([v["rms"] ** 2 - v["mean"] ** 2 for v in ra], weights=[v["n"] for v in ra])))
+        sig_src = "theta_cal_vs_truth"
+    else:
+        sig, sig_src = float(np.mean([e.get("phase_noise_rad", 0.0) for e in ea])), "phase_noise_rad"
+    rho_m = np.array(ph["rho"]["re"]) + 1j * np.array(ph["rho"]["im"])
+    N = rho_m.shape[0]
+    M = max(N, rt.shape[0])
+    rt = np.pad(rt, ((0, M - rt.shape[0]), (0, M - rt.shape[0])))
+    k = np.arange(M)
+    lam = loss_channel(rt, eta_t) * np.exp(-0.5 * sig ** 2 * (k[:, None] - k[None, :]) ** 2)
+    rex = xi * lam
+    rex[0, 0] += 1 - xi
+    rex = rex[:N, :N] / np.real(np.trace(rex[:N, :N]))
+    me, mm = T.state_metrics(rex), ph["metrics"]
+    bt = ph.get("boot", {})
+    o["model"] = dict(eta_tomo=eta_t, xi=xi, dephasing_rad=sig, dephasing_source=sig_src)
+    o["fidelity_expected"] = float(T.fidelity(rho_m, rex))
+    o["fidelity_expected_maxrot"] = float(T.fidelity_max_rotation(rho_m, rex)[0])
+    for q in ("W00", "parity", "mean_n", "squeezing_dB", "alpha_from_a2", "purity"):
+        e = (bt.get(q) or {}).get("err")
+        o[q] = dict(value=mm[q], true=me[q], diff=mm[q] - me[q], err=e, pull=_pull(mm[q], me[q], e))
+    if me["squeezing_dB"] < -0.3:
+        da = float(np.angle(np.exp(2j * (mm["axis_rad"] - me["axis_rad"]))) / 2)
+        o["axis_rad"] = dict(value=mm["axis_rad"], true=me["axis_rad"], diff=da, err=(bt.get("axis_rad") or {}).get("err"))
+    return o
 
 
 def summarize_pulls(vals: list[dict], keys=("A.var_x", "A.W00", "A.W00_bc", "A.W00_moments", "A.eta_fit", "A.eta_var", "A.eta_n",
