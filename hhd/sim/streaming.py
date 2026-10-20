@@ -218,7 +218,7 @@ class _ExpectedMean:
 
 
 class RecordTruthWriter:
-    """``truth_records.h5``: je Lauf ``blocks/<id>/{kind, herald_ps, is_dark}`` (eine Zeile je Digitizer-Record,
+    """``truth_records.h5``: je Lauf ``blocks/<id>/{kind, herald_ps, is_dark, theta_true}`` (eine Zeile je Digitizer-Record,
     Reihenfolge wie in ``digitizer.h5``), erweiterbar, scheibenweise angehängt. ``herald_ps`` = Harp-Zeit (ps ab
     Laufbeginn) des auslösenden Heralds, −1 ohne Herald bzw. ohne Harp-Ereignis. Attribut ``complete`` erst nach
     der letzten Scheibe."""
@@ -235,7 +235,7 @@ class RecordTruthWriter:
             del self.f[f"blocks/{block_id}"]
         g = self.f.create_group(f"blocks/{block_id}")
         g.attrs.update(run_id=run_id, complete=False)
-        for k, dt in (("kind", np.int8), ("herald_ps", np.int64), ("is_dark", np.bool_)):
+        for k, dt in (("kind", np.int8), ("herald_ps", np.int64), ("is_dark", np.bool_), ("theta_true", np.float32)):
             g.create_dataset(k, (0,), dtype=dt, maxshape=(None,), chunks=(1 << 16,))
         self.g = g
 
@@ -254,7 +254,8 @@ class RecordTruthWriter:
             herald_ps[isH] = np.where(ps >= 0, ps + offset_ps, -1)
             is_dark[isH] = dark[src[isH]]
         n0 = self.g["kind"].shape[0]
-        for k, v in (("kind", kind), ("herald_ps", herald_ps), ("is_dark", is_dark)):
+        th = np.asarray(rec.get("theta_true", np.full(len(kind), np.nan)), np.float32)
+        for k, v in (("kind", kind), ("herald_ps", herald_ps), ("is_dark", is_dark), ("theta_true", th)):
             self.g[k].resize((n0 + len(v),))
             self.g[k][n0:] = v
 
