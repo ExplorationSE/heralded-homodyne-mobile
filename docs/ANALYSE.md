@@ -421,3 +421,55 @@ deshalb rotationssymmetrisch, die Phasenstruktur ist nicht sichtbar. Für Zustä
   nur geprüft, wenn p_n ab n = 3 vernachlässigbar ist.
 - `validate-analysis` vergleicht für A Var x, W(0,0) und eta_n mit den phasengemittelten Sollwerten.
 
+
+## Phase bekannt: Piezo-Rampe, K-θ, MaxLik-Tomografie (ab 0.15)
+
+Stufe `phase` (`hhd/analysis/phase.py`) für die Auswertung im Speicher und im Datenstrom (dort aus `analysis/quadratures.h5`).
+Sie läuft nur, wenn die A-Läufe eine Rampenspur haben und mindestens ein Lauf K-θ vorliegt. Sonst gilt
+`result["phase"] = {available: false, reason}` und die phasengemittelte Auswertung bleibt allein maßgeblich (Fallback).
+
+1. **Kalibrierung K-θ** (`hhd/calib/phase_cal.py`):
+   * Die Rampenrichtung je Record kommt aus dem Spannungsverlauf.
+   * Modell: x = A·cos θ + Rauschen mit θ = δ_k + Σ c_{r,j} v^j, mit einem Polynom (Grad `phase_cal_deg` = 3) je Richtung r (Hysterese) und einem Versatz δ_k je Referenzlauf.
+   * Fit mit Levenberg-Marquardt nach Gittersuche.
+   * Drift zwischen Referenzläufen: δ linear interpoliert.
+   * σ_θ je Record setzt sich zusammen aus:
+     - Parameterkovarianz;
+     - Brownscher Brücke mit Zufallsdrift q aus den zweiten Differenzen von δ (ohne δ-Messfehler);
+     - Phasenrauschen.
+   * Phasenrauschen: Regression r² = v₀ + σ²(A sin θ)² nur bei > 3σ Signifikanz, sonst die Untergrenze `theta_noise_prior_rad` = 0,03 rad. Mit α = 2 und einigen 10³ Records ist es kaum messbar.
+   * Vorzeichen: θ ↔ −θ ist mit einer kohärenten Referenz nicht unterscheidbar. Konvention `theta_sign = +1`: θ steigt mit der Spannung.
+   * Güte: χ²/ndof, Hub, Nichtlinearität, Hysterese. Warnungen bei χ²/ndof > 1,5, Hub < 2π oder A < 1.
+2. **θ je Record** → `analysis/phase.h5`:
+   * `runs/<lauf>/theta`, `theta_err`, `theta_source` (0 none, 1 ramp, 2 locked, 3 estimated; zurzeit nur ramp);
+   * Kalibrierung als JSON-Attribut.
+3. **Histogramm** der A-Records (sauber, herald-bedingt): 96 θ × 0,05 x fein. Speicher bleibt beschränkt, Läufe werden nacheinander gelesen.
+   * Für die Tomografie wird vergröbert auf `tomo_theta_bins` = 32 × `tomo_dx` = 0,15.
+4. **MaxLik (RρR)** in der Fock-Basis:
+   * POVM E_jk = Φ_j ∘ L_η†(∫_k ψ_mψ_n dx) mit Φ_j,mn = ⟨e^{i(m−n)θ}⟩_Bin.
+   * η = η_el · `tomo_eta_extra`: ρ ist der Zustand vor dem elektronischen Rauschen, wie bei der phasengemittelten Auswertung.
+   * Abschneidegrenze N automatisch aus ⟨n⟩ (+6, falls die obersten Niveaus > 10⁻³ besetzt sind).
+   * Poisson-Bootstrap des Histogramms (`n_boot_tomo` = 20, Warmstart).
+5. **Kennwerte** aus ρ:
+   * W(0,0), Parität, Reinheit, ⟨n⟩;
+   * Quetschung in dB und Achse aus min_θ Var(x_θ);
+   * α der Katze aus √|⟨a²⟩|;
+   * 2D-Wigner auf 61×61 Punkten über ±4,5;
+   * Var(x_θ) der Daten in 24 θ-Bins mit Fit c + a cos 2θ + b sin 2θ (Quetschung am Detektor);
+   * Phasenabdeckung: Warnung, wenn ein Bin unter 25 % des Mittels liegt;
+   * Treue zum Sollzustand:
+     - ideal, maximiert über eine Drehung e^{−inφ};
+     - Verlustmodell ξ·D_σθ(L_η(ρ_soll)) + (1−ξ)|0⟩⟨0| mit η aus ⟨n⟩.
+6. **Kennzeichnung:** `result["phase"]["label"]` = „Phase bekannt (Piezo-Rampe, kalibriert)“, sonst „phasengemittelt“. Der Bericht hat einen eigenen Abschnitt.
+   * Die Varianz-Nulltests der phasengemittelten Auswertung (A-Läufe, A-B-A, AA) werden bei Piezo-Rampe und phasenempfindlichem Zustand als „erwartet“ gekennzeichnet: Die θ-Abdeckung je Lauf ist ungleich, weil der Hub keine ganze Zahl von Wellenlängen ist und die Phase driftet.
+7. **Validierung** (`hhd validate-analysis`, nur Simulation):
+   * θ gegen `theta_true`: Bias, rms, berichtetes σ;
+   * ρ gegen ρ_soll = ξ·D_σ(L_η(ρ_t)) + (1−ξ)|0⟩⟨0|, mit σ = gemessener θ-Fehler: Treue, W(0,0), ⟨n⟩, dB, α mit Pulls.
+
+Konvention: x_θ = (a e^{−iθ} + a† e^{iθ})/√2, Var_Vakuum = ½, W_Vakuum(0,0) = 1/π.
+
+Grenzen:
+* Das Vorzeichen von θ ist eine Konvention.
+* Das Phasenrauschen ist unter etwa 0,1 rad nicht messbar (Untergrenze angenommen).
+* Die MaxLik ist für |α| ≳ 2,5 bzw. > 8 dB durch N ≤ 30 und xmax ≤ 8 begrenzt.
+* Live-Erfassung der Rampenspannung ist nicht implementiert.

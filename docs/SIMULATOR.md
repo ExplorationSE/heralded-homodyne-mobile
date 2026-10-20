@@ -213,6 +213,36 @@ zufällig oder als Rampe läuft; `heralded_state` im Laufattribut beschreibt den
 ohne Verluste). Sollwert A: W(0,0) = ξ·W_η(0,0) + (1−ξ)/π, η_eff = ξ·η·η_el. Für B gilt
 n_eff = R·η·η_el·T·⟨n⟩_ideal. Herald für `fock2`/`fock3`: idealisiert (Photonenzahlauflösung angenommen).
 
+### Phase aus Piezo-Rampe im LO-Arm (ab 0.15)
+
+Entscheidung Herr Eilers (Okt. 2026): Phasenabhängigkeit zuerst im Simulator, Zielvariante Piezo-Rampe im LO-Arm.
+`phase.mode = "piezo"` (`hhd/sim/phase.py`):
+
+* **LO-Phase** θ(t) = θ₀ + 2π·Hub·g_r(u) + Drift·t + Zufallsdrift(t) + Rauschen.
+  * u ∈ [0, 1] ist die normierte Rampenspannung (`piezo_waveform` `triangle` oder `sawtooth`, `piezo_Hz`, `piezo_V_max`).
+  * Hub: `piezo_stroke_lambda` in Wellenlängen (Standard 1,25 λ ≙ 7,85 rad).
+  * Kennlinie g_r(u) = u + a·u(u−1) − d·h·4u(1−u):
+    * Nichtlinearität a = `piezo_nonlin`;
+    * Hysterese h = `piezo_hysteresis`, Vorzeichen d = +1 aufwärts, −1 abwärts.
+  * Langsame Drift `drift_rad_per_s`, Zufallsdrift `drift_rw_rad_per_sqrt_s` (deterministisch aus dem Sitzungs-Seed, über Läufe und Zeitscheiben stetig), Phasenrauschen je Mode `noise_rad`.
+  * Die Rampe läuft auf der Sitzungsuhr über alle Läufe durch.
+* **Rampenspannung je Record:** `ramp_channel = "aux_adc"` speichert `records/ramp_raw` (int16).
+  * Hilfs-ADC: `ramp_adc_bits`, `ramp_adc_range_V`, Rauschen `ramp_adc_noise_V`; LSB in den Blockattributen.
+  * ADQ32-Kanal B bleibt LO-Monitor bzw. Marker; ein zweiter ADQ32-Kanal steht damit nicht zur Verfügung.
+  * Am Gerät ist ein Hilfs-ADC bzw. ein Abgriff des Piezotreibers je Trigger vorgesehen (nicht implementiert).
+  * Alternative ohne zusätzliches Signal: Rampenstart als Harp-Marker und Zeit seit Rampenstart (nicht implementiert).
+  * `ramp_channel = "none"`: keine Spur, die Auswertung bleibt phasengemittelt.
+* **Lauf K-θ** (`kind = "phase_ref"`, Datensatztyp `phase_reference`, Rolle `calibration`):
+  * kohärente Referenz |α = `ref_alpha`⟩ mit `ref_rate` Triggern/s;
+  * ⟨x⟩ = √2·α·cos θ legt θ = 0 fest.
+* **Wahrheit:** `truth.h5` `blocks/<lauf>/records/theta_true` (bzw. `truth_records.h5` im Datenstrom) je Record, NaN ohne Mode.
+* **Sollwerte** phasenempfindlicher Zustände unter `piezo`:
+  * gepoolt über die wahren θ der geheraldeten Moden;
+  * `phase_known`, `eta_tomo` (= η des Laufs), `phase_noise_rad`, `state_preset` in `expected_json`.
+* **Laufplan** `kurzphase_<zustand>` (`hhd/sim/state_plans.py`) für fock01, Katzen, Kätzchen, kohärent und gequetscht.
+  * Ablauf: K-V, Dunkel, K-θ, K-H, A (10 s), K-θ, B, A (10 s), K-θ, K-V.
+  * Label „Kurz mit Phase: … (10 Läufe)“.
+
 ### Laufplan und Studie
 
 `hhd/sim/plan.py` erzeugt Blockfolgen (`make_plan`: kv_00, kh_start, a_01, b_01, …, K-V nach je `kv_every`
@@ -232,7 +262,7 @@ Interpolationsgewichte); ohne diesen Term gab es rund 20 % Fehlalarme.
 | Datei | Inhalt |
 |---|---|
 | `harp_<lauf>.ptu` | T2-Records je Lauf; Kopf mit `UsrHHD_RunId`, `UsrHHD_SessionId`, `UsrHHD_CampaignId`, `UsrHHD_CalibrationId`, `UsrHHD_ComparisonRole` |
-| `digitizer.h5` | Schema v1.2 (Kanal A und B), siehe Modulkopf von `hhd/io/schema.py` |
+| `digitizer.h5` | Schema v1.3 (Kanal A und B, optional `records/ramp_raw`), siehe Modulkopf von `hhd/io/schema.py`; v1.0–1.2 bleiben lesbar |
 | `truth.h5` | Ground Truth je Block (s. u.) und Uhrphase `clock/` |
 | `session.json` | Manifest mit Sitzung, Kalibrierung, Läufen, Sollwerten, `mapping`, Konfiguration, SHA-256 aller Dateien |
 
@@ -243,12 +273,12 @@ Gruppen der Ground Truth je Block in `truth.h5`:
 | `heralds` | wahre Zeit, Harp-Zeit, zugehöriges Paar, Record, Dunkelzählung |
 | `pairs` | Paare und ob sie geheraldet sind |
 | `modes` | Modenzentrum (wahr und in Digitizer-Zeit), Art, θ, wahre Quadratur x |
-| `records` | Art (0 Herald, 1 Zufall, 2 periodisch, 3 Zustand), Quelle, wahre Triggerzeit, Zahl überlappender Moden |
+| `records` | Art (0 Herald, 1 Zufall, 2 periodisch, 3 Zustand), Quelle, wahre Triggerzeit, Zahl überlappender Moden, `theta_true` (ab 0.15) |
 | `markers`, `random`, `state`, `phase_ref` | wahre Zeiten und Harp-Zeiten |
 
 `hhd-sim validate` prüft:
 
-- Schema v1.2, eine `calibration_id` je Sitzung, eindeutige Lauf-IDs;
+- Schema v1.3 (lesbar 1.0–1.3), eine `calibration_id` je Sitzung, eindeutige Lauf-IDs;
 - Prüfsummen;
 - PTU-Köpfe: Record-Typ, Anzahl, Auflösung, Lauf-, Sitzungs- und Kalibrierungs-ID.
 

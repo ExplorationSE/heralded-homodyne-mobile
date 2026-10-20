@@ -1,5 +1,36 @@
 # Änderungsprotokoll – ExplorationSE Harp ADQ32 HHD Mobil
 
+## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
+
+Auftrag „Phasenabhängigkeit“ (Entscheidung Herr Eilers: zuerst im Simulator, Zielvariante Piezo-Rampe im LO-Arm):
+
+- **Simulator** (`hhd/sim/phase.py`, `phase.mode = "piezo"`):
+  - LO-Phase aus einer Piezo-Rampe (Dreieck/Sägezahn, Frequenz, Hub in λ);
+  - Nichtlinearität, Hysterese je Richtung, Drift, Zufallsdrift, Phasenrauschen.
+  - Die Rampenspannung je Record wird aufgezeichnet (`ramp_channel = "aux_adc"` → `records/ramp_raw`); ADQ32-Kanal B bleibt LO-Monitor.
+  - Neuer Lauf K-θ (`phase_ref`, kohärente Referenz).
+  - Wahre Phase je Record `theta_true` in `truth.h5` und `truth_records.h5`.
+  - Sollwerte phasenempfindlicher Zustände aus den wahren θ.
+- **Datenformat:**
+  - `digitizer.h5` Schema 1.3: optionale Record-Spur `ramp_raw`, Datensatztyp `phase_reference`; 1.0–1.2 bleiben lesbar.
+  - `analysis/phase.h5`: θ, σ_θ und Herkunft (none/ramp/locked/estimated) je Record.
+  - `RunData.read_ramp()`.
+- **Kalibrierung K-θ** (`hhd/calib/phase_cal.py`):
+  - Polynom Spannung → θ je Rampenrichtung (Hysterese), Versatz je Referenzlauf, Drift interpoliert;
+  - σ_θ je Record; Güte und Warnungen.
+- **Auswertung** (`hhd/analysis/phase.py`, `hhd/recon/tomo.py`):
+  - MaxLik-Tomografie (RρR) mit bekannter Phase, Verlust η in der POVM, automatischer Fock-Grenze;
+  - 2D-Wigner; Quetschung (dB, Achse); Var(x_θ) mit Fit; Parität; α; Treue zum Sollzustand;
+  - Phasenabdeckung mit Lückenwarnung; Bootstrap.
+  - Speicherbegrenzt über ein θ×x-Histogramm, auch in der Datenstrom-Auswertung.
+  - Phasengemittelt bleibt der Fallback; Bericht- und Ergebnisabschnitt „phase“.
+  - Neue `AnalysisParams`: `phase`, `phase_cal_deg`, `theta_sign`, `theta_noise_prior_rad`, `tomo_*`, `n_boot_tomo`, `var_theta_bins`, `wigner2d_points`.
+- **Validierung:** θ gegen die Wahrheit; ρ gegen ρ_soll (Verlust, ξ, Dephasierung) mit Treue und Pulls.
+- **Laufpläne** `kurzphase_<zustand>` (9 Zustände), Gruppe „Mit Phase (Piezo-Rampe)“.
+- **Web-App:** 2D-Wigner aus ρ, Var(x_θ), Phasenabdeckung, Kennwerttabelle, Kennzeichnung „Phase bekannt (Piezo-Rampe, kalibriert)“ bzw. „phasengemittelt“.
+- **Tests:** `tests/test_phase.py` (13): Rampe/Schema 1.3, θ-Kalibrierung gegen die Wahrheit, MaxLik für kohärent/gequetscht/Katzen, Quetschachse, Datenstrom, alte Dateien, |1⟩ unverändert, POVM-Adjungierte.
+- Keine neuen Python-Abhängigkeiten (numpy, scipy, h5py wie bisher).
+
 ## 0.14.0.dev0 – 19.10.2026 (unveröffentlicht)
 
 Auftrag „weitere Zustände im Laufplan“ (Wunsch Herr Eilers):

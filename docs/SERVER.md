@@ -115,7 +115,7 @@ REST (lesend): `/api/health`, `/api/status`, `/api/sessions`, `/api/sessions/{id
 `session.json`; in der reinen Simulation zusätzlich `truth.h5`, die von Import, Synchronisation und Auswertung
 nicht gelesen wird), `server_session.json` (Laufplan, Geräteparameter, Betriebsarten, Hardware, Rückfall,
 gestoppt?), `live_preview.json`, nach der Auswertung `sync/` und `analysis/` (`result.json`, `quadratures.h5`,
-`report.md`). Die Betriebsart je Gerät steht in jeder Datei (PTU-Tags `UsrHHD_DeviceMode…`, h5-Attribute
+`report.md`, ab 0.15 bei bekannter Phase `phase.h5`). Die Betriebsart je Gerät steht in jeder Datei (PTU-Tags `UsrHHD_DeviceMode…`, h5-Attribute
 `device_mode_*`/`acquisition_mode`, Manifest `device_modes`), siehe `docs/HARDWARE.md` Abschnitt 3. Live und
 gemischt wird im Datenstrom geschrieben; ein abgebrochener Lauf wird verworfen, eine Sitzung ohne fertigen Lauf
 entfernt.
@@ -238,6 +238,21 @@ Ergebnisse gegen die Simulator-Wahrheit:
   Sie ist erwartet, denn die LO-Drift ist simuliert.
 - Bei zehnfacher Herald-Rate gegenüber 7b (100/s) und 2,5-mal mehr Records bleibt der Speicher beschränkt:
   Server +17 %, Auswertung +10 %.
+
+## 7d Laufpläne mit Phase (Piezo-Rampe, 0.15)
+
+* Gruppe „Mit Phase (Piezo-Rampe)“ in der Auswahlliste: `kurzphase_<zustand>` für fock01, cat_even_1, cat_odd_1, cat_even_2, cat_odd_2, kitten_3dB, coherent_1, squeezed_3dB und squeezed_6dB.
+  * Label z. B. „Kurz mit Phase: Katze gerade α=2 (10 Läufe)“.
+  * Ablauf: K-V, Dunkel, K-θ, K-H, A (10 s), K-θ, B, A (10 s), K-θ, K-V.
+* Die K-θ-Läufe erscheinen im Laufband in Gelb (`--kt`).
+* `result_summary` enthält `phase`: Kennwerte, 2D-Wigner, Var(x_θ), Abdeckung, Kalibriergüte; ohne ρ.
+* Ergebnisansicht bei bekannter Phase:
+  * Kopfzeile „Phase bekannt (Piezo-Rampe, kalibriert)“;
+  * Wigner-Karte als 2D-Wigner aus ρ (orange > 0, blau < 0);
+  * Karte Var(x_θ): Daten mit Fehlern, Kurve aus ρ, Vakuum ½, Fit in dB und Achse;
+  * Karte Phasenabdeckung: Lücken in Gelb, Kennwerttabelle mit Treue.
+* Ohne Rampe bleibt die Darstellung phasengemittelt; die Begründung steht in der Kopfzeile.
+* Geprüft bei 412 px Breite: Screenshots `app_screens/40_*.png`.
 
 ## 8 Grenzen
 
