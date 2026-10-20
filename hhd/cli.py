@@ -326,6 +326,10 @@ def cmd_validate_analysis(a) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["check-devices"]:            # Optionen unverändert an hhd.server.check weiterreichen
+        from .server.check import main as check_main
+        return check_main(argv[1:])
     ap = argparse.ArgumentParser(prog="hhd", description="ExplorationSE Harp ADQ32 HHD Mobil – Auswertung (Import, Synchronisation, Kalibrierung, Rekonstruktion, Vergleich)")
     ap.add_argument("--version", action="version", version=f"hhd {__version__}")
     sp = ap.add_subparsers(dest="cmd", required=True)
@@ -395,6 +399,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-o", "--out"); p.set_defaults(f=cmd_report)
     p = sp.add_parser("validate-analysis", help="(nur Simulation) Auswertung gegen truth.h5"); anal(p)
     p.add_argument("--rerun", action="store_true"); p.set_defaults(f=cmd_validate_analysis)
+    sp.add_parser("check-devices", help="Geräteprüfung ohne Messung (wie python -m hhd.server.check; "
+                  "Optionen: hhd check-devices --help)")
     a = ap.parse_args(argv)
     return a.f(a)
 

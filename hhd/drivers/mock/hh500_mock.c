@@ -5,7 +5,8 @@
  * und die Übersetzung mit HH500_GetErrorString. Kein Code von PicoQuant.
  *
  * Umgebungsvariablen: MOCK_HH500_NODEV=1 (kein Gerät), MOCK_HERALD_RATE (1/s), MOCK_HH500_FIFOFULL_MS (FIFO-Überlauf
- * nach … ms), MOCK_HH500_SYSERROR=1 (Initialize scheitert). */
+ * nach … ms), MOCK_HH500_SYSERROR=1 (Initialize scheitert), MOCK_HH500_BUSY=1 (Gerät von anderer Software
+ * belegt: OpenDevice → ERROR_DEVICE_BUSY). */
 #include <stdio.h>
 #include <string.h>
 #include "common.h"
@@ -17,6 +18,7 @@
 #define E_RUNNING -5
 #define E_WRONG_TRGMODE -6
 #define E_INIT -7
+#define E_BUSY -8
 #define TTREADMAX 1048576
 #define WRAP 33554432ull
 #define NCH 4
@@ -41,6 +43,7 @@ static const char *err_text(int c) {
     case E_RUNNING: return "ERROR_DEVICE_BUSY_MEASURING (mock)";
     case E_WRONG_TRGMODE: return "ERROR_WRONG_TRGMODE (mock)";
     case E_INIT: return "ERROR_INIT_FAILED (mock)";
+    case E_BUSY: return "ERROR_DEVICE_BUSY (mock)";
     default: return "ERROR_UNKNOWN (mock)";
     }
 }
@@ -54,6 +57,7 @@ int HH500_GetErrorString(char *s, int c) { snprintf(s, 40, "%s", err_text(c)); r
 int HH500_OpenDevice(int d, char *serial) {
     DEV(d)
     if (d != 0 || getenv("MOCK_HH500_NODEV")) return E_OPEN;
+    if (getenv("MOCK_HH500_BUSY")) return E_BUSY;
     memset(X, 0, sizeof(*X)); X->open = 1; X->sync_div = 1; X->sync_en = 1;
     for (int i = 0; i < NCH; i++) X->ch_en[i] = 1;
     strcpy(serial, "1050042");

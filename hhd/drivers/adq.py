@@ -137,6 +137,19 @@ class ADQAPILib:
         if missing:
             raise LibraryNotFound(f"ADQAPI {self.path}: Funktionen fehlen {missing} – falsche Bibliothek/Version?")
 
+    def revision(self) -> str:
+        """Revisionstext der ADQAPI (``ADQAPI_GetRevisionString``, optional; leer, wenn nicht vorhanden)."""
+        try:
+            f = self.dll.ADQAPI_GetRevisionString
+        except AttributeError:
+            return ""
+        f.argtypes, f.restype = [], C.c_char_p
+        try:
+            v = f()
+        except Exception:  # noqa: BLE001
+            return ""
+        return v.decode("ascii", "replace") if v else ""
+
     def validate_version(self) -> int:
         if not hasattr(self.dll, "ADQAPI_ValidateVersion"):
             return 0

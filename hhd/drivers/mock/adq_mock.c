@@ -6,7 +6,8 @@
  *
  * Erzeugt Records in Echtzeit: Kanalquellen ADQ_EVENT_SOURCE_TRIG (Heralds wie im HH500-Mock, +42,7 ns),
  * _PERIODIC (frequency), _SYNC (1-kHz-Marker wie im HH500-Mock, +23 ns, 3,2-ns-Raster), Rearm/Totzeit je Kanal.
- * Umgebungsvariablen: MOCK_ADQ_NODEV=1, MOCK_ADQ_OVERFLOW_AFTER=<Records>, MOCK_HERALD_RATE, MOCK_ADQ_VERSION=-1|-2. */
+ * Umgebungsvariablen: MOCK_ADQ_NODEV=1, MOCK_ADQ_OVERFLOW_AFTER=<Records>, MOCK_HERALD_RATE, MOCK_ADQ_VERSION=-1|-2,
+ * MOCK_ADQ_BUSY=1 (Gerät gelistet, SetupDevice scheitert – z. B. von anderer Software belegt). */
 #include <stdio.h>
 #include <string.h>
 #include "common.h"
@@ -82,6 +83,7 @@ static int getstr(const char *s, const char *key, int nth, char *out, size_t n) 
     size_t i = 0; while (*p && *p != '"' && i + 1 < n) out[i++] = *p++; out[i] = 0; return 1;
 }
 
+const char *ADQAPI_GetRevisionString(void) { return "MOCK-15.0"; }
 int ADQAPI_ValidateVersion(int major, int minor) { (void)minor; const char *v = getenv("MOCK_ADQ_VERSION"); if (v) return atoi(v); return major == 15 ? 0 : -1; }
 void *CreateADQControlUnit(void) { cu_t *c = calloc(1, sizeof(cu_t)); for (int i = 0; i < NPID; i++) c->json[i] = defjson(i); return c; }
 void DeleteADQControlUnit(void *p) {
@@ -101,7 +103,7 @@ int ADQControlUnit_ListDevices(void *p, struct ADQInfoListEntry **lst, unsigned 
     *lst = c->list; return 1;
 }
 int ADQControlUnit_SetupDevice(void *p, int idx) {
-    cu_t *c = p; if (!c || idx != 0 || getenv("MOCK_ADQ_NODEV")) return 0; c->setup = 1; c->list[0].DeviceSetupCompleted = 1; return 1;
+    cu_t *c = p; if (!c || idx != 0 || getenv("MOCK_ADQ_NODEV") || getenv("MOCK_ADQ_BUSY")) return 0; c->setup = 1; c->list[0].DeviceSetupCompleted = 1; return 1;
 }
 #define CU(p, num) cu_t *c = p; if (!c || !c->setup || (num) != 1) return ADQ_EINVAL;
 int ADQ_GetParametersString(void *p, int num, int id, char *const s, size_t len, int fmt) {
