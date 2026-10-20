@@ -206,6 +206,20 @@ Befehlszeile: `python -m hhd.server --config config/server_live.toml`, oder einz
      es nicht (`live_fallback = "refuse"`).
    * Außerdem: `-Port`, `-Config`, `-NoBrowser`, `-NoWait`.
 
+**Startdateien im Überblick** (Doppelklick, keine Einstellungsdatei bearbeiten):
+
+| Datei | HydraHarp | ADQ32 | Zweck |
+|---|---|---|---|
+| `start_simulation.bat` | simuliert | simuliert | Ausprobieren ohne Hardware (lokal) |
+| `start_online.bat` | simuliert | simuliert | wie oben, mit Cloudflare-Tunnel und QR-Code fürs Handy |
+| `geraete_pruefen.bat` | Prüfung | Prüfung | nur Geräteprüfung beider Geräte, ohne Messung und ohne Server |
+| `start_messung.bat` | live | live | Messung mit beiden Geräten (`config/server_live.toml`) |
+| `start_messung_nur_harp.bat` | live | simuliert | Inbetriebnahme der HydraHarp (`config/server_live_nur_harp.toml`) |
+| `start_messung_nur_adq32.bat` | simuliert | live | Inbetriebnahme des ADQ32 (`config/server_live_nur_adq32.toml`) |
+
+Die `start_messung*`-Dateien prüfen zuerst die als live eingestellten Geräte und brechen bei einem Fehler ab; mit dem Zusatz `-Online` gibt es Tunnel und QR-Code. Beenden mit Enter im Fenster oder `stop_messung.bat`.
+
+
    Beenden: Enter im Fenster, `stop_messung.bat` oder `stop_online.bat`.
    Fehlt Laufwerk `D:` (`data_dir`/`log_dir` = `D:/hhd_…`), weist das Skript darauf hin. Server und Prüfung legen
    die Daten dann unter `.\hhd_data` bzw. die Logs unter `.\logs` ab (Meldung „Hinweis: Laufwerk D: nicht

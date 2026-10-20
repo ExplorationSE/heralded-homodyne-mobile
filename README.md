@@ -196,6 +196,20 @@ hhd check-devices --config config/server_live.toml    # Geräteprüfung ohne Mes
    Tunnel und QR-Code, `-Trotzdem` erlaubt gemischten Betrieb mit ausdrücklich simuliertem Gerät.
 4. Beenden mit `stop_messung.bat`.
 
+**Startdateien im Überblick** (Doppelklick, keine Einstellungsdatei bearbeiten):
+
+| Datei | HydraHarp | ADQ32 | Zweck |
+|---|---|---|---|
+| `start_simulation.bat` | simuliert | simuliert | Ausprobieren ohne Hardware (lokal) |
+| `start_online.bat` | simuliert | simuliert | wie oben, mit Cloudflare-Tunnel und QR-Code fürs Handy |
+| `geraete_pruefen.bat` | Prüfung | Prüfung | nur Geräteprüfung beider Geräte, ohne Messung und ohne Server |
+| `start_messung.bat` | live | live | Messung mit beiden Geräten (`config/server_live.toml`) |
+| `start_messung_nur_harp.bat` | live | simuliert | Inbetriebnahme der HydraHarp (`config/server_live_nur_harp.toml`) |
+| `start_messung_nur_adq32.bat` | simuliert | live | Inbetriebnahme des ADQ32 (`config/server_live_nur_adq32.toml`) |
+
+Die `start_messung*`-Dateien prüfen zuerst die als live eingestellten Geräte und brechen bei einem Fehler ab; mit dem Zusatz `-Online` gibt es Tunnel und QR-Code. Beenden mit Enter im Fenster oder `stop_messung.bat`.
+
+
 ## 4 Tests
 
 ```bash

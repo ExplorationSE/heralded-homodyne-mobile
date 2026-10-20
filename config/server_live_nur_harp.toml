@@ -1,0 +1,28 @@
+# Gemischter Betrieb: HydraHarp live, ADQ32 simuliert. Sonst wie server_live.toml.
+# Live-Betrieb beider Geräte am Mess-PC (HydraHarp 500 + ADQ32). Siehe docs/HARDWARE.md.
+[server]
+host = "127.0.0.1"        # am Mess-PC; Zugriff von außen nur über Tunnel mit Token
+port = 8766
+token = ""                # für Tunnel/LAN unbedingt setzen
+data_dir = "D:/hhd_data"
+log_dir = "D:/hhd_logs"
+
+[devices]
+device_mode = "live"
+digitizer_mode = "sim"          # ADQ32 simuliert (Inbetriebnahme HydraHarp)
+sim_config = "config/standard.yaml"   # Laufplan (Blöcke, Dauern) und nominelle Geräteparameter
+
+[live]
+live_fallback = "refuse"
+live_pause_between_runs = true        # Inbetriebnahme: vor jedem Lauf Umbau prüfen
+live_remote_start_confirm = true
+hh500_lib = ""                        # leer = $HHD_HH500LIB, sonst Standardorte (HH500Lib.dll / libhh500lib.so)
+adq_lib = ""                          # leer = $HHD_ADQAPI, sonst Standardorte (ADQAPI.dll / libadq.so)
+adq_trace_dir = "D:/hhd_logs/adq_trace"
+adq_marker_capture = "channel_b_sync"
+adq_json_override = ""
+
+[analysis]
+auto_analyze = true
+n_boot = 100
+streaming_records = 200000      # Datenstrom-Auswertung (beschränkter Speicher) ab so vielen Records; 0 = nie

@@ -4,6 +4,7 @@
 
 Auftrag „Geräteprüfung und Start am Mess-PC“:
 
+- Startdateien für alle Fälle: `geraete_pruefen.bat`, `start_messung_nur_harp.bat`, `start_messung_nur_adq32.bat` (mit `config/server_live_nur_harp.toml` bzw. `server_live_nur_adq32.toml`).
 - **Geräteprüfung ohne Messung** (`hhd/server/check.py`): `python -m hhd.server.check --config config/server_live.toml`
   bzw. `hhd check-devices`.
   - Lädt die Treiber, öffnet und fragt HydraHarp 500 und ADQ32 ab und schließt sie wieder.
