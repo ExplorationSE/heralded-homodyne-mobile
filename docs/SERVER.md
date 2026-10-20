@@ -107,7 +107,7 @@ WebSocket `/ws`:
 
 REST (lesend): `/api/health`, `/api/status`, `/api/sessions`, `/api/sessions/{id}/result` (vollständiges
 `result.json`), `/api/sessions/{id}/summary` (Kurzfassung für die App), `/api/sessions/{id}/report`,
-`/api/sessions/{id}/live` (Aufzeichnung der Live-Vorschau), `/api/log?n=`.
+`/api/sessions/{id}/live` (Aufzeichnung der Live-Vorschau), `/api/log?n=`, `/api/devices/check?alle=` (Geräteprüfung ohne Messung, nur ohne laufende Sitzung – sonst 409; `docs/HARDWARE.md` Abschnitt 6).
 
 ## 6 Dateien einer Server-Sitzung
 

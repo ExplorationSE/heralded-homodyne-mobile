@@ -183,7 +183,18 @@ python -m hhd.server --mode replay --replay-dir data/S001   # Wiedergabe einer v
 python -m hhd.server --config config/server_live.toml      # echte Geräte (docs/HARDWARE.md)
 python -m hhd.server --harp-mode live --digitizer-mode sim  # gemischter Betrieb
 tools/start_online.sh                                 # temporär online über cloudflared (Zugangscode Pflicht)
+hhd check-devices --config config/server_live.toml    # Geräteprüfung ohne Messung (= python -m hhd.server.check)
 ```
+
+**Am Mess-PC (Windows) mit echten Geräten** (`docs/HARDWARE.md`, Abschnitt 6):
+
+1. Treiber installieren: HydraHarp-500-Bibliothek und ADQAPI; Pfade gegebenenfalls über `HHD_HH500LIB`/`HHD_ADQAPI`
+   oder `hh500_lib`/`adq_lib` in `config/server_live.toml` angeben.
+2. Geräteprüfung: `hhd check-devices` bzw. in der App unter *Geräte* → „Geräte prüfen“.
+3. `start_messung.bat` ausführen. Das Skript prüft zuerst die Geräte und bricht bei einem Fehler ab. Danach startet
+   es den Server mit `server_live.toml`, erzeugt den Zugangscode und öffnet den Browser. `-Online` aktiviert
+   Tunnel und QR-Code, `-Trotzdem` erlaubt gemischten Betrieb mit ausdrücklich simuliertem Gerät.
+4. Beenden mit `stop_messung.bat`.
 
 ## 4 Tests
 

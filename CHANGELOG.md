@@ -2,6 +2,29 @@
 
 ## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
 
+Auftrag „Geräteprüfung und Start am Mess-PC“:
+
+- **Geräteprüfung ohne Messung** (`hhd/server/check.py`): `python -m hhd.server.check --config config/server_live.toml`
+  bzw. `hhd check-devices`.
+  - Lädt die Treiber, öffnet und fragt HydraHarp 500 und ADQ32 ab und schließt sie wieder.
+  - Meldet je Gerät: Treiberpfad/-version, gefunden, Modell, Seriennummer, Firmware; Eingänge/Sync bzw.
+    Abtastrate/Kanäle.
+  - Fehler mit Abhilfe auf Deutsch (Treiber fehlt / Gerät belegt / kein Gerät).
+  - Rückgabewert 0 nur bei allen Live-Geräten in Ordnung; JSON-Zusammenfassung `geraetepruefung.json`.
+- **API und App:**
+  - `GET /api/devices/check` (nur ohne laufende Sitzung, sonst 409; Live-Geräte des Servers werden kurz
+    geschlossen und wieder geöffnet; Eintrag im Protokoll; `status.device_check`);
+  - Knopf „Geräte prüfen“ in der Ansicht *Geräte*.
+- **`start_messung.bat`/`.ps1`, `stop_messung.bat`:**
+  - Ablauf: Prüfung → Abbruch mit Hinweis, sonst Server mit `server_live.toml`, Zugangscode, Browser lokal;
+  - `-Online` (Tunnel + QR); `-Trotzdem` nur gemischter Betrieb mit ausdrücklich simuliertem Gerät.
+- **Fehlendes Laufwerk** in `data_dir`/`log_dir` (z. B. `D:`): Rückfall auf `.\hhd_data` bzw. `.\logs` mit Meldung,
+  bei Prüfung und Serverstart.
+- **Treiber und Mocks:**
+  - `ADQAPILib.revision()` (optional `ADQAPI_GetRevisionString`);
+  - Mocks: belegtes Gerät (`MOCK_HH500_BUSY`, `MOCK_ADQ_BUSY`) und Revisionstext.
+- **Tests:** `tests/test_check.py`.
+
 Auftrag „Phasenabhängigkeit“ (Entscheidung Herr Eilers: zuerst im Simulator, Zielvariante Piezo-Rampe im LO-Arm):
 
 - **Simulator** (`hhd/sim/phase.py`, `phase.mode = "piezo"`):

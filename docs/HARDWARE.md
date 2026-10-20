@@ -175,6 +175,42 @@ Befehlszeile: `python -m hhd.server --config config/server_live.toml`, oder einz
 
 ## 6 Inbetriebnahme – Prüfliste
 
+### Ablauf am Mess-PC (Windows)
+
+1. **Treiber installieren** (Abschnitt 1): PicoQuant HydraHarp-500-Software/-Bibliothek (`hh500lib64.dll`, USB) und
+   Teledyne SP Devices ADQAPI (`ADQAPI.dll`, PCIe-Treiber). Liegen die Bibliotheken nicht im Suchpfad:
+   `HHD_HH500LIB` / `HHD_ADQAPI` setzen oder `hh500_lib` / `adq_lib` in `config/server_live.toml` eintragen.
+2. **Geräteprüfung** – lädt die Treiber, öffnet und fragt die Geräte ab, **ohne zu messen**, und schließt sie wieder:
+
+   ```bat
+   .venv\Scripts\python -m hhd.server.check --config config\server_live.toml   :: oder: hhd check-devices
+   ```
+
+   Je Gerät: Treiberpfad und -version, Gerät gefunden, Modell, Seriennummer, Firmware; HydraHarp zusätzlich
+   Eingänge, Sync-Rate und Basisauflösung, ADQ32 Abtastrate und Kanäle. Fehler mit Abhilfe auf Deutsch:
+   Treiber fehlt → Umgebungsvariable bzw. Konfigurationseintrag setzen; Gerät belegt → andere Software
+   (PicoQuant-Software, ADQAssist/Digitizer Studio, zweiter Server) schließen; kein Gerät → USB bzw. PCIe,
+   Netzteil und Gerätemanager prüfen. Rückgabewert 0 nur, wenn alle als live konfigurierten Geräte in Ordnung sind
+   (1 Fehler, 2 Konfiguration fehlerhaft, 3 nichts live konfiguriert). Zusammenfassung:
+   `<log_dir>/geraetepruefung.json` (bzw. `--json …`); `--alle` prüft auch simuliert eingestellte Geräte.
+   Dieselbe Prüfung: `GET /api/devices/check` (`?alle=true`; nur ohne laufende Sitzung, sonst HTTP 409) und Knopf
+   **„Geräte prüfen“** in der Ansicht *Geräte* der Web-App. Der Server schließt dafür seine Live-Geräte kurz und
+   öffnet sie danach wieder.
+3. **`start_messung.bat`** (Doppelklick): führt die Geräteprüfung aus und zeigt das Ergebnis. Bei einem Fehler
+   bricht es mit Hinweis ab. Sonst startet es den Server mit `config/server_live.toml` (nur 127.0.0.1), erzeugt
+   einen Zugangscode und öffnet den Browser am Mess-PC. Optionen:
+   * `-Online`: zusätzlich Tunnel + QR-Code wie `start_online.bat`;
+   * `-Trotzdem`: nur für gemischten Betrieb. Geräte, die die Prüfung nicht bestehen, werden ausdrücklich als
+     simuliert gestartet (`--harp-mode sim` bzw. `--digitizer-mode sim`, Warnung in der Konsole, Kennzeichnung in
+     App und Dateien); mindestens ein Live-Gerät muss in Ordnung sein. Einen stillen Rückfall auf Simulation gibt
+     es nicht (`live_fallback = "refuse"`).
+   * Außerdem: `-Port`, `-Config`, `-NoBrowser`, `-NoWait`.
+
+   Beenden: Enter im Fenster, `stop_messung.bat` oder `stop_online.bat`.
+   Fehlt Laufwerk `D:` (`data_dir`/`log_dir` = `D:/hhd_…`), weist das Skript darauf hin. Server und Prüfung legen
+   die Daten dann unter `.\hhd_data` bzw. die Logs unter `.\logs` ab (Meldung „Hinweis: Laufwerk D: nicht
+   vorhanden …“).
+
 Vorbereitung:
 
 1. Bibliotheken installieren (Abschnitt 1). `python -m pytest tests/test_drivers.py` muss grün sein (Mocks).
@@ -186,8 +222,9 @@ Vorbereitung:
    * Triggerkopie (GPIO) an Harp CH2;
    * Homodyn an Kanal A;
    * PDA05CF2 mit 10-dB-Dämpfer an Kanal B.
-3. Server am Mess-PC mit `config/server_live.toml` starten (`live_pause_between_runs = true`). Erst `status`
-   ansehen: Seriennummern, Kanalzahl, Bibliotheksversionen, keine `device_error`.
+3. Geräteprüfung bestehen, dann Server am Mess-PC mit `start_messung.bat` bzw. `config/server_live.toml` starten
+   (`live_pause_between_runs = true`). Erst `status` ansehen: Seriennummern, Kanalzahl, Bibliotheksversionen,
+   keine `device_error`.
 
 Am Gerät zu prüfen (**[unsicher]** im Code):
 
@@ -228,5 +265,8 @@ Am Gerät zu prüfen (**[unsicher]** im Code):
   * Pause zwischen Läufen;
   * Overflow- und FIFO-Fehler;
   * Beispielkonfigurationen.
+* `tests/test_check.py`: Geräteprüfung gegen die Mocks (in Ordnung; Bibliothek fehlt; kein Gerät; Gerät belegt –
+  `MOCK_HH500_BUSY`, `MOCK_ADQ_BUSY`), Rückgabewerte und JSON, `hhd check-devices`, API inkl. Sperre während einer
+  Sitzung, Laufwerk-Rückfall, statische Prüfung von `start_messung.ps1`/`.bat` (ohne PowerShell).
 * Die Mocks werden je Testlauf mit dem vorhandenen C-Compiler gebaut. Ohne Compiler werden diese Tests
   übersprungen.
