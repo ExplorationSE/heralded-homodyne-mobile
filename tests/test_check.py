@@ -98,7 +98,8 @@ def test_check_busy(tmp_path, mock_libs, monkeypatch, env, kind):
     monkeypatch.setenv(env, "1")
     s = CK.check_devices(_cfg(tmp_path, mock_libs), tmp_path)
     r = s["devices"][kind]
-    assert not s["ok"] and r["category"] == "belegt", r
+    assert not s["ok"] and r["category"] == "belegt" and r["device_found"], r
+    assert "ja, aber belegt" in CK.format_text(s)
     assert "schließen" in r["hint"]
 
 

@@ -115,6 +115,8 @@ def _base(kind: str, mode: str) -> dict:
 def _finish(r: dict, cat: str, err: str = "") -> dict:
     r["category"], r["ok"] = cat, cat == "ok"
     r["error"] = err
+    if cat == "belegt":
+        r["device_found"] = True          # vorhanden, aber von anderer Software geöffnet
     r["hint"] = "" if cat == "ok" else HINT[r["kind"]].get(cat, "")
     return r
 
@@ -156,7 +158,7 @@ def check_harp(lib_path: str = "", devidx: int = 0, serial: str = "", mode: str 
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         _finish(r, _classify_harp(msg), msg)
-        r["device_found"] = r["category"] not in ("kein_geraet",) and dev.is_open
+        r["device_found"] = r["category"] == "belegt" or (r["category"] != "kein_geraet" and dev.is_open)
     finally:
         try:
             dev.close()
@@ -272,7 +274,7 @@ def format_text(s: dict) -> str:
         L.append(f"  Treiber:        {r['library_path'] if r['library_found'] else 'nicht gefunden'}")
         if r["library_found"]:
             L.append(f"  Version:        {r['library_version'] or '–'}")
-        L.append(f"  Gerät gefunden: {'ja' if r['device_found'] else 'nein'}")
+        L.append(f"  Gerät gefunden: {('ja, aber belegt' if r['category'] == 'belegt' else 'ja') if r['device_found'] else 'nein'}")
         if r["ok"]:
             L.append(f"  Modell:         {r['model'] or '–'}")
             L.append(f"  Seriennummer:   {r['serial'] or '–'}")

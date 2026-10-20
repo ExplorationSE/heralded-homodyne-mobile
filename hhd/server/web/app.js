@@ -218,12 +218,12 @@ function renderDevices() {
 const CHK_KAT = { ok: "in Ordnung", treiber_fehlt: "Treiber/Bibliothek nicht gefunden", belegt: "Gerät belegt", kein_geraet: "kein Gerät gefunden", fehler: "Fehler", nicht_geprueft: "nicht geprüft" };
 function renderCheck(R) {
   const row = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
-  $("chkres").innerHTML = `<div class="${R.ok ? "ok-t" : "bad-t"}" style="margin:.5em 0"><b>${R.n_checked ? (R.ok ? "✔ alle geprüften Geräte in Ordnung" : "✘ nicht in Ordnung – Messung so nicht starten") : "kein Gerät als live konfiguriert – nichts geprüft"}</b><br><small class="mut">${esc(R.time)} · hhd ${esc(R.software)}${R.json_path ? " · " + esc(R.json_path) : ""}</small></div>` +
+  $("chkres").innerHTML = `<div class="${R.ok ? "ok-t" : "bad-t"}" style="margin:.5em 0"><b>${R.n_checked ? (R.ok ? "✔ alle geprüften Geräte in Ordnung" : "✘ nicht in Ordnung – Messung so nicht starten") : "kein Gerät als live konfiguriert – nichts geprüft"}</b><br><small class="mut">${esc(new Date(R.time.replace(/([+-]\d\d)(\d\d)$/, "$1:$2")).toLocaleString("de-DE"))} · ${esc(R.host || "")} · hhd ${esc(R.software)}${R.json_path ? " · " + esc(R.json_path) : ""}</small></div>` +
     R.devices.map((d) => {
       const x = d.details || {};
       let rows = row("Betriebsart", esc(d.mode)) + row("Ergebnis", `<span class="${d.ok && d.checked ? "ok-t" : d.checked ? "bad-t" : "mut"}">${esc(CHK_KAT[d.category] || d.category)}</span>`);
       if (d.checked) {
-        rows += row("Treiber", d.library_found ? esc(d.library_path) : "nicht gefunden") + (d.library_found ? row("Version", esc(d.library_version)) : "") + row("Gerät gefunden", d.device_found ? "ja" : "nein");
+        rows += row("Treiber", d.library_found ? esc(d.library_path) : "nicht gefunden") + (d.library_found ? row("Version", esc(d.library_version)) : "") + row("Gerät gefunden", d.device_found ? (d.category === "belegt" ? "ja, aber belegt" : "ja") : "nein");
         if (d.ok) {
           rows += row("Modell", esc(d.model)) + row("Seriennummer", esc(d.serial)) + row("Firmware", esc(d.firmware));
           rows += d.kind === "harp" ? row("Eingänge", `${x.n_inputs ?? "–"} + Sync`) + row("Sync-Rate", (x.sync_rate_per_s ?? "–") + " /s") + row("Basisauflösung", (x.base_resolution_ps ?? "–") + " ps")
