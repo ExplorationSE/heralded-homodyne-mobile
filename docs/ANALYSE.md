@@ -466,6 +466,18 @@ Sie läuft nur, wenn die A-Läufe eine Rampenspur haben und mindestens ein Lauf 
    * θ gegen `theta_true`: Bias, rms, berichtetes σ;
    * ρ gegen ρ_soll = ξ·D_σ(L_η(ρ_t)) + (1−ξ)|0⟩⟨0|, mit σ = gemessener θ-Fehler: Treue, W(0,0), ⟨n⟩, dB, α mit Pulls.
 
+8. **Lauf B phasenaufgelöst** (ab 0.15, `result["phase"]["B"]`): eigenes Histogramm der B-Records
+   (freilaufend und Zufallstrigger) mit derselben K-θ-Kalibrierung; Var(x_θ)-Fit (Quetschung am Detektor, Soll mit
+   η·η_el), MaxLik-ρ (η_el korrigiert, Bootstrap `n_boot_tomo`/2), Var-Kurve aus ρ, 2D-Wigner (41×41). Mindestens
+   300 B-Records mit Phase, sonst `available: false` mit Grund; die phasengemittelte Auswertung bleibt Rückfall.
+   Das Modell für A verwendet für den (1 − ξ)-Anteil den Zustand ohne Herald aus `state.source` (Quellmodell,
+   siehe SIMULATOR.md §2) statt Vakuum; Validierung von B gegen L_η(ρ_ohne Herald).
+9. **Mandel Q und g²** je Gruppe mit Bootstrap-Fehler (`mandel_Q_err`, `g2_err`, Zahl gültiger Ziehungen
+   `mandel_Q_n_boot`) aus p_n der phasengemittelten Rekonstruktion, batch und Datenstrom. Die App bewertet
+   Q < 0 mit kσ als „nichtklassisch, sub-poissonsch“, Quetschung < 0 dB mit kσ als „Varianz unter Vakuum“ und
+   W(0,0) < 0 mit kσ als Wigner-Negativität; grün ab 3σ, darunter „unter der Grenze, aber nur kσ (nicht signifikant)“, sonst „klassisch innerhalb der
+   Unsicherheit“. Q ist bei der Messung um η skaliert (Q_gemessen = η·Q), das Vorzeichen bleibt erhalten.
+
 Konvention: x_θ = (a e^{−iθ} + a† e^{iθ})/√2, Var_Vakuum = ½, W_Vakuum(0,0) = 1/π.
 
 Grenzen:

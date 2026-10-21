@@ -58,6 +58,23 @@ Festlegung dieses Projekts, [unsicher] = noch am Gerät zu prüfen. Alle Zahlenw
   - als Erweiterungspunkt Fock |n⟩ und Katzenzustände |α⟩ ± |−α⟩.
   - Jeder Zustand liefert Stichproben x_θ und Sollwerte aus der Dichtematrix (⟨x⟩, Var x, W(0,0), ρ_nn).
   - Neue Zustände sind Unterklassen von `State` mit den Methoden `measure` und `rho`.
+- **Quellmodell für Lauf B** (ab 0.15, `source.model` = auto | spdc | squeezed | test, `source.squeeze_dB`):
+  - `spdc`: Paarquelle, Herald im Idler-Arm. Ohne Herald ist die Signalmode thermisch mit n̄ ≪ 1, also ≈ Vakuum
+    (bisheriges Modell, unverändert; Default für Fock-Zustände und (|0⟩+|1⟩)/√2).
+  - `squeezed`: OPO mit Photonensubtraktion (Ourjoumtsev 2006/2007, Gerrits 2010). Ohne Herald liegt in jeder
+    Mode das gequetschte Vakuum S(r)|0⟩ vor. Katzen: k-Photonen-Subtraktion (ungerade k = 1, gerade k = 2), r so
+    gewählt, dass die Treue zur Zielkatze maximal ist, Achse φ = π/2 (Antiquetschung entlang Re α). Kätzchen:
+    a·S(r)|0⟩ aus derselben Quelle. Gequetschte Presets: Herald nur Zeitmarke, A = B. Default für Katzen,
+    Kätzchen und gequetschte Zustände.
+  - `test`: Zustand dauernd erzeugt, Herald nur Zeitmarke (B = A); Default für kohärent und thermisch, weil es dafür
+    kein sinnvolles Präparationsschema per Herald gibt.
+  - Umsetzung: Moden des Hintergrundzustands werden genau dort eingesetzt, wo die Auswertung Records erwartet
+    (periodischer und Zufallstrigger, Dunkel-Heralds, ungeheraldete Paare), mit θ aus der LO-Phase, Verlust η und
+    elektronischem Rauschen. Für `spdc` läuft kein zusätzlicher Code; ein eigener Zufallsstrom hält bisherige
+    Sitzungen bitgleich.
+  - Sollwerte: A = ξ·Zustand + (1 − ξ)·Hintergrund, B = Hintergrund (über die Momente gemischt): W(0,0), Var x,
+    ⟨n⟩, Mandel Q = (⟨n(n−1)⟩ − ⟨n⟩²)/⟨n⟩ (Verlust: Q → η·Q), min_θ Var x_θ = Δn + ½ − |⟨Δa²⟩|, Quetschung
+    10·log10(Var_min/½) und Achse. Beispiel 6 dB mit η·η_el = 0,7·0,9693 = 0,6785: Var_min = 0,2459 → −3,08 dB.
 - **Phase θ** (ED-11, `hhd/sim/phase.py`):
   - `random`: phasengemittelt;
   - `fixed`;

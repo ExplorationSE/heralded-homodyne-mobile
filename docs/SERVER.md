@@ -254,6 +254,17 @@ Ergebnisse gegen die Simulator-Wahrheit:
 * Ohne Rampe bleibt die Darstellung phasengemittelt; die Begründung steht in der Kopfzeile.
 * Geprüft bei 412 px Breite: Screenshots `app_screens/40_*.png`.
 
+## 7e Quellmodell und Bewertung der Quanteneffekte (0.15)
+
+* Ergebnisansicht: Zeile „Quellmodell“ (z. B. „Quetschquelle 6,2 dB, 2-Photonen-Subtraktion · B: gequetschtes
+  Vakuum“); dieselbe Angabe in der Laufplanbeschreibung und in der Sitzungsliste.
+* Tabelle „Bewertung Quanteneffekte“ mit Spalten A (herald-bedingt) und B (ohne Herald): Wigner-Negativität
+  W(0,0) < 0, Mandel Q < 0 („nichtklassisch, sub-poissonsch“) und Quetschung < 0 dB, jeweils mit kσ; grün ab 3σ.
+* Kennwerttabelle: Mandel Q und g² mit Fehler, Zeile „Quetschung Var(x_θ)“; Var(x_θ)-Karte mit A (orange) und B
+  (blau); Phasentabelle mit B-Zeilen.
+* Validierung aller 23 Laufpläne: `tools/quelle_runs_015.py`; Screenshots `app_screens/60_*.png`
+  (Desktop 1280 px und mobil 390 px).
+
 ## 8 Grenzen
 
 * Echte Geräte: Treiber nach Handbuch, nur gegen Mock-Bibliotheken getestet; offene Punkte in

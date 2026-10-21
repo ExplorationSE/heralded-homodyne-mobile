@@ -2,6 +2,32 @@
 
 ## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
 
+Auftrag „Quetschquelle für Lauf B, Mandel Q in der App“ (Entscheidung Herr Eilers, 21.10.2026):
+
+- **Quellmodell im Simulator** (`source.model`, `source.squeeze_dB`; `hhd/sim/states.py: source_model`):
+  - `spdc` (Default für |1⟩, |2⟩, |3⟩, (|0⟩+|1⟩)/√2): unverändert, Lauf B ≈ Vakuum; Zufallszahlen und Ergebnisse
+    bisheriger Sitzungen bleiben gleich (eigener Zufallsstrom nur für das neue Hintergrundmodell).
+  - `squeezed` (Katzen, Kätzchen, gequetschtes Vakuum): OPO mit Photonensubtraktion. Katzen = k-Photonen-Subtraktion
+    aus gequetschtem Vakuum (ungerade k = 1, gerade k = 2), Quetschstärke so gewählt, dass die Treue zur Zielkatze
+    maximal ist (z. B. Katze ungerade α = 1: 2,71 dB, Treue 0,997; Katze gerade α = 2: 6,20 dB, Treue 0,891).
+    Gequetschte Presets: Herald nur Zeitmarke (A = B). Lauf B zeigt in jeder Mode das gequetschte Vakuum der Quelle
+    mit η, elektronischem Rauschen und LO-Phase (Piezo-Rampe) – auch an Dunkel-Heralds und unbedingten Paaren.
+  - `test` (kohärent, thermisch): Zustand dauernd erzeugt, Herald nur Zeitmarke (B = A).
+  - `auto` (Default) wählt je Zustand wie oben; `squeeze_dB` > 0 überschreibt die Quetschstärke.
+  - Sollwerte A = ξ·Zustand + (1 − ξ)·Hintergrund, B = Hintergrund (W(0,0), Var x, ⟨n⟩, Mandel Q, min Var x_θ,
+    Quetschung in dB, Achse); Beispiel gequetscht 6 dB, Detektor η·η_el = 0,6785: Var-Fit-Soll −3,08 dB.
+- **Auswertung:**
+  - Phasenaufgelöste Auswertung auch für Lauf B (`result.phase.B`): Var(x_θ)-Fit (Quetschung in dB am Detektor),
+    MaxLik-ρ mit Bootstrap, Wigner-Funktion. Die phasengemittelte Auswertung bleibt Rückfall.
+  - Mandel Q und g² mit Bootstrap-Fehler je Gruppe (`mandel_Q_err`, `g2_err`, `mandel_Q_n_boot`), batch und Datenstrom.
+  - Modell für A in der Phasenauswertung: (1 − ξ)-Anteil ist der Zustand ohne Herald statt Vakuum.
+- **App:** Tabelle „Bewertung Quanteneffekte“ für A und B: Wigner-Negativität, Mandel Q < 0 („nichtklassisch,
+  sub-poissonsch“) und Quetschung < 0 dB, jeweils mit kσ (grün ab 3σ). Zeile „Quellmodell“ im Ergebnis, in Laufplan
+  und Sitzungsliste; Var(x_θ)-Diagramm mit A (orange) und B (blau).
+- **Validierung:** `tools/quelle_runs_015.py` (alle 23 Laufpläne über einen Test-Server, unterbrechungsfest),
+  Ergebnisse in `homodyne_herald/quelle_0.15/ergebnisse.md`.
+- **Tests:** `tests/test_source_model.py`.
+
 Auftrag „Geräteprüfung und Start am Mess-PC“:
 
 - Startdateien für alle Fälle: `geraete_pruefen.bat`, `start_messung_nur_harp.bat`, `start_messung_nur_adq32.bat` (mit `config/server_live_nur_harp.toml` bzw. `server_live_nur_adq32.toml`).
