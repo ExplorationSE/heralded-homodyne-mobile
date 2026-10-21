@@ -479,7 +479,7 @@ Sie läuft nur, wenn die A-Läufe eine Rampenspur haben und mindestens ein Lauf 
 10. **Mandel Q und g²** je Gruppe mit Bootstrap-Fehler (`mandel_Q_err`, `g2_err`, Zahl gültiger Ziehungen
    `mandel_Q_n_boot`) aus p_n der phasengemittelten Rekonstruktion, batch und Datenstrom. Die App bewertet
    Q < 0 mit kσ als „nichtklassisch, sub-poissonsch“, Quetschung < 0 dB mit kσ als „Varianz unter Vakuum“ und
-   W(0,0) < 0 mit kσ als Wigner-Negativität; grün ab 3σ, darunter „unter der Grenze, aber nur kσ (nicht signifikant)“, sonst „klassisch innerhalb der
+   W(0,0) < 0 mit kσ als Wigner-Negativität; grün ab 3σ, 1σ bis 3σ „unter der Grenze, aber nur kσ (nicht signifikant)“, sonst „klassisch innerhalb der
    Unsicherheit“. Q ist bei der Messung um η skaliert (Q_gemessen = η·Q), das Vorzeichen bleibt erhalten.
 
 Konvention: x_θ = (a e^{−iθ} + a† e^{iθ})/√2, Var_Vakuum = ½, W_Vakuum(0,0) = 1/π.

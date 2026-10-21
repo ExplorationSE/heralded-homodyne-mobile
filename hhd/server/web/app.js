@@ -144,6 +144,10 @@ function render() {
   }
   if (document.activeElement !== plan) plan.value = S.display.plan;
   plan.title = (S.plan_doc || {})[plan.value] || "";
+  { // Quellmodell des gewählten Laufplans sichtbar (aus der Planbeschreibung; Fock-Pläne ohne Angabe: SPDC)
+    const doc = (S.plan_doc || {})[plan.value] || "", m = doc.match(/(Quetschquelle|SPDC-Paarquelle|Testmuster)[^·]*(· B: [^·]*)?/);
+    $("plansrc").innerHTML = `Quellmodell: <b>${esc(m ? m[0].trim() : "SPDC-Paarquelle · B: thermisch ≈ Vakuum")}</b>`;
+  }
   if (document.activeElement !== $("speed")) $("speed").value = S.display.speed;
   $("autoana").checked = !!S.display.auto_analyze;
   $("simeng_l").classList.toggle("hidden", !S.sim_engine);
@@ -294,7 +298,7 @@ function verdict(val, err, kind) {
   const v = kind === "Q" ? `Q = ${fmtE(val, err, 3)}` : kind === "dB" ? `${fmt(val, 2)} ± ${fmt(err, 2)} dB` : `W(0,0) = ${fmtE(val, err, 4)}`;
   const what = kind === "Q" ? "Q < 0 mit %kσ (nichtklassisch, sub-poissonsch)" : kind === "dB" ? "Quetschung unter Vakuum mit %kσ (nichtklassisch)" : "W(0,0) < 0 mit %kσ (nichtklassisch)";
   if (k != null && k >= SIG) return `<span class="ok-t">${what.replace("%k", k.toFixed(1))}</span><br><small class="mut">${v}</small>`;
-  if (k != null && k > 0) return `<span class="warn-t">unter der Grenze, aber nur ${k.toFixed(1)}σ (nicht signifikant)</span><br><small class="mut">${v}</small>`;
+  if (k != null && k >= 1) return `<span class="warn-t">unter der Grenze, aber nur ${k.toFixed(1)}σ (nicht signifikant)</span><br><small class="mut">${v}</small>`;
   return `<span class="mut">klassisch innerhalb der Unsicherheit</span><br><small class="mut">${v}</small>`;
 }
 function ci(g, q) { const c = g[q + "_ci68"]; return c ? `[${fmt(c[0], 4)}, ${fmt(c[1], 4)}]` : ""; }

@@ -40,6 +40,7 @@
       <button id="stop" class="bad" data-ctl>Stopp</button>
       <button id="cont" class="ok hidden" data-ctl>Weiter (nächster Lauf)</button>
     </div>
+    <div id="plansrc" class="mut"></div>
     <div id="sessinfo" class="mut"></div>
     <div id="planbar" class="planbar"></div>
     <div class="progress"><div id="prog"></div></div>
@@ -125,7 +126,7 @@
   <div class="card" id="chkcard">
     <div class="row between"><h2>Geräteprüfung</h2><button id="chkbtn">Geräte prüfen</button></div>
     <label class="chk mut"><input type="checkbox" id="chkall"> auch nicht als live konfigurierte Geräte prüfen</label>
-    <div class="mut small">Lädt die Treiber, öffnet und fragt die Geräte ab – ohne Messung; nur ohne laufende Sitzung.</div>
+    <div class="mut">Lädt die Treiber, öffnet und fragt die Geräte ab – ohne Messung; nur ohne laufende Sitzung.</div>
     <div id="chkres"></div>
   </div>
   <div id="devcards" class="grid"></div>
