@@ -21,6 +21,14 @@ Auftrag „Quetschquelle für Lauf B, Mandel Q in der App“ (Entscheidung Herr 
     MaxLik-ρ mit Bootstrap, Wigner-Funktion. Die phasengemittelte Auswertung bleibt Rückfall.
   - Mandel Q und g² mit Bootstrap-Fehler je Gruppe (`mandel_Q_err`, `g2_err`, `mandel_Q_n_boot`), batch und Datenstrom.
   - Modell für A in der Phasenauswertung: (1 − ξ)-Anteil ist der Zustand ohne Herald statt Vakuum.
+  - Mandel Q zusätzlich aus ρ der Phasenauswertung (A und B, mit Bootstrap). Bei Piezo-Rampe ist die
+    phasengemittelte p_n eines phasenempfindlichen Zustands durch die ungleiche θ-Abdeckung verzerrt (z. B. Katze
+    gerade α = 2: Q 0,295 phasengemittelt gegen 0,217 aus ρ, Soll ≈ 0,21); die App bewertet dann Q aus ρ.
+  - **Korrektur Var(x_θ)-Fit:** Die Varianz je θ-Bin ist über die Bin-Breite Δ gemittelt, die cos 2θ-Amplitude ist
+    dadurch um sin Δ/Δ verkleinert. Ohne Korrektur war Var_min bei 24 Bins zu groß: Katze α = 2 +0,24 dB,
+    gequetscht 6 dB +0,10 dB (Monte Carlo). Das war die Hauptursache des Ausreißers „Katze gerade α = 2,
+    Datenstrom, z = +4,1“ (Var-Fit am Detektor +0,44 dB); er trat in der Wiederholung ebenso im batch-Modus auf
+    (+0,16 ± 0,11 gegen −0,22 dB) und ist nicht datenstromspezifisch.
 - **App:** Tabelle „Bewertung Quanteneffekte“ für A und B: Wigner-Negativität, Mandel Q < 0 („nichtklassisch,
   sub-poissonsch“) und Quetschung < 0 dB, jeweils mit kσ (grün ab 3σ). Zeile „Quellmodell“ im Ergebnis, in Laufplan
   und Sitzungsliste; Var(x_θ)-Diagramm mit A (orange) und B (blau).

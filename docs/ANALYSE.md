@@ -455,7 +455,8 @@ Sie läuft nur, wenn die A-Läufe eine Rampenspur haben und mindestens ein Lauf 
    * Quetschung in dB und Achse aus min_θ Var(x_θ);
    * α der Katze aus √|⟨a²⟩|;
    * 2D-Wigner auf 61×61 Punkten über ±4,5;
-   * Var(x_θ) der Daten in 24 θ-Bins mit Fit c + a cos 2θ + b sin 2θ (Quetschung am Detektor);
+   * Var(x_θ) der Daten in 24 θ-Bins mit Fit c + a cos 2θ + b sin 2θ (Quetschung am Detektor); ab 0.15 mit Korrektur
+     der Bin-Mittelung (a, b geteilt durch sin Δ/Δ, Δ = Bin-Breite), sonst Var_min zu groß (Katze α = 2: +0,24 dB);
    * Phasenabdeckung: Warnung, wenn ein Bin unter 25 % des Mittels liegt;
    * Treue zum Sollzustand:
      - ideal, maximiert über eine Drehung e^{−inφ};
@@ -472,7 +473,10 @@ Sie läuft nur, wenn die A-Läufe eine Rampenspur haben und mindestens ein Lauf 
    300 B-Records mit Phase, sonst `available: false` mit Grund; die phasengemittelte Auswertung bleibt Rückfall.
    Das Modell für A verwendet für den (1 − ξ)-Anteil den Zustand ohne Herald aus `state.source` (Quellmodell,
    siehe SIMULATOR.md §2) statt Vakuum; Validierung von B gegen L_η(ρ_ohne Herald).
-9. **Mandel Q und g²** je Gruppe mit Bootstrap-Fehler (`mandel_Q_err`, `g2_err`, Zahl gültiger Ziehungen
+9. **Mandel Q aus ρ** (`phase.metrics.mandel_Q`, `phase.B.metrics.mandel_Q`, Fehler aus dem Bootstrap): bei
+   Piezo-Rampe maßgeblich, weil die phasengemittelte p_n eines phasenempfindlichen Zustands bei ungleicher
+   θ-Abdeckung verzerrt ist.
+10. **Mandel Q und g²** je Gruppe mit Bootstrap-Fehler (`mandel_Q_err`, `g2_err`, Zahl gültiger Ziehungen
    `mandel_Q_n_boot`) aus p_n der phasengemittelten Rekonstruktion, batch und Datenstrom. Die App bewertet
    Q < 0 mit kσ als „nichtklassisch, sub-poissonsch“, Quetschung < 0 dB mit kσ als „Varianz unter Vakuum“ und
    W(0,0) < 0 mit kσ als Wigner-Negativität; grün ab 3σ, darunter „unter der Grenze, aber nur kσ (nicht signifikant)“, sonst „klassisch innerhalb der
