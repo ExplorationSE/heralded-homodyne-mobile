@@ -282,7 +282,10 @@ def state_metrics(rho: np.ndarray) -> dict:
     ma, ma2, n = moments(rho)
     par = float(np.sum(p * (-1.0) ** np.arange(N)))
     sq = squeezing(rho)
-    return dict(N=N, mean_n=n, parity=par, W00=par / np.pi, purity=float(np.real(np.trace(rho @ rho))),
+    nn = np.arange(N)
+    f2 = float(np.sum(nn * (nn - 1) * p))
+    mq = float((f2 - n ** 2) / n) if n > 1e-12 else float("nan")       # Mandel Q aus ρ (phasenaufgelöst)
+    return dict(N=N, mean_n=n, parity=par, mandel_Q=mq, W00=par / np.pi, purity=float(np.real(np.trace(rho @ rho))),
                 mean_a=[float(ma.real), float(ma.imag)], abs_mean_a=float(abs(ma)),
                 a2=[float(ma2.real), float(ma2.imag)], alpha_from_a2=float(np.sqrt(abs(ma2))),
                 alpha_axis_rad=float(np.mod(np.angle(ma2) / 2, np.pi)), p_n=p[:min(N, 16)].tolist(),
@@ -304,12 +307,18 @@ def fit_var_theta(vt: dict) -> dict:
     W = 1 / e[m] ** 2
     C = np.linalg.inv(X.T @ (X * W[:, None]))
     c, a, b = C @ (X.T @ (W * v[m]))
+    # Bin-Mittelung: Var im θ-Bin der Breite Δ ist der Mittelwert über das Bin, die cos2θ/sin2θ-Amplitude ist um
+    # sinc = sin Δ/Δ verkleinert (bei starker Antiquetschung, z. B. Katze α = 2, sonst +0,3 dB Bias in Var_min)
+    dth = float(np.median(np.diff(np.sort(th)))) if len(th) > 1 else 0.0
+    sinc = float(np.sin(dth) / dth) if dth > 0 else 1.0
+    a, b = a / sinc, b / sinc
+    C = C.copy(); C[1:, :] /= sinc; C[:, 1:] /= sinc
     R = float(np.hypot(a, b))
     vmin, vmax = c - R, c + R
     # Fehler von vmin
     g = np.array([1.0, -a / R if R > 0 else 0.0, -b / R if R > 0 else 0.0])
     vmin_err = float(np.sqrt(g @ C @ g))
-    chi2 = float(np.sum(W * (v[m] - X @ np.array([c, a, b])) ** 2))
+    chi2 = float(np.sum(W * (v[m] - X @ np.array([c, a * sinc, b * sinc])) ** 2))
     axis = float(np.mod(0.5 * np.arctan2(b, a) + np.pi / 2, np.pi))
     mu, me = vt["mean"], vt["mean_err"]
     Xm = np.stack([np.cos(th[m]), np.sin(th[m])], 1); Wm = 1 / np.maximum(me[m], 1e-9) ** 2

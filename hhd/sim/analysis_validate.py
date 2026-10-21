@@ -192,7 +192,9 @@ def validate_phase(d: Path, result: dict, exp: dict) -> dict:
     o["model"] = dict(eta_tomo=eta_t, xi=xi, dephasing_rad=sig, dephasing_source=sig_src)
     o["fidelity_expected"] = float(T.fidelity(rho_m, rex))
     o["fidelity_expected_maxrot"] = float(T.fidelity_max_rotation(rho_m, rex)[0])
-    for q in ("W00", "parity", "mean_n", "squeezing_dB", "alpha_from_a2", "purity"):
+    for q in ("W00", "parity", "mean_n", "mandel_Q", "squeezing_dB", "alpha_from_a2", "purity"):
+        if q not in mm:                     # ältere Ergebnisse ohne Mandel Q aus ρ
+            continue
         e = (bt.get(q) or {}).get("err")
         o[q] = dict(value=mm[q], true=me[q], diff=mm[q] - me[q], err=e, pull=_pull(mm[q], me[q], e))
     if me["squeezing_dB"] < -0.3:
@@ -235,7 +237,9 @@ def validate_phase_B(result: dict, exp: dict, M: int, sig: float) -> dict:
     N = int(rho_m_metrics["N"])
     rex = lam[:N, :N] / np.real(np.trace(lam[:N, :N]))
     me, bt = T.state_metrics(rex), PB.get("boot", {})
-    for q in ("W00", "mean_n", "squeezing_dB", "purity"):
+    for q in ("W00", "mean_n", "mandel_Q", "squeezing_dB", "purity"):
+        if q not in rho_m_metrics:
+            continue
         e = (bt.get(q) or {}).get("err")
         o[q] = dict(value=rho_m_metrics[q], true=me[q], diff=rho_m_metrics[q] - me[q], err=e,
                     pull=_pull(rho_m_metrics[q], me[q], e))

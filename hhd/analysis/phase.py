@@ -74,13 +74,13 @@ def _attr(run, k, default=None):
 
 
 def _boot(tm: T.Tomography, rho0, counts, n_boot, rng, target, model, max_iter):
-    keys = ("W00", "parity", "purity", "mean_n", "squeezing_dB", "axis_rad", "alpha_from_a2", "F_ideal", "F_model")
+    keys = ("W00", "parity", "purity", "mean_n", "squeezing_dB", "axis_rad", "alpha_from_a2", "mandel_Q", "F_ideal", "F_model")
     out = {k: [] for k in keys}
     for _ in range(n_boot):
         c = rng.poisson(counts)
         r = tm.fit(rho0=rho0, counts=c, max_iter=max_iter)
         m = T.state_metrics(r["rho"])
-        for k in keys[:7]:
+        for k in keys[:8]:
             out[k].append(m[k])
         out["F_ideal"].append(T.fidelity_max_rotation(r["rho"], target, pure=True)[0] if target is not None else np.nan)
         out["F_model"].append(T.fidelity_max_rotation(r["rho"], model)[0] if model is not None else np.nan)

@@ -319,6 +319,11 @@ function renderResult(R) {
     row("A − B", `ΔVar = ${fmtE(C.diff_var_x?.value, C.diff_var_x?.err)}`, `ΔW(0,0) = ${fmtE(C.diff_W00?.value, C.diff_W00?.err)} (z = ${fmt(C.diff_W00?.z, 1)})`);
   const P = R.phase || {}, pk = !!P.available, PB = (P.B && P.B.available) ? P.B : null;
   const fA = pk ? (P.var_theta || {}).fit || {} : {}, fB = PB ? (PB.var_theta || {}).fit || {} : {};
+  // Phase bekannt: Mandel Q aus ρ (phasenaufgelöst); die phasengemittelte p_n ist bei Piezo-Rampe und
+  // phasenempfindlichem Zustand durch die ungleiche θ-Abdeckung verzerrt
+  const qA = pk && P.metrics && P.metrics.mandel_Q != null ? [P.metrics.mandel_Q, ((P.boot || {}).mandel_Q || {}).err] : null;
+  const qB = PB && PB.metrics && PB.metrics.mandel_Q != null ? [PB.metrics.mandel_Q, ((PB.boot || {}).mandel_Q || {}).err] : null;
+  if (qA || qB) $("restbl").innerHTML += row("Mandel Q (aus ρ)", qA ? fmtE(qA[0], qA[1], 3) : "–", qB ? fmtE(qB[0], qB[1], 3) : "–");
   if (pk) $("restbl").innerHTML += row("Quetschung Var(x<sub>θ</sub>)", fA.available ? `${fmt(fA.squeezing_dB, 2)} ± ${fmt(fA.squeezing_dB_err, 2)} dB` : "–",
     fB.available ? `${fmt(fB.squeezing_dB, 2)} ± ${fmt(fB.squeezing_dB_err, 2)} dB` : "–");
   const vrow = (lbl, a, b) => `<tr><th>${lbl}</th><td>${a}</td><td>${b}</td></tr>`;
@@ -326,9 +331,10 @@ function renderResult(R) {
   const sqB = fB.available ? verdict(fB.squeezing_dB, fB.squeezing_dB_err, "dB") : `<span class="mut">${pk ? "zu wenige B-Records mit Phase" : "nur phasenaufgelöst"}</span>`;
   $("resverdict").innerHTML = `<tr><th>Quanteneffekt</th><th>A (herald-bedingt)</th><th>B (ohne Herald)</th></tr>` +
     vrow("Wigner-Negativität", verdict(A.W00, A.W00_err, "W"), verdict(B.W00, B.W00_err, "W")) +
-    vrow("Mandel Q < 0", verdict(A.mandel_Q, A.mandel_Q_err, "Q"), verdict(B.mandel_Q, B.mandel_Q_err, "Q")) +
+    vrow("Mandel Q &lt; 0" + (qA ? " <small class=\"mut\">(aus ρ)</small>" : ""), qA ? verdict(qA[0], qA[1], "Q") : verdict(A.mandel_Q, A.mandel_Q_err, "Q"),
+         qB ? verdict(qB[0], qB[1], "Q") : verdict(B.mandel_Q, B.mandel_Q_err, "Q")) +
     vrow("Quetschung &lt; 0 dB", sqA, sqB);
-  $("reswarn").innerHTML = `<small class="mut">Grün ab ${SIG}σ. W(0,0) und Q phasengemittelt aus p<sub>n</sub> (Verlust η skaliert Q → η·Q, das Vorzeichen bleibt); Quetschung aus dem Var(x<sub>θ</sub>)-Fit am Detektor.</small><br>` +
+  $("reswarn").innerHTML = `<small class="mut">Grün ab ${SIG}σ. W(0,0) phasengemittelt; Mandel Q phasengemittelt aus p<sub>n</sub>, bei bekannter Phase aus ρ (Verlust η skaliert Q → η·Q, das Vorzeichen bleibt); Quetschung aus dem Var(x<sub>θ</sub>)-Fit am Detektor.</small><br>` +
     (R.warnings || []).map(w => "⚠ " + esc(typeof w === "string" ? w : JSON.stringify(w))).join("<br>");
   if (pk) {
     $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +

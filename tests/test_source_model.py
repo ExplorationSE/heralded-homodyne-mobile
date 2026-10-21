@@ -122,3 +122,26 @@ def test_mandel_q_error_in_result(sq6):
         assert np.isfinite(R["mandel_Q"]) and R["mandel_Q_err"] > 0 and R["g2_err"] > 0
         assert R["mandel_Q"] > 0                             # gequetschtes Vakuum: keine sub-poissonsche Statistik
         assert abs(v["groups"][g]["mandel_Q"]["pull"]) < 4
+
+
+def test_var_fit_bin_width_correction():
+    """Var(x_θ)-Fit auf 24 θ-Bins: ohne sinc-Korrektur +0,24 dB Bias bei Katze α = 2 (Var_max ≈ 5,9)."""
+    from hhd.recon.tomo import fit_var_theta
+    rng = np.random.default_rng(3)
+    vmin, vmax, nb = 0.4752, 5.93, 24
+    edges = np.linspace(0, 2 * np.pi, nb + 1); th = 0.5 * (edges[1:] + edges[:-1]); res = []
+    for _ in range(40):
+        t = rng.uniform(0, 2 * np.pi, 40000); x = rng.normal(0, np.sqrt(vmin + (vmax - vmin) * np.cos(t) ** 2))
+        idx = np.digitize(t, edges) - 1; n = np.bincount(idx, minlength=nb)
+        var = np.array([np.var(x[idx == j]) for j in range(nb)])
+        mean = np.array([np.mean(x[idx == j]) for j in range(nb)])
+        res.append(fit_var_theta(dict(theta=th, var=var, var_err=var * np.sqrt(2 / n), n=n, mean=mean,
+                                      mean_err=np.sqrt(var / n)))["var_min"])
+    assert abs(np.mean(res) - vmin) < 0.008                 # unkorrigiert wäre es ≈ +0,027
+
+
+def test_state_metrics_mandel_q():
+    from hhd.recon import tomo as T
+    for p, q in (("fock2", -1.0), ("coherent_1", 0.0)):
+        st = make_state(p); r = st.rho()[:20, :20]
+        assert T.state_metrics(r)["mandel_Q"] == pytest.approx(q, abs=1e-3)

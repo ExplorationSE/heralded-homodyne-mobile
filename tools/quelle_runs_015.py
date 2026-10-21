@@ -89,12 +89,12 @@ def make_row(d: Path) -> dict:
     P, vp = res.get("phase") or {}, v.get("phase") or {}
     if P.get("available"):
         row["phase"] = dict(A=dict(var_fit_dB=_q(vp.get("var_fit_dB")), rho_dB=_q(vp.get("squeezing_dB")),
-                                   rho_W00=_q(vp.get("W00")), F_exp=vp.get("fidelity_expected"), N=P.get("N"),
+                                   rho_W00=_q(vp.get("W00")), rho_Q=_q(vp.get("mandel_Q")), F_exp=vp.get("fidelity_expected"), N=P.get("N"),
                                    n_iter=P.get("n_iter"), n=P.get("n_records")))
         pb, vb = P.get("B") or {}, vp.get("B") or {}
         if pb.get("available"):
             row["phase"]["B"] = dict(var_fit_dB=_q(vb.get("var_fit_dB")), rho_dB=_q(vb.get("squeezing_dB")),
-                                     rho_W00=_q(vb.get("W00")), N=pb.get("N"), n_iter=pb.get("n_iter"), n=pb.get("n_records"))
+                                     rho_W00=_q(vb.get("W00")), rho_Q=_q(vb.get("mandel_Q")), N=pb.get("N"), n_iter=pb.get("n_iter"), n=pb.get("n_records"))
         else:
             row["phase"]["B"] = dict(na=pb.get("reason"))
     elif P:
@@ -135,20 +135,22 @@ def write_table(rows: list, out: Path) -> None:
                  f"{sig(A)} | {vt(B['W00'], 4)} | {vt(B['var_x'])} | {vt(B['mandel_Q'])} | {sig(B)} |")
     L += ["", "## Phasenaufgelöst (Pläne „Kurz mit Phase“): Quetschung in dB", "",
           "Var-Fit = 10·log10(Var_min/½) aus dem Var(x_θ)-Fit am Detektor (Soll mit η·η_el); ρ = aus MaxLik-ρ "
-          "(η_el korrigiert, Soll mit η des Laufs). > 0 dB = keine Quetschung.", "",
-          "| Plan | Sim | A Var-Fit [dB] | A ρ [dB] | A W(0,0) ρ | B Var-Fit [dB] | B ρ [dB] | B W(0,0) ρ |",
-          "|---|---|---|---|---|---|---|---|"]
+          "(η_el korrigiert, Soll mit η des Laufs). > 0 dB = keine Quetschung. Mandel Q ρ = aus der Diagonale von ρ (η_el "
+          "korrigiert); bei Piezo-Rampe ist das phasengemittelte Q oben für phasenempfindliche Zustände durch die "
+          "ungleiche θ-Abdeckung verzerrt, maßgeblich ist dann Q aus ρ.", "",
+          "| Plan | Sim | A Var-Fit [dB] | A ρ [dB] | A W(0,0) ρ | A Mandel Q ρ | B Var-Fit [dB] | B ρ [dB] | B W(0,0) ρ | B Mandel Q ρ |",
+          "|---|---|---|---|---|---|---|---|---|---|"]
     for x in rows:
         P = x.get("phase")
         if not P:
             continue
         if "na" in P:
-            L.append(f"| {x['plan']} | {x['eng']} | Phase nicht verfügbar: {P['na']} ||||||"); continue
+            L.append(f"| {x['plan']} | {x['eng']} | Phase nicht verfügbar: {P['na']} ||||||||"); continue
         A, B = P["A"], P.get("B") or {}
-        bcols = (f"nicht verfügbar: {B.get('na')} | – | –" if "na" in B else
-                 f"{vt(B.get('var_fit_dB'), 2)} | {vt(B.get('rho_dB'), 2)} | {vt(B.get('rho_W00'), 4)}")
+        bcols = (f"nicht verfügbar: {B.get('na')} | – | – | –" if "na" in B else
+                 f"{vt(B.get('var_fit_dB'), 2)} | {vt(B.get('rho_dB'), 2)} | {vt(B.get('rho_W00'), 4)} | {vt(B.get('rho_Q'))}")
         L.append(f"| {x['plan']} | {x['eng']} | {vt(A.get('var_fit_dB'), 2)} | {vt(A.get('rho_dB'), 2)} | "
-                 f"{vt(A.get('rho_W00'), 4)} | {bcols} |")
+                 f"{vt(A.get('rho_W00'), 4)} | {vt(A.get('rho_Q'))} | {bcols} |")
     L += ["", "Technische Angaben je Lauf (Sitzung, N, MaxLik-Iterationen, Records, Auswertezeit):", ""]
     for x in rows:
         P = x.get("phase") or {}
