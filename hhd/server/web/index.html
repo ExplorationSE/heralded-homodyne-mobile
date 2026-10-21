@@ -93,14 +93,19 @@
         <div class="legend" id="wiglbl">phasengemittelt, W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)</div></div>
       <div class="card hidden" id="ph-var"><h2>Var(x<sub>θ</sub>) gegen θ</h2><canvas id="c-vth" height="220"></canvas>
         <div class="legend" id="vthlbl"><span class="lg a"></span>A <span class="lg b"></span>B <span class="lg mut2"></span>Vakuum ½</div></div>
-      <div class="card hidden" id="ph-cov"><h2>Phasenabdeckung (A-Records je θ-Bin)</h2><canvas id="c-cov" height="150"></canvas>
-        <div class="legend" id="covlbl"></div><table class="tbl" id="phtbl"></table></div>
       <div class="card"><h2>W(r) radial</h2><canvas id="c-wr" height="260"></canvas>
         <div class="legend"><span class="lg a"></span>A <span class="lg b"></span>B <span class="lg mut2"></span>Vakuum</div></div>
       <div class="card"><h2>Photonenstatistik p<sub>n</sub></h2><canvas id="c-pn" height="220"></canvas>
         <div class="legend"><span class="lg a"></span>A <span class="lg b"></span>B</div></div>
       <div class="card"><h2>Vergleich A/B: Quadraturen</h2><canvas id="c-ab" height="220"></canvas>
         <div class="legend" id="ablbl"></div></div>
+      <!-- Phasenabdeckung immer zuletzt: volle Rasterbreite, Desktop Diagramm links / Kennwerte rechts, Handy darunter (einklappbar) -->
+      <div class="card hidden wide" id="ph-cov"><h2>Phasenabdeckung (A-Records je θ-Bin)</h2>
+        <div class="covwrap">
+          <div class="covplot"><canvas id="c-cov" height="230"></canvas><div class="legend" id="covlbl"></div></div>
+          <details class="covtext" id="covdet" open><summary>Kennwerte phasenaufgelöst (ρ, K-θ, Treue)</summary>
+            <table class="tbl small" id="phtbl"></table></details>
+        </div></div>
     </div>
     <div class="card">
       <div class="row between"><h2 id="restitle">Ergebnis</h2><button id="reana" class="small" data-ctl>neu auswerten</button></div>

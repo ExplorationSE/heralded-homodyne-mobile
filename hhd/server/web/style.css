@@ -77,3 +77,15 @@ html,body{overflow-x:hidden}
 .logrow{padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;word-break:break-word}.logrow small{font-size:12px}
 .lg.kt{background:var(--kt)}
 h3.sub{font-size:14px;margin:.9em 0 .3em;color:var(--mut)}.tbl.verdict td{vertical-align:top}.tbl.verdict td small{font-size:11px}
+/* Phasenabdeckung: letzte Karte, volle Breite; ≥ 900 px zweispaltig (Diagramm | Kennwerte), sonst untereinander */
+.grid .card.wide{grid-column:1/-1}
+.covwrap{display:grid;grid-template-columns:1fr;gap:10px 18px}
+.covplot{min-width:0}
+.covtext summary{cursor:pointer;color:var(--mut);font-size:13px;padding:4px 0;list-style-position:inside}
+.covtext[open] summary{margin-bottom:4px}
+.covtext .tbl.small th,.covtext .tbl.small td{padding:4px 6px;line-height:1.35}
+.covtext .tbl.small th{white-space:nowrap}
+@media(min-width:900px){.covwrap{grid-template-columns:minmax(0,1fr) minmax(300px,380px);align-items:start}
+  .covtext summary{display:none}.covtext{border-left:1px solid var(--line);padding-left:16px}}
+
+.legend .fitlines{flex:1 1 100%;line-height:1.5}

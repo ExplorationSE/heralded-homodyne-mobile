@@ -646,17 +646,36 @@ class ReplayBackend:
 
     def write_files(self, out_dir: Path, n_done: int | None = None) -> dict:
         """Wiedergabe: die Quelldateien werden per Verweis (Symlink) in die neue Sitzung übernommen; ``truth.h5``
-        wird nie übernommen (Trennung Wahrheit/Auswertung)."""
+        wird nie übernommen (Trennung Wahrheit/Auswertung). Ohne Symlink-Recht (Windows ohne Entwicklermodus/
+        Administrator: WinError 1314) harter Link, sonst Kopie."""
         out_dir.mkdir(parents=True, exist_ok=True)
         files = {}
         for f in sorted(self.session_dir.iterdir()):
             if f.is_file() and f.name != "truth.h5":
                 dst = out_dir / f.name
                 if not dst.exists():
-                    os.symlink(f.resolve(), dst)
+                    link_or_copy(f.resolve(), dst)
                 files[f.name] = str(dst)
         return files
 
+
+
+def link_or_copy(src: Path, dst: Path) -> str:
+    """Datei übernehmen: Symlink, bei fehlendem Recht (WinError 1314) oder Dateisystem ohne Symlinks harter Link,
+    sonst Kopie. Rückgabe: ``symlink`` | ``hardlink`` | ``copy``."""
+    import shutil
+    try:
+        os.symlink(src, dst)
+        return "symlink"
+    except (OSError, NotImplementedError):
+        pass
+    try:
+        os.link(src, dst)
+        return "hardlink"
+    except (OSError, NotImplementedError):
+        pass
+    shutil.copy2(src, dst)
+    return "copy"
 
 class ReplayHarp(_SimDevice):
     kind, mode, model = "harp", "replay", "HydraHarp 500 (Wiedergabe)"

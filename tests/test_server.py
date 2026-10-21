@@ -3,6 +3,7 @@ mit simulierten Geräten (Sitzung starten → Dateien → Sync → Analyse → E
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -53,15 +54,44 @@ def test_short_plan_and_sim_stream():
     assert abs(nr - nh) <= 0.02 * nh            # heralded: ein Record je Herald (Totzeit vernachlässigbar)
 
 
+def _system_lib_loadable(mod) -> bool:
+    """Herstellerbibliothek am Standardort/Systempfad ladbar (z. B. Mess-PC mit installierter HH500Lib)?"""
+    from hhd.drivers._loader import LibraryNotFound, load_library
+    try:
+        load_library(None, "HHD_NO_SUCH_ENV", mod.LIB_NAMES, "Test", "")
+        return True
+    except (LibraryNotFound, OSError):
+        return False
+
+
+def _open_expect(dev, mod, missing_pat: str):
+    """Ohne Bibliothek: Meldung „Herstellerbibliothek nicht gefunden“. Ist die Bibliothek systemweit installiert, lädt der
+    Treiber sie trotz falschem Pfad; dann wird „nicht gefunden/geöffnet“ (kein Gerät) akzeptiert bzw. bei
+    angeschlossenem Gerät übersprungen."""
+    if not _system_lib_loadable(mod):
+        with pytest.raises(DeviceError, match=missing_pat):
+            dev.open()
+        return
+    try:
+        dev.open()
+    except DeviceError as e:
+        assert re.search(r"nicht gefunden|nicht geöffnet|geöffnet|nicht möglich", str(e)), str(e)
+        return
+    try:
+        dev.close()
+    finally:
+        pytest.skip(f"{mod.__name__}: Bibliothek installiert und Gerät erreichbar – Test nicht anwendbar")
+
+
 def test_live_device_without_vendor_library(monkeypatch, tmp_path):
+    from hhd.drivers import adq as ADQ
+    from hhd.drivers import hh500 as HH
     from hhd.server.livedev import LiveCfg
     monkeypatch.delenv("HHD_HH500LIB", raising=False); monkeypatch.delenv("HHD_ADQAPI", raising=False)
     lc = LiveCfg(hh500_lib=str(tmp_path / "fehlt" / "libhh500lib.so"), adq_lib=str(tmp_path / "fehlt" / "libadq.so"))
     _, h, d = make_devices("live", live_cfg=lc)
-    with pytest.raises(DeviceError, match="Herstellerbibliothek nicht gefunden.*HH500Lib"):
-        h.open()
-    with pytest.raises(DeviceError, match="Herstellerbibliothek nicht gefunden.*SP-Devices-SDK"):
-        d.open()
+    _open_expect(h, HH, "Herstellerbibliothek nicht gefunden.*HH500Lib")
+    _open_expect(d, ADQ, "Herstellerbibliothek nicht gefunden.*SP-Devices-SDK")
 
 
 def test_param_policy_ed8b():
@@ -211,7 +241,9 @@ def test_stop_and_replay(tmp_path):
     _wait(rs)
     assert rs.state == "fertig", rs.msg
     out = tmp_path / "r" / "data" / m["session_id"]
-    assert not (out / "truth.h5").exists() and (out / "digitizer.h5").is_symlink()
+    # Verweis (Symlink); ohne Symlink-Recht (Windows, WinError 1314) harter Link oder Kopie
+    assert not (out / "truth.h5").exists() and (out / "digitizer.h5").is_file()
+    assert (out / "digitizer.h5").stat().st_size == (src / "digitizer.h5").stat().st_size
     runs = rs.live.snapshot()["runs"]
     assert len(runs) == 7 and all(r["done"] for r in runs)
     a = [r for r in runs if r["kind"] == "heralded"]
@@ -307,3 +339,20 @@ def test_stream_sim_engine(tmp_path):
     b2 = peak("batch", 2.0)
     assert s2 < 1.2 * s1 + 3e6, (s1, s2)
     assert s2 < 0.6 * b2, (s2, b2)
+
+
+def test_replay_link_or_copy_fallback(tmp_path, monkeypatch):
+    """Ohne Symlink-Recht (Windows WinError 1314) harter Link, ohne Link-Unterstützung Kopie."""
+    import os
+
+    from hhd.server import devices as D
+    src = tmp_path / "a.bin"; src.write_bytes(b"x" * 100)
+
+    def no_symlink(*a, **k):
+        raise OSError(1314, "Dem Client fehlt ein erforderliches Recht")
+    monkeypatch.setattr(os, "symlink", no_symlink)
+    assert D.link_or_copy(src, tmp_path / "b.bin") in ("hardlink", "copy")
+    assert (tmp_path / "b.bin").read_bytes() == src.read_bytes()
+    monkeypatch.setattr(os, "link", no_symlink)
+    assert D.link_or_copy(src, tmp_path / "c.bin") == "copy"
+    assert (tmp_path / "c.bin").read_bytes() == src.read_bytes()

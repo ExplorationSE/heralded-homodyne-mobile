@@ -2,6 +2,19 @@
 
 ## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
 
+Auftrag „Ergebnisseite: Phasenabdeckung, Windows-Tests“ (Herr Eilers, 21.10.2026):
+
+- **Ergebnisseite:** Karte „Phasenabdeckung“ ist die letzte im Diagrammbereich und nimmt die volle Rasterbreite ein.
+  Ab 900 px zweispaltig (Diagramm links, Kennwerte phasenaufgelöst rechts in schmaler Spalte, kleinere Schrift),
+  darunter untereinander; auf dem Handy (≤ 520 px) sind die Kennwerte einklappbar (`details`, anfangs zu).
+  Lücken-Bins rot statt gelb (Kontrast zu den orangefarbenen A-Balken); Fit-Zeilen im Var(x_θ)-Diagramm als
+  eigene Zeilen. Farben A orange / B blau durchgehend.
+- **Wiedergabe:** Quelldateien per Symlink, ohne Symlink-Recht (Windows, WinError 1314) harter Link, sonst Kopie
+  (`hhd.server.devices.link_or_copy`).
+- **Tests:** `test_live_device_without_vendor_library` akzeptiert bei systemweit installierter HH500Lib/ADQAPI die
+  Meldung „nicht gefunden/geöffnet“ bzw. überspringt bei angeschlossenem Gerät; `test_stop_and_replay` prüft
+  Datei statt Symlink; neu `test_replay_link_or_copy_fallback`.
+
 Auftrag „Quetschquelle für Lauf B, Mandel Q in der App“ (Entscheidung Herr Eilers, 21.10.2026):
 
 - **Quellmodell im Simulator** (`source.model`, `source.squeeze_dB`; `hhd/sim/states.py: source_model`):

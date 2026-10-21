@@ -348,6 +348,9 @@ function renderResult(R) {
     $("resstate").innerHTML += ` <small class="mut">(${esc(P.reason || "Phase unbekannt")})</small>`;
   }
   $("ph-var").classList.toggle("hidden", !pk); $("ph-cov").classList.toggle("hidden", !pk);
+  // Kennwerte zur Phasenabdeckung: auf dem Handy eingeklappt (einmal je Sitzung), am Desktop immer sichtbar
+  if (pk && $("covdet").dataset.s !== (selSession || "")) { $("covdet").dataset.s = selSession || ""; $("covdet").open = window.innerWidth > 520; }
+  if (window.innerWidth >= 900) $("covdet").open = true;
   if (pk) { drawWigner2D(P.wigner2d, P.metrics.W00); drawVarTheta(P.var_theta, PB ? PB.var_theta : null); drawCoverage(P.coverage); phaseTable(P); } else drawWigner(A);
   drawWr(A, B); drawPn(A, B); drawAB(C);
   const eb = R.efficiency_budget || {};
@@ -407,7 +410,7 @@ function drawVarTheta(V, VB) {
   const f = V.fit || {}, fb = (VB && VB.fit) || {};
   const ft = (F) => `min ${fmt(F.var_min, 3)} → <b>${fmt(F.squeezing_dB, 2)} ± ${fmt(F.squeezing_dB_err, 2)} dB</b>, Achse ${fmt(F.axis_rad, 3)} rad, Anti ${fmt(F.antisqueezing_dB, 2)} dB`;
   $("vthlbl").innerHTML = `<span class="lg a"></span>A (Punkte Daten, Linie aus ρ) ` + (VB ? `<span class="lg b"></span>B ohne Herald ` : "") + `<span class="lg mut2"></span>Vakuum ½` +
-    (f.available ? `<br>A: ${ft(f)}` : "") + (fb.available ? `<br>B: ${ft(fb)}` : "");
+    ((f.available || fb.available) ? `<div class="fitlines">` + (f.available ? `<div>A: ${ft(f)}</div>` : "") + (fb.available ? `<div>B: ${ft(fb)}</div>` : "") + `</div>` : "");
 }
 function drawCoverage(C) {
   const { g, w, h } = canvas("c-cov");
@@ -415,10 +418,10 @@ function drawCoverage(C) {
   const n = C.counts, m = Math.max(...n, 1), mean = n.reduce((a, b) => a + b, 0) / n.length;
   const { X, Y } = axes(g, w, h, 0, 2 * Math.PI, 0, m * 1.1, { nx: 5, ny: 3, fx: (v) => (v / Math.PI).toFixed(1) + "π" });
   const bw = (X(2 * Math.PI) - X(0)) / n.length;
-  n.forEach((c, i) => { g.fillStyle = C.gaps.includes(i) ? css("--warn") : css("--a"); g.fillRect(X(0) + i * bw + 1, Y(c), bw - 2, Y(0) - Y(c)); });
+  n.forEach((c, i) => { g.fillStyle = C.gaps.includes(i) ? css("--bad") : css("--a"); g.fillRect(X(0) + i * bw + 1, Y(c), bw - 2, Y(0) - Y(c)); });
   g.strokeStyle = "#475569"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(0), Y(0.25 * mean)); g.lineTo(X(2 * Math.PI), Y(0.25 * mean)); g.stroke(); g.setLineDash([]);
   $("covlbl").innerHTML = C.ok ? `<span class="ok-t">θ vollständig abgedeckt</span> (min/Mittel ${fmt(C.min_rel, 2)})` :
-    `<span class="warn-t">⚠ Lücken in der Phasenabdeckung: ${C.gaps.length} Bins unter 25 % des Mittels</span>`;
+    `<span class="warn-t">⚠ Lücken in der Phasenabdeckung: ${C.gaps.length} Bins unter 25 % des Mittels (rot)</span>`;
 }
 function phaseTable(P) {
   const m = P.metrics || {}, b = P.boot || {}, f = P.fidelity || {}, q = (P.calibration || {}).quality || {};
