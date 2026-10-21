@@ -413,6 +413,10 @@ function drawVarTheta(V, VB) {
     ((f.available || fb.available) ? `<div class="fitlines">` + (f.available ? `<div>A: ${ft(f)}</div>` : "") + (fb.available ? `<div>B: ${ft(fb)}</div>` : "") + `</div>` : "");
 }
 function drawCoverage(C) {
+  // Desktop: Diagramm exakt wie eine normale Diagrammkarte (Breite der Var(x_θ)-Karte, Plot-Höhe 220); Handy: 230
+  const cv = $("c-cov"), desk = window.innerWidth >= 900, ref = $("c-vth");
+  if (desk && ref && ref.clientWidth) $("ph-cov").style.setProperty("--colw", ref.clientWidth + "px"); else $("ph-cov").style.removeProperty("--colw");
+  cv.dataset.h = desk ? (ref?.dataset.h || ref?.getAttribute("height") || 220) : 230;
   const { g, w, h } = canvas("c-cov");
   if (!C || !C.counts) return;
   const n = C.counts, m = Math.max(...n, 1), mean = n.reduce((a, b) => a + b, 0) / n.length;
@@ -426,7 +430,7 @@ function drawCoverage(C) {
 function phaseTable(P) {
   const m = P.metrics || {}, b = P.boot || {}, f = P.fidelity || {}, q = (P.calibration || {}).quality || {};
   const e = (k) => (b[k] || {}).err, r = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
-  $("phtbl").innerHTML = r("W(0,0) aus ρ", fmtE(m.W00, e("W00"))) + r("Parität", fmtE(m.parity, e("parity"))) + r("⟨n⟩ aus ρ", fmtE(m.mean_n, e("mean_n"))) +
+  const html = r("W(0,0) aus ρ", fmtE(m.W00, e("W00"))) + r("Parität", fmtE(m.parity, e("parity"))) + r("⟨n⟩ aus ρ", fmtE(m.mean_n, e("mean_n"))) +
     r("Quetschung ρ", `${fmt(m.squeezing_dB, 2)} ± ${fmt(e("squeezing_dB"), 2)} dB, Achse ${fmt(m.axis_rad, 3)} rad`) +
     r("α aus √|⟨a²⟩|", fmtE(m.alpha_from_a2, e("alpha_from_a2"))) + r("Reinheit", fmt(m.purity, 3)) +
     (f.F_ideal != null ? r("Treue Soll (ideal)", fmtE(f.F_ideal, e("F_ideal"))) + r("Treue Verlustmodell", fmtE(f.F_model, e("F_model"))) : "") +
@@ -435,6 +439,9 @@ function phaseTable(P) {
     (P.B && P.B.available ? r("B: Quetschung ρ", `${fmt(P.B.metrics.squeezing_dB, 2)} ± ${fmt(((P.B.boot || {}).squeezing_dB || {}).err, 2)} dB, Achse ${fmt(P.B.metrics.axis_rad, 3)} rad`) +
       r("B: W(0,0) aus ρ", fmtE(P.B.metrics.W00, ((P.B.boot || {}).W00 || {}).err)) + r("B: ⟨n⟩ aus ρ", fmtE(P.B.metrics.mean_n, ((P.B.boot || {}).mean_n || {}).err)) + r("Records (B)", P.B.n_records)
       : r("B phasenaufgelöst", esc((P.B || {}).reason || "–")));
+  // zwei Spalten (Desktop): Zeilen hälftig auf phtbl/phtbl2 verteilen; Handy: untereinander
+  const rows = html.split("</tr>").filter(Boolean).map(x => x + "</tr>"), half = Math.ceil(rows.length / 2);
+  $("phtbl").innerHTML = rows.slice(0, half).join(""); $("phtbl2").innerHTML = rows.slice(half).join("");
 }
 function drawWr(A, B) {
   const { g, w, h } = canvas("c-wr");

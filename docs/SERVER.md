@@ -250,10 +250,10 @@ Ergebnisse gegen die Simulator-Wahrheit:
   * Kopfzeile „Phase bekannt (Piezo-Rampe, kalibriert)“;
   * Wigner-Karte als 2D-Wigner aus ρ (orange > 0, blau < 0);
   * Karte Var(x_θ): Daten mit Fehlern, Kurve aus ρ, Vakuum ½, Fit in dB und Achse;
-  * Karte Phasenabdeckung (letzte Karte, volle Breite; ab 900 px Diagramm links, Kennwerte rechts; Handy:
+  * Karte Phasenabdeckung (letzte Karte, volle Breite; ab 900 px Diagramm links in Größe der übrigen Diagramme, Kennwerte rechts in zwei Spalten; Handy:
     Kennwerte darunter, einklappbar): Lücken in Rot, Kennwerttabelle mit Treue.
 * Ohne Rampe bleibt die Darstellung phasengemittelt; die Begründung steht in der Kopfzeile.
-* Geprüft bei 412 px Breite: Screenshots `app_screens/40_*.png`; Layout Phasenabdeckung `app_screens/70_*.png` (1366 px, 390 px).
+* Geprüft bei 412 px Breite: Screenshots `app_screens/40_*.png`; Layout Phasenabdeckung `app_screens/70_*.png` (1366 px, 1024 px, 390 px).
 
 ## 7e Quellmodell und Bewertung der Quanteneffekte (0.15)
 

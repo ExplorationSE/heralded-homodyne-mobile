@@ -8,6 +8,7 @@ base, token, sid, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 with sync_playwright() as p:
     br = p.chromium.launch(headless=True, executable_path="/usr/bin/google-chrome")
     for kind, ctx in (("desktop", dict(viewport={"width": 1366, "height": 900}, locale="de-DE")),
+                      ("desktop1024", dict(viewport={"width": 1024, "height": 800}, locale="de-DE")),
                       ("mobil", dict(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True, locale="de-DE"))):
         c = br.new_context(**ctx); pg = c.new_page(); pg.set_default_timeout(60000)
         pg.on("pageerror", lambda e: print("pageerror", e))
@@ -17,10 +18,18 @@ with sync_playwright() as p:
         pg.evaluate("document.body.classList.add('shot')")
         info = pg.evaluate("""() => { const g = document.querySelector('#resbox .grid'), cards = [...g.children].filter(e => !e.classList.contains('hidden'));
             return {last: cards[cards.length-1].id, cov: document.getElementById('ph-cov').getBoundingClientRect().width, grid: g.getBoundingClientRect().width,
-                    open: document.getElementById('covdet').open, cols: getComputedStyle(document.querySelector('.covwrap')).gridTemplateColumns}; }""")
+                    open: document.getElementById('covdet').open, cols: getComputedStyle(document.querySelector('.covwrap')).gridTemplateColumns,
+                    textcols: getComputedStyle(document.querySelector('.covcols')).gridTemplateColumns,
+                    plotW: document.getElementById('c-cov').clientWidth, refW: document.getElementById('c-vth').clientWidth,
+                    plotH: document.getElementById('c-cov').clientHeight, refH: document.getElementById('c-vth').clientHeight,
+                    plotBlockH: document.querySelector('.covplot').getBoundingClientRect().height,
+                    textH: document.querySelector('.covtext').getBoundingClientRect().height,
+                    refCardH: document.getElementById('ph-var').getBoundingClientRect().height,
+                    covCardH: document.getElementById('ph-cov').getBoundingClientRect().height,
+                    font: getComputedStyle(document.querySelector('#phtbl td')).fontSize}; }""")
         print(kind, info)
-        if kind == "desktop":
-            pg.locator("#resbox .grid").screenshot(path=f"{out}/70_desktop_phasenabdeckung.png")
+        if kind.startswith("desktop"):
+            pg.locator("#resbox .grid").screenshot(path=f"{out}/70_{kind}_phasenabdeckung.png")
         else:
             loc = pg.locator("#ph-cov"); loc.scroll_into_view_if_needed(); loc.screenshot(path=f"{out}/70_mobil_phasenabdeckung.png")
             pg.locator("#covdet summary").click(); pg.wait_for_timeout(300)

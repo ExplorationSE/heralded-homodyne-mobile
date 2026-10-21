@@ -9,6 +9,10 @@ Auftrag „Ergebnisseite: Phasenabdeckung, Windows-Tests“ (Herr Eilers, 21.10.
   darunter untereinander; auf dem Handy (≤ 520 px) sind die Kennwerte einklappbar (`details`, anfangs zu).
   Lücken-Bins rot statt gelb (Kontrast zu den orangefarbenen A-Balken); Fit-Zeilen im Var(x_θ)-Diagramm als
   eigene Zeilen. Farben A orange / B blau durchgehend.
+- **Ergebnisseite (Nachtrag):** Desktop (≥ 900 px): Diagramm Phasenabdeckung exakt so breit und hoch wie die übrigen
+  Diagramme (eine Rasterspalte, 220 px Plot); Kennwerte rechts daneben in zwei Spalten (Schrift 12 px), Höhe nicht
+  über der Diagrammhöhe (gemessen 189 px bei 1366 px, 220 px bei 1024 px; Diagrammblock 243 px). Ist der Textbereich
+  schmaler als 600 px, eine Spalte. Handy unverändert.
 - **Wiedergabe:** Quelldateien per Symlink, ohne Symlink-Recht (Windows, WinError 1314) harter Link, sonst Kopie
   (`hhd.server.devices.link_or_copy`).
 - **Tests:** `test_live_device_without_vendor_library` akzeptiert bei systemweit installierter HH500Lib/ADQAPI die

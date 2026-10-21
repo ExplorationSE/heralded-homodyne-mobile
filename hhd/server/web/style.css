@@ -85,7 +85,11 @@ h3.sub{font-size:14px;margin:.9em 0 .3em;color:var(--mut)}.tbl.verdict td{vertic
 .covtext[open] summary{margin-bottom:4px}
 .covtext .tbl.small th,.covtext .tbl.small td{padding:4px 6px;line-height:1.35}
 .covtext .tbl.small th{white-space:nowrap}
-@media(min-width:900px){.covwrap{grid-template-columns:minmax(0,1fr) minmax(300px,380px);align-items:start}
-  .covtext summary{display:none}.covtext{border-left:1px solid var(--line);padding-left:16px}}
-
+.covcols{display:grid;grid-template-columns:1fr;column-gap:16px}
+/* Desktop: Diagramm so breit wie eine Rasterspalte (--colw aus app.js), Kennwerte daneben, ab 620 px Textbreite zweispaltig */
+@media(min-width:900px){.covwrap{grid-template-columns:var(--colw,360px) minmax(0,1fr);align-items:start;column-gap:26px}
+  .covtext summary{display:none}.covtext{border-left:1px solid var(--line);padding-left:14px;container-type:inline-size}
+  .covtext .tbl.small{font-size:12px}.covtext .tbl.small th,.covtext .tbl.small td{padding:3.5px 5px;line-height:1.3}
+  .covtext .tbl.small th{white-space:normal}
+  @container (min-width:600px){.covcols{grid-template-columns:1fr 1fr}}}
 .legend .fitlines{flex:1 1 100%;line-height:1.5}
