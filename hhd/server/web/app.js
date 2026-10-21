@@ -1,4 +1,4 @@
-// Harp ADQ32 HHD Mobil (ExplorationSE Harp ADQ32 HHD Mobil) – Web-App des HHD-Mess-Servers. Spricht nur mit dem Server (WebSocket /ws und /api/*).
+// Heralded Homodyne Mobile (Repo: ExplorationSE Harp ADQ32 HHD Mobil) – Web-App des HHD-Mess-Servers. Spricht nur mit dem Server (WebSocket /ws und /api/*).
 "use strict";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -261,7 +261,7 @@ async function api(path) { const r = await fetch(path, { credentials: "same-orig
 async function loadSessions() {
   try {
     lastSessions = await (await api("/api/sessions")).json();
-    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")}${s.state && s.state !== "fock1" ? " · " + esc(s.state_label || s.state) + (s.phase_sensitive ? ((s.plan || "").startsWith("kurzphase_") ? " (Phase bekannt)" : " (phasengem.)") : "") : ""} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
+    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")}${s.state && s.state !== "fock1" ? " · " + esc(s.state_label || s.state) + (s.phase_sensitive ? ((s.plan || "").startsWith("kurzphase_") ? " (Phase bekannt)" : " (phasengem.)") : "") : ""}${s.source ? " · Quelle " + esc(({ spdc: "SPDC", squeezed: "Quetschquelle", test: "Testmuster" })[s.source] || s.source) : ""} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
     document.querySelectorAll(".sess").forEach(e => e.onclick = () => openSession(e.dataset.s));
     if (selSession && lastSessions.find(s => s.id === selSession)?.analyzed && !openSession.loaded) openSession(selSession);
     if (!selSession && lastSessions.length && lastSessions[0].analyzed) openSession(lastSessions[0].id);
@@ -278,6 +278,25 @@ async function openSession(id) {
   renderResult(R);
   try { $("report").textContent = await (await api(`/api/sessions/${encodeURIComponent(id)}/report`)).text(); } catch (e) { $("report").textContent = ""; }
 }
+// Quellmodell (Simulator, ab 0.15) als Kurztext
+function srcShort(src) {
+  if (!src || !src.model) return null;
+  if (src.model === "squeezed") return `Quetschquelle ${fmt(src.dB, 1)} dB` + (src.n_subtracted ? `, ${src.n_subtracted}-Photonen-Subtraktion` : ", Herald nur Zeitmarke") + " · Lauf B: gequetschtes Vakuum";
+  if (src.model === "test") return "Testmuster (Zustand dauernd, Herald nur Zeitmarke) · Lauf B: derselbe Zustand";
+  if (src.model === "spdc") return "SPDC-Paarquelle, Herald im Idler-Arm · Lauf B: thermisch ≈ Vakuum";
+  return esc(src.short || src.model);
+}
+// Bewertung „nichtklassisch“: Abstand k = (Grenze − Wert)/σ; ab 3σ grün, darunter nur Hinweis
+const SIG = 3;
+function verdict(val, err, kind) {
+  if (val == null || !Number.isFinite(val)) return `<span class="mut">–</span>`;
+  const k = err > 0 ? -val / err : null;
+  const v = kind === "Q" ? `Q = ${fmtE(val, err, 3)}` : kind === "dB" ? `${fmt(val, 2)} ± ${fmt(err, 2)} dB` : `W(0,0) = ${fmtE(val, err, 4)}`;
+  const what = kind === "Q" ? "Q < 0 mit %kσ (nichtklassisch, sub-poissonsch)" : kind === "dB" ? "Quetschung unter Vakuum mit %kσ (nichtklassisch)" : "W(0,0) < 0 mit %kσ (nichtklassisch)";
+  if (k != null && k >= SIG) return `<span class="ok-t">${what.replace("%k", k.toFixed(1))}</span><br><small class="mut">${v}</small>`;
+  if (k != null && k > 0) return `<span class="warn-t">unter der Grenze, aber nur ${k.toFixed(1)}σ (nicht signifikant)</span><br><small class="mut">${v}</small>`;
+  return `<span class="mut">klassisch innerhalb der Unsicherheit</span><br><small class="mut">${v}</small>`;
+}
 function ci(g, q) { const c = g[q + "_ci68"]; return c ? `[${fmt(c[0], 4)}, ${fmt(c[1], 4)}]` : ""; }
 function renderResult(R) {
   const A = R.groups.A || {}, B = R.groups.B || {}, C = R.comparison || {};
@@ -286,19 +305,31 @@ function renderResult(R) {
   const E = (g) => `${fmtE(g.eta_fit, g.eta_fit_err)}<br><small class="mut">68 %: ${ci(g, "eta_fit")}</small>`;
   const st = R.state || { preset: "fock1", label: "Einzelphoton |1⟩" }, f1 = (st.preset || "fock1") === "fock1";
   const ps = !!st.phase_sensitive;
+  const sq = srcShort(st.source);
+  const srcLine = `<br>Quellmodell: ` + (sq ? `<b>${sq}</b>` + (st.source.model === "squeezed" && st.source.fidelity != null && st.source.fidelity < 0.999 ? ` <small class="mut">(Näherung, Treue ${fmt(st.source.fidelity, 3)})</small>` : "")
+    : `<span class="mut">nicht angegeben (Messdaten oder Sitzung vor 0.15: Lauf B wie SPDC ≈ Vakuum)</span>`);
   $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +
-    (ps ? ` · <span class="warn-t">phasenempfindlich – nur phasengemittelt dargestellt und ausgewertet (Sollwerte ebenso)</span>` : "");
+    (ps ? ` · <span class="warn-t">phasenempfindlich – nur phasengemittelt dargestellt und ausgewertet (Sollwerte ebenso)</span>` : "") + srcLine;
   $("wiglbl").innerHTML = (ps ? "<b>phasengemittelt</b> (Phasenstruktur des Zustands nicht sichtbar)" : "phasengemittelt") + ", W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)";
   const En = (g) => g.eta_n != null ? fmtE(g.eta_n, g.eta_n_err) : "–";
   $("restbl").innerHTML = `<tr><th></th><th>A (herald-bedingt)</th><th>B (frei laufend)</th></tr>` +
     row("N", A.n ?? "–", B.n ?? "–") + row("Var x", fmtE(A.var_x, A.var_err), fmtE(B.var_x, B.var_err)) +
     row("W(0,0)", W(A), W(B)) + (f1 ? row("η (Fit)", E(A), E(B)) : row("η (⟨n⟩)", En(A), "–")) + row("⟨n⟩", fmt(A.mean_n), fmt(B.mean_n)) +
-    row("g²(0)", fmt(A.g2, 3), fmt(B.g2, 2)) + (f1 ? row("F (verlustbeh. |1⟩)", fmt(A.fidelity_lossy_fock1, 4), fmt(B.fidelity_lossy_fock1, 4)) : "") +
+    row("g²(0)", fmtE(A.g2, A.g2_err, 3), fmtE(B.g2, B.g2_err, 2)) + row("Mandel Q", fmtE(A.mandel_Q, A.mandel_Q_err, 3), fmtE(B.mandel_Q, B.mandel_Q_err, 3)) + (f1 ? row("F (verlustbeh. |1⟩)", fmt(A.fidelity_lossy_fock1, 4), fmt(B.fidelity_lossy_fock1, 4)) : "") +
     row("A − B", `ΔVar = ${fmtE(C.diff_var_x?.value, C.diff_var_x?.err)}`, `ΔW(0,0) = ${fmtE(C.diff_W00?.value, C.diff_W00?.err)} (z = ${fmt(C.diff_W00?.z, 1)})`);
-  const neg = A.W00 != null && A.W00_err ? (-A.W00 / A.W00_err) : null;
-  $("reswarn").innerHTML = (neg != null && neg > 0 ? `<span class="ok-t">W_A(0,0) &lt; 0 mit ${neg.toFixed(1)} σ (nichtklassisch)</span><br>` : "") +
+  const P = R.phase || {}, pk = !!P.available, PB = (P.B && P.B.available) ? P.B : null;
+  const fA = pk ? (P.var_theta || {}).fit || {} : {}, fB = PB ? (PB.var_theta || {}).fit || {} : {};
+  if (pk) $("restbl").innerHTML += row("Quetschung Var(x<sub>θ</sub>)", fA.available ? `${fmt(fA.squeezing_dB, 2)} ± ${fmt(fA.squeezing_dB_err, 2)} dB` : "–",
+    fB.available ? `${fmt(fB.squeezing_dB, 2)} ± ${fmt(fB.squeezing_dB_err, 2)} dB` : "–");
+  const vrow = (lbl, a, b) => `<tr><th>${lbl}</th><td>${a}</td><td>${b}</td></tr>`;
+  const sqA = fA.available ? verdict(fA.squeezing_dB, fA.squeezing_dB_err, "dB") : `<span class="mut">${pk ? "–" : "nur phasenaufgelöst (Laufplan „Kurz mit Phase“)"}</span>`;
+  const sqB = fB.available ? verdict(fB.squeezing_dB, fB.squeezing_dB_err, "dB") : `<span class="mut">${pk ? "zu wenige B-Records mit Phase" : "nur phasenaufgelöst"}</span>`;
+  $("resverdict").innerHTML = `<tr><th>Quanteneffekt</th><th>A (herald-bedingt)</th><th>B (ohne Herald)</th></tr>` +
+    vrow("Wigner-Negativität", verdict(A.W00, A.W00_err, "W"), verdict(B.W00, B.W00_err, "W")) +
+    vrow("Mandel Q < 0", verdict(A.mandel_Q, A.mandel_Q_err, "Q"), verdict(B.mandel_Q, B.mandel_Q_err, "Q")) +
+    vrow("Quetschung &lt; 0 dB", sqA, sqB);
+  $("reswarn").innerHTML = `<small class="mut">Grün ab ${SIG}σ. W(0,0) und Q phasengemittelt aus p<sub>n</sub> (Verlust η skaliert Q → η·Q, das Vorzeichen bleibt); Quetschung aus dem Var(x<sub>θ</sub>)-Fit am Detektor.</small><br>` +
     (R.warnings || []).map(w => "⚠ " + esc(typeof w === "string" ? w : JSON.stringify(w))).join("<br>");
-  const P = R.phase || {}, pk = !!P.available;
   if (pk) {
     $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +
       ` · <span class="ok-t">${esc(P.label || "Phase bekannt (Piezo-Rampe, kalibriert)")}</span>`;
@@ -307,7 +338,7 @@ function renderResult(R) {
     $("resstate").innerHTML += ` <small class="mut">(${esc(P.reason || "Phase unbekannt")})</small>`;
   }
   $("ph-var").classList.toggle("hidden", !pk); $("ph-cov").classList.toggle("hidden", !pk);
-  if (pk) { drawWigner2D(P.wigner2d, P.metrics.W00); drawVarTheta(P.var_theta); drawCoverage(P.coverage); phaseTable(P); } else drawWigner(A);
+  if (pk) { drawWigner2D(P.wigner2d, P.metrics.W00); drawVarTheta(P.var_theta, PB ? PB.var_theta : null); drawCoverage(P.coverage); phaseTable(P); } else drawWigner(A);
   drawWr(A, B); drawPn(A, B); drawAB(C);
   const eb = R.efficiency_budget || {};
   const brow = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
@@ -348,19 +379,25 @@ function drawWigner2D(W2, w00) {
   g.fillStyle = css("--mut"); g.font = "11px system-ui"; g.fillText("x", ox + s - 10, oy + s / 2 - 4); g.fillText("p", ox + s / 2 + 4, oy + 12);
   g.fillText(`W(0,0) = ${fmt(w00, 3)} · |W|max = ${fmt(vmax, 3)}`, ox + 4, oy + s - 6);
 }
-function drawVarTheta(V) {
+function drawVarTheta(V, VB) {
   const { g, w, h } = canvas("c-vth");
   if (!V || !V.theta) return;
-  const all = [...V.var.map((v, i) => v + (V.var_err[i] || 0)), ...V.var.map((v, i) => v - (V.var_err[i] || 0)), ...(V.rho_var || []), 0.5];
+  const all = [...V.var.map((v, i) => v + (V.var_err[i] || 0)), ...V.var.map((v, i) => v - (V.var_err[i] || 0)), ...(V.rho_var || []), 0.5,
+    ...(VB ? VB.var.map((v, i) => v - (VB.var_err[i] || 0)) : [])];
   const y1 = Math.max(...all.filter(Number.isFinite)) * 1.08, y0 = Math.max(0, Math.min(...all.filter(Number.isFinite)) * 0.9);
   const { X, Y } = axes(g, w, h, 0, 2 * Math.PI, y0, y1, { nx: 5, fx: (v) => (v / Math.PI).toFixed(1) + "π" });
   g.strokeStyle = "#475569"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(0), Y(0.5)); g.lineTo(X(2 * Math.PI), Y(0.5)); g.stroke(); g.setLineDash([]);
-  if (V.rho_theta) { g.strokeStyle = css("--b"); g.lineWidth = 2; g.beginPath(); V.rho_theta.forEach((t, i) => i ? g.lineTo(X(t), Y(V.rho_var[i])) : g.moveTo(X(t), Y(V.rho_var[i]))); g.stroke(); g.lineWidth = 1; }
-  g.strokeStyle = css("--a"); g.fillStyle = css("--a");
-  V.theta.forEach((t, i) => { const v = V.var[i], e = V.var_err[i] || 0; if (!Number.isFinite(v)) return; g.beginPath(); g.moveTo(X(t), Y(v - e)); g.lineTo(X(t), Y(v + e)); g.stroke(); g.beginPath(); g.arc(X(t), Y(v), 2.5, 0, 7); g.fill(); });
-  const f = V.fit || {};
-  $("vthlbl").innerHTML = `<span class="lg a"></span>Daten (Detektor) <span class="lg b"></span>aus ρ <span class="lg mut2"></span>Vakuum ½` +
-    (f.available ? `<br>Fit: min ${fmt(f.var_min, 3)} → <b>${fmt(f.squeezing_dB, 2)} ± ${fmt(f.squeezing_dB_err, 2)} dB</b>, Achse θ = ${fmt(f.axis_rad, 3)} rad, Anti ${fmt(f.antisqueezing_dB, 2)} dB` : "");
+  const series = (S, col) => {
+    if (S.rho_theta) { g.strokeStyle = css(col); g.globalAlpha = .55; g.lineWidth = 2; g.beginPath(); S.rho_theta.forEach((t, i) => i ? g.lineTo(X(t), Y(S.rho_var[i])) : g.moveTo(X(t), Y(S.rho_var[i]))); g.stroke(); g.lineWidth = 1; g.globalAlpha = 1; }
+    g.strokeStyle = css(col); g.fillStyle = css(col);
+    S.theta.forEach((t, i) => { const v = S.var[i], e = S.var_err[i] || 0; if (!Number.isFinite(v)) return; g.beginPath(); g.moveTo(X(t), Y(v - e)); g.lineTo(X(t), Y(v + e)); g.stroke(); g.beginPath(); g.arc(X(t), Y(v), 2.5, 0, 7); g.fill(); });
+  };
+  if (VB && VB.theta) series(VB, "--b");
+  series(V, "--a");
+  const f = V.fit || {}, fb = (VB && VB.fit) || {};
+  const ft = (F) => `min ${fmt(F.var_min, 3)} → <b>${fmt(F.squeezing_dB, 2)} ± ${fmt(F.squeezing_dB_err, 2)} dB</b>, Achse ${fmt(F.axis_rad, 3)} rad, Anti ${fmt(F.antisqueezing_dB, 2)} dB`;
+  $("vthlbl").innerHTML = `<span class="lg a"></span>A (Punkte Daten, Linie aus ρ) ` + (VB ? `<span class="lg b"></span>B ohne Herald ` : "") + `<span class="lg mut2"></span>Vakuum ½` +
+    (f.available ? `<br>A: ${ft(f)}` : "") + (fb.available ? `<br>B: ${ft(fb)}` : "");
 }
 function drawCoverage(C) {
   const { g, w, h } = canvas("c-cov");
@@ -381,7 +418,10 @@ function phaseTable(P) {
     r("α aus √|⟨a²⟩|", fmtE(m.alpha_from_a2, e("alpha_from_a2"))) + r("Reinheit", fmt(m.purity, 3)) +
     (f.F_ideal != null ? r("Treue Soll (ideal)", fmtE(f.F_ideal, e("F_ideal"))) + r("Treue Verlustmodell", fmtE(f.F_model, e("F_model"))) : "") +
     r("K-θ", `${(P.calibration || {}).ref_blocks?.length || 0} Läufe, Hub ${fmt(q.stroke_rad, 2)} rad, Hysterese ${fmt(q.hysteresis_rad, 3)} rad`) +
-    r("σ<sub>θ</sub> (A, Median)", fmt((P.theta_err_A || {}).median, 3) + " rad") + r("Records (A)", P.n_records ?? "–");
+    r("σ<sub>θ</sub> (A, Median)", fmt((P.theta_err_A || {}).median, 3) + " rad") + r("Records (A)", P.n_records ?? "–") +
+    (P.B && P.B.available ? r("B: Quetschung ρ", `${fmt(P.B.metrics.squeezing_dB, 2)} ± ${fmt(((P.B.boot || {}).squeezing_dB || {}).err, 2)} dB, Achse ${fmt(P.B.metrics.axis_rad, 3)} rad`) +
+      r("B: W(0,0) aus ρ", fmtE(P.B.metrics.W00, ((P.B.boot || {}).W00 || {}).err)) + r("B: ⟨n⟩ aus ρ", fmtE(P.B.metrics.mean_n, ((P.B.boot || {}).mean_n || {}).err)) + r("Records (B)", P.B.n_records)
+      : r("B phasenaufgelöst", esc((P.B || {}).reason || "–")));
 }
 function drawWr(A, B) {
   const { g, w, h } = canvas("c-wr");

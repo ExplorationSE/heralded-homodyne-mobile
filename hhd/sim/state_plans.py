@@ -8,11 +8,15 @@ W(0,0) und p_n auch für Mehrphotonenzustände aussagekräftig sind. Der Zustand
 Ab 0.15 gibt es für jeden phasenempfindlichen Zustand zusätzlich „kurzphase_<zustand>“ (Gruppe „Mit Phase
 (Piezo-Rampe)“): LO-Phase aus einer Piezo-Rampe im LO-Arm (``phase.mode = piezo``), Rampenspannung je Record
 (``records/ramp_raw``), drei kohärente Referenzläufe K-θ für die Kalibrierung Spannung → θ und phasenaufgelöste
-MaxLik-Tomografie (``hhd.analysis.phase``). Ablauf: K-V, Dunkel, K-θ, K-H, A (10 s), K-θ, B, A (10 s), K-θ, K-V.
+MaxLik-Tomografie (``hhd.analysis.phase``). Ablauf: K-V, Dunkel, K-θ, K-H, A (10 s), K-θ, B (5 s), A (10 s), K-θ, K-V.
+
+Quellmodell (ab 0.15, ``source.model = auto``): Fock-Zustände und (|0⟩+|1⟩)/√2 aus der SPDC-Paarquelle (Lauf B ≈ Vakuum),
+Katzen, Kätzchen und gequetschtes Vakuum aus einer Quetschquelle mit Photonensubtraktion (Lauf B = gequetschtes
+Vakuum der Quelle), kohärent und thermisch als Testmuster (A = B), siehe ``hhd.sim.states.source_model``.
 """
 from __future__ import annotations
 
-from .states import STATE_PRESETS, make_state
+from .states import STATE_PRESETS, make_state, source_model, source_short
 
 # Planname → Voreinstellung (Reihenfolge = Anzeige)
 STATE_PLAN_KEYS = ["fock2", "fock3", "fock01", "cat_even_1", "cat_odd_1", "cat_even_2", "cat_odd_2", "kitten_3dB",
@@ -24,7 +28,7 @@ DURATIONS = {"vacuum": 1.0, "electronic": 0.3, "herald_blocked": 0.7, "heralded"
 
 PHASE_PLAN_KEYS = [k for k in STATE_PLAN_KEYS if make_state(k).phase_sensitive]
 PHASE_PLANS = {f"kurzphase_{k}": k for k in PHASE_PLAN_KEYS}
-PHASE_DURATIONS = dict(DURATIONS, heralded=10.0, phase_ref=1.0)
+PHASE_DURATIONS = dict(DURATIONS, heralded=10.0, phase_ref=1.0, free_running=5.0)   # B 5 s: 10⁴ Records für Var(x_θ)
 
 
 def phase_plan_label(key: str) -> str:
@@ -32,9 +36,9 @@ def phase_plan_label(key: str) -> str:
 
 
 def phase_plan_doc(key: str) -> str:
-    return (f"K-V, Dunkel, K-θ, K-H, A (10 s), K-θ, B, A (10 s), K-θ, K-V; geheraldeter Zustand "
+    return (f"K-V, Dunkel, K-θ, K-H, A (10 s), K-θ, B (5 s), A (10 s), K-θ, K-V; geheraldeter Zustand "
             f"{STATE_PRESETS[key]['label']} · LO-Phase aus Piezo-Rampe (Dreieck), kalibriert mit K-θ → "
-            f"phasenaufgelöste MaxLik-Tomografie, 2D-Wigner, Var(x_θ)")
+            f"phasenaufgelöste MaxLik-Tomografie, 2D-Wigner, Var(x_θ) für A und B · {source_short(source_model(key))}")
 
 
 def apply_phase_plan(cfg, plan: str):
@@ -75,7 +79,8 @@ def plan_doc(key: str) -> str:
     st = make_state(key)
     extra = " · phasenempfindlich, Phase zufällig → phasengemittelte Auswertung" if st.phase_sensitive else ""
     multi = " · Herald mit Photonenzahlauflösung angenommen" if key in ("fock2", "fock3") else ""
-    return f"K-V, Dunkel, K-H, A (3 s), B, A (3 s), K-V; geheraldeter Zustand {STATE_PRESETS[key]['label']}{extra}{multi}"
+    return (f"K-V, Dunkel, K-H, A (3 s), B, A (3 s), K-V; geheraldeter Zustand {STATE_PRESETS[key]['label']}{extra}{multi}"
+            f" · {source_short(source_model(key))}")
 
 
 def apply_state_plan(cfg, plan: str):

@@ -270,7 +270,8 @@ def check_run(run_dir: str | Path, n_boot: int = 100, norm_mode: str = "pooled")
                 xs_role[role].append(x_all[kind == main]); exp_role[role].append((int((kind == main).sum()), exp))
             groups = [(bid, kind == main, exp)]
             if attrs["kind"] == "heralded" and np.any(kind == TRIG_RANDOM):
-                groups.append((f"{bid}/random", kind == TRIG_RANDOM, dict(W00=1 / np.pi, var_x=0.5)))
+                bgx = exp.get("background") or dict(W00=1 / np.pi, var_x=0.5)   # Zustand ohne Herald (Quellmodell)
+                groups.append((f"{bid}/random", kind == TRIG_RANDOM, dict(W00=bgx["W00"], var_x=bgx["var_x"])))
             uniform = attrs["phase_mode"] in ("random", "ramp") or not exp.get("phase_sensitive", False)
             for name, m, e in groups:
                 x, th = x_all[m], th_all[m]

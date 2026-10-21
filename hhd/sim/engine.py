@@ -45,17 +45,17 @@ from ..io import schema as S
 from .clock import DigitizerClock
 from .config import BlockCfg, SimConfig
 from .drift import DriftPath
-from .digitizer import ADQ32, TRIG_HERALD, TRIG_RANDOM, TRIG_STATE, TriggerInput
+from .digitizer import ADQ32, TRIG_HERALD, TRIG_PERIODIC, TRIG_RANDOM, TRIG_STATE, TriggerInput
 from .harp import HydraHarp500, apply_dead_time
 from .phase import PhaseModel
-from .states import make_state, state_info
+from .states import make_state, mandel_q, source_model, squeezing_dB, state_info
 
 KIND_TO_DATASET = dict(heralded="heralded", random="random_trigger", free_running="free_running",
                        herald_blocked="herald_blocked", vacuum="vacuum", electronic="electronic", state="prepared_state",
                        phase_ref="phase_reference")
 KIND_TO_ROLE = dict(heralded="heralded", random="unheralded", free_running="unheralded", herald_blocked="control",
                     vacuum="control", electronic="control", state="test_state", phase_ref="calibration")
-MODE_HERALDED, MODE_UNHERALDED, MODE_STATE = 0, 1, 2
+MODE_HERALDED, MODE_UNHERALDED, MODE_STATE, MODE_BACKGROUND = 0, 1, 2, 3
 MANIFEST = "session.json"
 
 
@@ -127,6 +127,54 @@ def heralded_state_info(cfg: SimConfig) -> dict:
     out = dict(_STATE_INFO[k])
     out["phase_averaged"] = (not out["phase_sensitive"]) or cfg.phase.mode in ("random", "ramp", "piezo")
     out["phase_known"] = cfg.phase.mode == "piezo" and cfg.phase.ramp_channel != "none"
+    sm = source_info(cfg)
+    out["source"] = {k: v for k, v in sm.items() if k != "unheralded"}
+    return out
+
+
+def source_info(cfg: SimConfig) -> dict:
+    """Quellmodell der Sitzung (``source.model``, ``source.squeeze_dB``) zum geheraldeten Zustand."""
+    s = cfg.source
+    return source_model(s.heralded_state, getattr(s, "model", "auto"), getattr(s, "squeeze_dB", 0.0) or None)
+
+
+def background_state(cfg: SimConfig):
+    """Zustand der Signalmode ohne Herald (Quellmodell squeezed/test); None = SPDC (≈ Vakuum, bisheriges Modell)."""
+    u = source_info(cfg).get("unheralded")
+    return make_state(u) if u else None
+
+
+def state_moments_expected(st, eta: float, phase_avg: bool, thetas=None) -> dict:
+    """Sollwerte einer Mode nach Verlust η: W(0,0), Var x (phasengemittelt bzw. gepoolt über die wahren Phasen),
+    ⟨n⟩, ⟨n(n−1)⟩, Mandel Q, p_n, min_θ Var x_θ, Quetschung (dB) und Achse."""
+    e = st.expected(eta)
+    var = e["var_x_phase_avg"] if phase_avg else e["var_x"]
+    ma, ma2, mn = st.quad_moments(eta)
+    if thetas is not None and len(thetas) and st.phase_sensitive:
+        th = np.asarray(thetas, float)
+        mu = np.sqrt(2) * np.real(ma * np.exp(-1j * th))
+        var = float(np.mean(np.real(ma2 * np.exp(-2j * th)) + mn + 0.5) - np.mean(mu) ** 2)
+    vmin, axis = st.var_min(eta)
+    return dict(W00=e["W00"], var_x=float(var), mean_n=e["mean_n"], fact2=e["fact2"], mandel_Q=e["mandel_Q"],
+                p_n=list(e["p_n"]), var_min=vmin, squeezing_dB=squeezing_dB(vmin), axis_rad=axis,
+                moments=(complex(ma), complex(ma2), float(mn)))
+
+
+def mixture_expected(parts: list) -> dict:
+    """Gewichtete Mischung [(w, state_moments_expected), …]: lineare Größen gemischt, Q und Quetschung neu berechnet."""
+    W = sum(w for w, _ in parts)
+    lin = lambda k: float(sum(w * e[k] for w, e in parts) / W)
+    out = {k: lin(k) for k in ("W00", "var_x", "mean_n", "fact2")}
+    L = max(len(e["p_n"]) for _, e in parts)
+    pn = np.zeros(L)
+    for w, e in parts:
+        pn[:len(e["p_n"])] += w * np.asarray(e["p_n"]) / W
+    a1 = sum(w * e["moments"][0] for w, e in parts) / W
+    a2 = sum(w * e["moments"][1] for w, e in parts) / W
+    c, dn = a2 - a1 ** 2, out["mean_n"] - abs(a1) ** 2
+    vmin = float(dn + 0.5 - abs(c))
+    out.update(p_n=pn.tolist(), mandel_Q=mandel_q(out["mean_n"], out["fact2"]), var_min=vmin,
+               squeezing_dB=squeezing_dB(vmin), axis_rad=float(np.mod(np.angle(c) / 2 + np.pi / 2, np.pi)))
     return out
 
 
@@ -207,10 +255,16 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
 
     # ---------------------------------------------------------------- Moden am Analogeingang
     heralded_state = make_state(src.heralded_state)
+    bg_state = background_state(cfg) if spdc_on else None     # Quellmodell squeezed/test: Zustand ohne Herald
+    r_bg = np.random.default_rng(ss.spawn(1)[0]) if bg_state is not None else None
     mode_t, mode_x, mode_th, mode_kind, mode_src = [], [], [], [], []
     if spdc_on and not signal_blocked:
         th = phase.theta(t_pair + d.d_S, r_phase)
         x = heralded_state.measure(r_state, th, eta_run)
+        if bg_state is not None and (~herald_of_pair).any():
+            # ohne Herald keine Präparation: die Mode trägt den Zustand der Quelle (gequetschtes Vakuum bzw. Testmuster)
+            u = ~herald_of_pair
+            x = x.copy(); x[u] = bg_state.measure(r_bg, th[u], eta_run)
         mode_t.append(t_pair + d.d_S); mode_x.append(x); mode_th.append(th)
         mode_kind.append(np.where(herald_of_pair, MODE_HERALDED, MODE_UNHERALDED))
         mode_src.append(np.arange(len(t_pair)))
@@ -225,11 +279,34 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         mode_t.append(t_state + d.d_S); mode_x.append(x); mode_th.append(th)
         mode_kind.append(np.full(len(t_state), MODE_STATE)); mode_src.append(np.arange(len(t_state)))
     cat = (lambda L, dt: np.concatenate(L) if L else np.empty(0, dt))
-    mode_t, mode_x, mode_th = cat(mode_t, float), cat(mode_x, float), cat(mode_th, float)
-    mode_kind, mode_src = cat(mode_kind, np.int8), cat(mode_src, np.int64)
+    n_before_bg = int(sum(len(v) for v in mode_t))
 
     # ---------------------------------------------------------------- Zufallstrigger und Marker (wahre Zeit)
     t_rand = _poisson_times(r_trig, b.random_rate, t0, T) if kind in ("heralded", "random") else np.empty(0)
+    # Quellmodell squeezed/test: an jedem Trigger ohne echten Herald (periodisch, Zufall, Dunkelzählung) liegt in der
+    # ausgewerteten Mode der Zustand der Quelle; Mode an der Stelle, an der die Auswertung sie erwartet
+    # (Trigger + d_S − d_T bzw. Herald + d_S), mit derselben LO-Phase θ(t)
+    bg_idx: dict[int, np.ndarray] = {}
+    periodic_bg = b.periodic_rate if kind == "free_running" else 0.0
+    if bg_state is not None and not signal_blocked:
+        t_bg_parts = []
+        tp_true = clk.inverse(adq.periodic_grid(t0, T, periodic_bg)) if periodic_bg > 0 else np.empty(0)
+        for kconst, tt in ((TRIG_PERIODIC, tp_true + d.d_S - d.d_T),
+                           (TRIG_RANDOM, t_rand + d.d_RT + d.d_S - d.d_T),
+                           (TRIG_HERALD, np.where(is_dark, t_h, np.nan) + d.d_S)):
+            ok = np.flatnonzero(np.isfinite(tt))
+            if not len(ok):
+                continue
+            th = phase.theta(tt[ok], r_bg)
+            x = bg_state.measure(r_bg, th, eta_run)
+            start = n_before_bg + sum(len(v) for v in t_bg_parts)
+            idx = -np.ones(len(tt), np.int64); idx[ok] = start + np.arange(len(ok))
+            bg_idx[kconst] = idx
+            t_bg_parts.append(tt[ok])
+            mode_t.append(tt[ok]); mode_x.append(x); mode_th.append(th)
+            mode_kind.append(np.full(len(ok), MODE_BACKGROUND, np.int8)); mode_src.append(ok.astype(np.int64))
+    mode_t, mode_x, mode_th = cat(mode_t, float), cat(mode_x, float), cat(mode_th, float)
+    mode_kind, mode_src = cat(mode_kind, np.int8), cat(mode_src, np.int64)
     k_all = np.arange(int(T * mk.f_marker))
     sent = r_mark.random(len(k_all)) >= mk.p_omit
     t_m = t0 + (0.5 + k_all[sent]) / mk.f_marker
@@ -305,6 +382,15 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
                 rec_theta[m[ok]] = mode_th[pr[ok]]
             elif kconst == TRIG_STATE and len(t_state):
                 rec_theta[m] = mode_th[n_spdc + src_i]
+        for kconst, idx in bg_idx.items():                # Hintergrundmoden (Quellmodell squeezed/test)
+            m = np.flatnonzero(dig.rec_kind == kconst)
+            if not len(m):
+                continue
+            mi = idx[dig.rec_index[m]]
+            ok = mi >= 0
+            if kconst == TRIG_HERALD:
+                ok &= ~np.isfinite(rec_theta[m])
+            rec_theta[m[ok]] = mode_th[mi[ok]]
     # LO-Leistungsmonitor (Photodiode), relative Leistung
     if cfg.drift.monitor:
         t_mon = t0 + np.arange(0.0, T, 1.0 / cfg.drift.monitor_rate_Hz)
@@ -368,16 +454,48 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
                         phase_averaged=hinfo["phase_averaged"],
                         note="ohne Beitrag ungeheraldeter/sekundärer Moden und Überlappverluste"
                              + ("; phasengemittelt" if hinfo["phase_sensitive"] and hinfo["phase_averaged"] else ""))
+        # Quellmodell: Dunkelzählungen (1 − ξ) sehen den Zustand ohne Herald (SPDC: Vakuum, sonst Quelle)
+        eta_t = eta_run * eta_el
+        th_h = (mode_th[:len(t_pair)][herald_of_pair] if (pcfg.mode == "piezo" and spdc_on and len(t_pair)
+                                                           and herald_of_pair.any()) else None)
+        es = state_moments_expected(heralded_state, eta_t, hinfo["phase_averaged"], th_h)
+        es["var_x"] = var_s
+        bgx = state_moments_expected(bg_state if bg_state is not None else make_state("vacuum"), eta_t,
+                                     hinfo["phase_averaged"] or not (bg_state is not None and bg_state.phase_sensitive),
+                                     th_h if bg_state is not None else None)
+        mx = mixture_expected([(xi, es), (1 - xi, bgx)])
+        expected.update(W00=mx["W00"], var_x=mx["var_x"], mean_n=mx["mean_n"], p_n=mx["p_n"], mandel_Q=mx["mandel_Q"],
+                        var_min=mx["var_min"], squeezing_dB=mx["squeezing_dB"], axis_rad=mx["axis_rad"],
+                        source=hinfo["source"],
+                        background=dict(W00=bgx["W00"], var_x=bgx["var_x"], mean_n=bgx["mean_n"],
+                                        mandel_Q=bgx["mandel_Q"], squeezing_dB=bgx["squeezing_dB"]))
     elif kind in ("vacuum", "herald_blocked"):
         expected.update(W00=1 / np.pi, var_x=0.5)
     elif kind == "electronic":
         expected.update(var_ratio_to_vacuum=(1 / cfg.clearance) / (1 + 1 / cfg.clearance))
+    elif kind in ("random", "free_running") and bg_state is not None:
+        # Quellmodell squeezed/test: in jeder Mode der Zustand der Quelle (gequetschtes Vakuum bzw. Testmuster)
+        eta_t = eta_run * eta_el
+        pavg = (not bg_state.phase_sensitive) or pcfg.mode in ("random", "ramp", "piezo")
+        th_b = None
+        if pcfg.mode == "piezo" and bg_state.phase_sensitive:
+            mk_ = TRIG_PERIODIC if kind == "free_running" else TRIG_RANDOM
+            m = dig.rec_kind == mk_
+            th_b = rec_theta[m][np.isfinite(rec_theta[m])] if pcfg.mode == "piezo" else None
+        e = state_moments_expected(bg_state, eta_t, pavg, th_b)
+        sm = hinfo["source"]
+        expected.update(W00=e["W00"], var_x=e["var_x"], mean_n=e["mean_n"], n_eff=e["mean_n"], p_n=e["p_n"],
+                        mandel_Q=e["mandel_Q"], var_min=e["var_min"], squeezing_dB=e["squeezing_dB"],
+                        axis_rad=e["axis_rad"], eta_total=eta_t, source=sm, phase_averaged=pavg,
+                        note=("gequetschtes Vakuum der Quelle (%.2f dB vor Verlusten)" % sm.get("dB", 0.0))
+                             if sm["model"] == "squeezed" else "Testmuster: derselbe Zustand ohne Herald")
     elif kind in ("random", "free_running"):
         R_pair = src.R_herald / src.eta_herald
         g = src.gamma
         n_eff = R_pair * eta_run * eta_el * (2.5 / g if src.mode_shape == "double_exponential" else np.sqrt(np.pi) / g) \
             * hinfo["mean_n_ideal"]                       # Zusatzvarianz ∝ ⟨n⟩ des Zustands (phasengemittelt)
-        expected.update(W00=(1 / np.pi) * (1 - 2 * n_eff), var_x=0.5 + n_eff, n_eff=n_eff,
+        expected.update(W00=(1 / np.pi) * (1 - 2 * n_eff), var_x=0.5 + n_eff, n_eff=n_eff, mandel_Q=n_eff,
+                        var_min=0.5 + n_eff, squeezing_dB=squeezing_dB(0.5 + n_eff), source=hinfo["source"],
                         note="unbedingter Zustand ≈ Vakuum (CW-SPDC, kleine mittlere Photonenzahl je Mode)")
     elif kind in ("state", "phase_ref"):
         e = test_state.expected(eta_run * eta_el, theta=float(pcfg.theta0))

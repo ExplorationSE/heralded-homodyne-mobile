@@ -8,6 +8,8 @@ Ablauf (gemeinsam für die In-Memory- und die Datenstrom-Auswertung, speicherbeg
 3. A-Records (herald-bedingt, sauber) in ein θ×x-Histogramm (:class:`hhd.recon.tomo.PhaseHist`).
 4. MaxLik (RρR) mit POVM inkl. η_el (elektronisches Rauschen als Verlust, wie in der phasengemittelten
    Auswertung); Abschneidegrenze automatisch; Poisson-Bootstrap des Histogramms für die Fehler.
+   Ab 0.15 (Quellmodell): B-Records (ohne Herald, frei laufend/Zufall) getrennt in ein zweites Histogramm →
+   Var(x_θ)-Fit (Quetschung in dB am Detektor) und MaxLik-ρ des Zustands ohne Herald (``result["phase"]["B"]``).
 5. Kennwerte: 2D-Wigner, W(0,0), Parität, Reinheit, Quetschung (dB, Achse) aus ρ und aus Var(x_θ) der Daten,
    α (Katze) aus ⟨a²⟩, Treue zum Sollzustand (ideal und Verlustmodell ξ·L_η(ρ_t) + (1−ξ)|0⟩⟨0|),
    Phasenabdeckung mit Warnung bei Lücken.
@@ -37,7 +39,7 @@ class MemorySource:
         self.masks = {}
         for k, v in groups.items():
             for b, m in v:
-                if k in ("A", "phase_reference"):
+                if k in ("A", "B", "phase_reference"):
                     self.masks[b] = m
 
     def has(self, b):
@@ -122,7 +124,8 @@ def phase_analysis(session, src, cal, ap, xi: float | None, state: dict | None, 
     pc.quality["phase_noise_used_rad"] = pc.phase_noise_rad
     # θ je Record, phase.h5, Histogramm der A-Records
     H = T.PhaseHist(n_theta=96, dx=0.05, xmax=8.0)
-    err_A = []
+    HB = T.PhaseHist(n_theta=96, dx=0.05, xmax=8.0)
+    err_A, err_B = [], []
     ph_path = Path(out_dir) / "phase.h5" if out_dir else None
     f = h5py.File(ph_path, "w") if ph_path else None
     try:
@@ -147,6 +150,10 @@ def phase_analysis(session, src, cal, ap, xi: float | None, state: dict | None, 
                 mm = m & np.isfinite(x)
                 H.add(x[mm], th[mm])
                 err_A.append(er[mm])
+            elif r.dataset_type in ("free_running", "random_trigger"):
+                mm = m & np.isfinite(x) & np.isfinite(th)
+                HB.add(x[mm], th[mm])
+                err_B.append(er[mm])
     finally:
         if f is not None:
             f.close()
@@ -187,17 +194,27 @@ def phase_analysis(session, src, cal, ap, xi: float | None, state: dict | None, 
             target = rt[:N, :N] / np.real(np.trace(rt[:N, :N]))
             n_id = float(state.get("mean_n_ideal") or np.real(np.trace(rt @ np.diag(np.arange(rt.shape[0])))))
             xx = xi if (xi is not None and np.isfinite(xi) and xi > 0) else 1.0
-            eta_o = float(np.clip(met["mean_n"] / (xx * n_id), 0.05, 1.0)) if n_id > 0 else 1.0
+            from ..sim.states import background_rho
+            bgr = background_rho(state, rt.shape[0])      # Dunkelzählungen: Zustand ohne Herald (Quellmodell)
+            n_bg = float(np.real(np.trace(bgr @ np.diag(np.arange(rt.shape[0]))))) if bgr is not None else 0.0
+            n_mix = xx * n_id + (1 - xx) * n_bg
+            eta_o = float(np.clip(met["mean_n"] / n_mix, 0.05, 1.0)) if n_mix > 0 else 1.0
             sd = float(np.median(eA)) if len(eA) else 0.0      # Dephasierung durch die θ-Unsicherheit
             kk = np.arange(rt.shape[0])
             lm = (loss_channel(rt, eta_o) * np.exp(-0.5 * sd ** 2 * (kk[:, None] - kk[None, :]) ** 2))[:N, :N]
-            model = xx * lm; model[0, 0] += 1 - xx
+            model = xx * lm
+            if bgr is None:
+                model[0, 0] += 1 - xx
+            else:
+                model = model + (1 - xx) * (loss_channel(bgr, eta_o)
+                                            * np.exp(-0.5 * sd ** 2 * (kk[:, None] - kk[None, :]) ** 2))[:N, :N]
             model = model / np.real(np.trace(model))
             F_i, phi_i = T.fidelity_max_rotation(rho, target, pure=True)
             F_m, phi_m = T.fidelity_max_rotation(rho, model)
             fid = dict(F_ideal=F_i, F_ideal_rotation_rad=phi_i, F_model=F_m, F_model_rotation_rad=phi_m,
                        model=dict(xi=xx, eta_optical=eta_o, dephasing_rad=sd,
-                                  note="ξ·D_σθ(L_η(ρ_soll)) + (1−ξ)|0⟩⟨0|, η aus ⟨n⟩, σ_θ = Median der θ-Unsicherheit"))
+                                  note="ξ·D_σθ(L_η(ρ_soll)) + (1−ξ)·ρ_ohne Herald (SPDC: |0⟩⟨0|), η aus ⟨n⟩, σ_θ = Median der θ-Unsicherheit",
+                                  background=((state.get("source") or {}).get("model") or "spdc")))
         except Exception as e:                       # Sollzustand unbekannt: keine Treue
             warnings.append(f"Treue zum Sollzustand nicht berechnet: {e}")
     boot = _boot(tm, rho, counts, ap.n_boot_tomo, rng, target, model, ap.tomo_boot_iter) if ap.n_boot_tomo > 1 else {}
@@ -225,7 +242,41 @@ def phase_analysis(session, src, cal, ap, xi: float | None, state: dict | None, 
                coverage=cov, wigner2d=dict(x=g.tolist(), W=np.round(W, 5).tolist()),
                rho=dict(re=np.round(np.real(rho), 6).tolist(), im=np.round(np.imag(rho), 6).tolist()),
                warnings=warnings, file="phase.h5" if ph_path else None)
+    out["B"] = phase_group_B(HB, err_B, eta, ap, rng)
     return out
+
+
+def phase_group_B(HB, err_B, eta: float, ap, rng) -> dict:
+    """Lauf B (ohne Herald) phasenaufgelöst: Var(x_θ)-Fit am Detektor und MaxLik-ρ (gleiche K-θ-Kalibrierung wie A)."""
+    if HB.n < 300:
+        return dict(available=False, reason=f"zu wenige B-Records mit Phase ({HB.n})", n_records=int(HB.n))
+    eB = np.concatenate(err_B) if err_B else np.empty(0)
+    vt = HB.var_theta(max(1, 96 // ap.var_theta_bins))
+    vfit = T.fit_var_theta(vt)
+    vt1 = HB.var_theta(1)
+    n_det = float(np.nanmean(vt1["var"] + vt1["mean"] ** 2)) - 0.5
+    N = T.auto_cutoff(max(n_det, 0.0) / eta, hi=ap.tomo_nmax)
+    occ = HB.counts.sum(0) > 0
+    xmax = float(np.clip(np.max(np.abs(-HB.xmax + (np.flatnonzero(occ) + 0.5) * HB.dx)) + 0.3, 4.5, 8.0)) if occ.any() else 6.0
+    counts, te, xe = HB.coarse(max(1, 96 // ap.tomo_theta_bins), max(1, int(round(ap.tomo_dx / HB.dx))), xmax)
+    tm = T.Tomography(counts, te, xe, eta, N)
+    r = tm.fit(max_iter=ap.tomo_max_iter)
+    met = T.state_metrics(r["rho"])
+    nb = max(0, int(ap.n_boot_tomo) // 2)
+    boot = _boot(tm, r["rho"], counts, nb, rng, None, None, ap.tomo_boot_iter) if nb > 1 else {}
+    for k in ("F_ideal", "F_model"):
+        boot.pop(k, None)
+    th_c = np.linspace(0, 2 * np.pi, 121)
+    mu_r, var_r = T.var_curve(r["rho"], th_c)
+    g = np.linspace(-4.5, 4.5, 41)
+    return dict(available=True, n_records=int(HB.n), n_outside=int(HB.n_outside), N=N, eta_tomo=eta,
+                n_iter=r["n_iter"], metrics=met, boot=boot,
+                theta_err=dict(median=float(np.median(eB)) if len(eB) else None),
+                var_theta=dict(theta=vt["theta"].tolist(), var=vt["var"].tolist(), var_err=vt["var_err"].tolist(),
+                               n=vt["n"].tolist(), fit=vfit, rho_theta=th_c.tolist(),
+                               rho_var=(var_r * eta + 0.5 * (1 - eta)).tolist()),
+                wigner2d=dict(x=g.tolist(), W=np.round(T.wigner2d(r["rho"], g, g), 5).tolist()),
+                note="Zustand ohne Herald (Lauf B), Quetschung aus Var(x_θ) am Detektor und aus ρ (η_el korrigiert)")
 
 
 VAR_TESTS = ("A-Läufe: Varianz", "A-B-A: A-Varianz", "Nulltest AA")

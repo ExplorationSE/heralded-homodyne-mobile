@@ -48,7 +48,7 @@ def validate_analysis(session_dir, result: dict) -> dict:
             if any(v is None for v in vals):
                 return None
             return float(np.average(vals, weights=w))
-        T = dict(var_x=avg("var_x"), W00=avg("W00"))
+        T = dict(var_x=avg("var_x"), W00=avg("W00"), mandel_Q=avg("mandel_Q"))
         T["eta"] = avg("eta_eff") if k == "A" else (avg("n_eff") if k == "B" else 0.0)
         tru_group[k] = T
         o = dict(true=T, n=g["n"])
@@ -75,6 +75,10 @@ def validate_analysis(session_dir, result: dict) -> dict:
             if ca:
                 o[q]["cover"] = {m: dict(in68=_in(v["68"], t), in95=_in(v["95"], t),
                                          w68=v["68"][1] - v["68"][0]) for m, v in ca.items()}
+        if g.get("mandel_Q") is not None and T.get("mandel_Q") is not None and np.isfinite(T["mandel_Q"]):
+            o["mandel_Q"] = dict(value=g["mandel_Q"], err=g.get("mandel_Q_err"), true=T["mandel_Q"],
+                                 diff=g["mandel_Q"] - T["mandel_Q"],
+                                 pull=_pull(g["mandel_Q"], T["mandel_Q"], g.get("mandel_Q_err")))
         if "W00_bc" in g and T.get("W00") is not None:
             o["W00_bc"] = dict(value=g["W00_bc"], err=g.get("W00_err"), true=T["W00"], diff=g["W00_bc"] - T["W00"],
                                pull=_pull(g["W00_bc"], T["W00"], g.get("W00_err")))
@@ -176,7 +180,12 @@ def validate_phase(d: Path, result: dict, exp: dict) -> dict:
     k = np.arange(M)
     lam = loss_channel(rt, eta_t) * np.exp(-0.5 * sig ** 2 * (k[:, None] - k[None, :]) ** 2)
     rex = xi * lam
-    rex[0, 0] += 1 - xi
+    from ..sim.states import background_rho
+    bgr = background_rho(result.get("state"), M)
+    if bgr is None:
+        rex[0, 0] += 1 - xi
+    else:
+        rex = rex + (1 - xi) * loss_channel(bgr, eta_t) * np.exp(-0.5 * sig ** 2 * (k[:, None] - k[None, :]) ** 2)
     rex = rex[:N, :N] / np.real(np.trace(rex[:N, :N]))
     me, mm = T.state_metrics(rex), ph["metrics"]
     bt = ph.get("boot", {})
@@ -189,6 +198,47 @@ def validate_phase(d: Path, result: dict, exp: dict) -> dict:
     if me["squeezing_dB"] < -0.3:
         da = float(np.angle(np.exp(2j * (mm["axis_rad"] - me["axis_rad"]))) / 2)
         o["axis_rad"] = dict(value=mm["axis_rad"], true=me["axis_rad"], diff=da, err=(bt.get("axis_rad") or {}).get("err"))
+    # Var(x_θ)-Fit am Detektor (A) gegen min_θ Var der Sollwerte (Mischung ξ/ohne Herald, η·η_el)
+    vf = (ph.get("var_theta") or {}).get("fit") or {}
+    sq_t = [e.get("squeezing_dB") for e in ea]
+    if vf.get("available") and all(v is not None for v in sq_t):
+        t = float(np.mean(sq_t))
+        o["var_fit_dB"] = dict(value=vf["squeezing_dB"], err=vf.get("squeezing_dB_err"), true=t,
+                               diff=vf["squeezing_dB"] - t, pull=_pull(vf["squeezing_dB"], t, vf.get("squeezing_dB_err")))
+    o["B"] = validate_phase_B(result, exp, M, sig)
+    return o
+
+
+def validate_phase_B(result: dict, exp: dict, M: int, sig: float) -> dict:
+    """Lauf B phasenaufgelöst: Var(x_θ)-Fit gegen die Soll-Quetschung (Detektor) und ρ gegen L_η(ρ_ohne Herald)."""
+    from ..recon import tomo as T
+    from ..sim.states import background_rho, loss_channel
+    PB = (result.get("phase") or {}).get("B") or {}
+    if not PB.get("available"):
+        return dict(available=False, reason=PB.get("reason"))
+    runs = result["groups"].get("B", {}).get("runs", [])
+    eb = [exp[b] for b in runs if b in exp]
+    o: dict = dict(available=True, n=PB.get("n_records"))
+    vf = (PB.get("var_theta") or {}).get("fit") or {}
+    sq_t = [e.get("squeezing_dB") for e in eb]
+    if vf.get("available") and sq_t and all(v is not None for v in sq_t):
+        t = float(np.mean(sq_t))
+        o["var_fit_dB"] = dict(value=vf["squeezing_dB"], err=vf.get("squeezing_dB_err"), true=t,
+                               diff=vf["squeezing_dB"] - t, pull=_pull(vf["squeezing_dB"], t, vf.get("squeezing_dB_err")))
+    eta_t = float(np.mean([e.get("eta_state", 1.0) for e in eb])) if eb else 1.0
+    rb = background_rho(result.get("state"), M)
+    if rb is None:
+        rb = np.zeros((M, M)); rb[0, 0] = 1.0
+    k = np.arange(M)
+    lam = loss_channel(rb, eta_t) * np.exp(-0.5 * sig ** 2 * (k[:, None] - k[None, :]) ** 2)
+    rho_m_metrics = PB["metrics"]
+    N = int(rho_m_metrics["N"])
+    rex = lam[:N, :N] / np.real(np.trace(lam[:N, :N]))
+    me, bt = T.state_metrics(rex), PB.get("boot", {})
+    for q in ("W00", "mean_n", "squeezing_dB", "purity"):
+        e = (bt.get(q) or {}).get("err")
+        o[q] = dict(value=rho_m_metrics[q], true=me[q], diff=rho_m_metrics[q] - me[q], err=e,
+                    pull=_pull(rho_m_metrics[q], me[q], e))
     return o
 
 

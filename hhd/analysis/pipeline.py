@@ -20,6 +20,7 @@ from .. import __version__
 from ..calib.calibrate import CalibParams, Calibration, calibrate, crosstalk_check
 from ..modes.extract import ModeSpec, adc_offset, extract_run, template_bank
 from ..modes.pca import pca_fitted_template, pca_mode, pca_template
+from ..recon.core import photon_stats
 from ..recon.stats import group_stats
 from .syncdata import ensure_sync, group_mask, mode_centres
 
@@ -149,7 +150,7 @@ def bootstrap_groups(norm: Normalizer, keys, point: dict, ap: AnalysisParams, rn
     """Gemeinsamer Bootstrap: je Ziehung dieselbe Vakuumkalibrierung für alle Gruppen, Records je Gruppe neu gezogen."""
     base = {k: norm.x(k) for k in keys}
     res = {k: {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var", "mean_n", "p1",
-                               "var_x_se", "W00_moments_se", "eta_fit_se")} for k in keys}
+                               "mandel_Q", "g2", "var_x_se", "W00_moments_se", "eta_fit_se")} for k in keys}
     res["diff"] = {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit")}
     for _ in range(ap.n_boot):
         if ap.boot_vacuum:
@@ -169,6 +170,8 @@ def bootstrap_groups(norm: Normalizer, keys, point: dict, ap: AnalysisParams, rn
             res[k]["var_x_se"].append(g["var_err"]); res[k]["W00_moments_se"].append(g["W00_moments_err"])
             res[k]["eta_fit_se"].append(g["eta_fit_err_fisher"])
             res[k]["p1"].append(g["p_n"][1])
+            ps_ = photon_stats(np.asarray(g["p_n"], float))
+            res[k]["mandel_Q"].append(ps_["mandel_Q"]); res[k]["g2"].append(ps_["g2"])
         if "A" in st and "B" in st:
             for q in res["diff"]:
                 res["diff"][q].append(st["A"][q] - st["B"][q])
@@ -451,6 +454,10 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
                     pv = g[q] if q not in ("mean_n", "p1") else (g["mean_n"] if q == "mean_n" else g["p_n"][1])
                     s = _summ(boot[k][q], pv)
                     gg[f"{q}_err"] = s["err"]; gg[f"{q}_boot"] = s
+                for q in ("mandel_Q", "g2"):               # Mandel Q / g²(0) aus p_n je Ziehung (nan bei ⟨n⟩ ≈ 0)
+                    v = np.asarray(boot[k].get(q, []), float); v = v[np.isfinite(v)]
+                    gg[f"{q}_err"] = float(np.std(v, ddof=1)) if len(v) > 2 else float("nan")
+                    gg[f"{q}_n_boot"] = int(len(v))
                 from ..recon.intervals import intervals
                 jk = jackknife_values(norm, k, g, ap, rng) if ap.jackknife_groups >= 3 else {}
                 cis = {}

@@ -54,6 +54,16 @@ def _x_operator(N: int, theta: float) -> np.ndarray:
     return X
 
 
+def mandel_q(mean_n: float, fact2: float) -> float:
+    """Mandel Q = (⟨n(n−1)⟩ − ⟨n⟩²)/⟨n⟩ (< 0: sub-poissonsch, nichtklassisch; Verlust η skaliert Q → η·Q)."""
+    return float((fact2 - mean_n ** 2) / mean_n) if mean_n > 1e-12 else float("nan")
+
+
+def squeezing_dB(var: float) -> float:
+    """10·log10(Var/½): < 0 dB = Varianz unter dem Vakuum (Quetschung)."""
+    return float(10 * np.log10(var / VAC_VAR)) if var > 0 else float("nan")
+
+
 class State:
     """Basisklasse. ``sample(rng, theta)`` liefert verlustfreie Quadraturen für die Phasen ``theta``."""
     name = "state"
@@ -80,9 +90,20 @@ class State:
         mean = float(np.real(np.trace(r @ X)))
         var = float(np.real(np.trace(r @ X @ X))) - mean ** 2
         mean_n = float(np.sum(np.arange(len(p)) * p))
-        return dict(p_n=p[:12].tolist(), W00=float(np.sum(p * (-1.0) ** np.arange(len(p))) / np.pi),
+        nn = np.arange(len(p))
+        fact2 = float(np.sum(nn * (nn - 1) * p))
+        return dict(p_n=p[:12].tolist(), W00=float(np.sum(p * (-1.0) ** nn) / np.pi),
                     mean_x=mean, var_x=var, mean_n=mean_n, var_x_phase_avg=mean_n + 0.5,
+                    fact2=fact2, mandel_Q=mandel_q(mean_n, fact2),
                     trunc_error=float(max(0.0, 1 - p.sum())))
+
+    def var_min(self, eta: float = 1.0) -> tuple[float, float]:
+        """(min_θ Var x_θ, Achse θ) nach Verlust η aus den Momenten (für gaußsche und nicht-gaußsche Zustände)."""
+        a1, a2, n = self.quad_moments(eta)
+        c = a2 - a1 ** 2                    # ⟨Δa²⟩
+        dn = n - abs(a1) ** 2               # ⟨Δa†Δa⟩
+        vmin = float(dn + 0.5 - abs(c))
+        return vmin, float(np.mod(np.angle(c) / 2 + np.pi / 2, np.pi))
 
     def quad_moments(self, eta: float = 1.0) -> tuple[complex, complex, float]:
         """(⟨a⟩, ⟨a²⟩, ⟨a†a⟩) nach Verlust η: ⟨x_θ⟩ = √2·Re(⟨a⟩e^{−iθ}), ⟨x_θ²⟩ = Re(⟨a²⟩e^{−2iθ}) + ⟨n⟩ + ½."""
@@ -332,6 +353,79 @@ STATE_PRESETS: dict[str, dict] = {
 
 _CACHE: dict[str, State] = {}
 
+# ---------------------------------------------------------------- Quellmodell (ab 0.15, Lauf B ohne Herald)
+# spdc     : Paarquelle (SPDC), Herald im Idler-Arm. Ohne Herald ist die Signalmode die Spur über den Idler einer
+#            Zwei-Moden-Quetschung, also thermisch mit sehr kleinem n̄ je Mode (CW) → Lauf B ≈ Vakuum (bisheriges Modell).
+# squeezed : Quetschquelle (OPO/OPA unter der Schwelle) mit Photonensubtraktion (Abgriff → Herald-Detektor). Ohne Herald
+#            (Lauf B, Zufallstrigger, Dunkelzählungen) liegt in jeder Mode das gequetschte Vakuum der Quelle vor
+#            (Ourjoumtsev 2006: „non conditioned squeezed state“). Quetschstärke und -achse aus dem Zustand:
+#            Kätzchen/gequetscht direkt, Katzen über die beste k-Photonen-Subtraktion (ungerade k = 1, gerade k = 2,
+#            Gerrits 2010), Achse so, dass die Antiquetschung entlang α liegt.
+# test     : Testmuster ohne Präparation per Herald (kohärent: abgeschwächter Laser, thermisch: thermische Quelle).
+#            Die Quelle liefert den Zustand dauernd in jeder Mode, der Herald ist nur eine Zeitmarke → A = B = Zustand.
+SOURCE_MODELS = ("spdc", "squeezed", "test")
+SOURCE_LABELS = dict(
+    spdc="SPDC-Paarquelle, Herald im Idler-Arm (ohne Herald thermisch, n̄ ≪ 1 je Mode ≈ Vakuum)",
+    squeezed="Quetschquelle (OPO) mit Photonensubtraktion (ohne Herald gequetschtes Vakuum)",
+    test="Testmuster: Quelle liefert den Zustand dauernd, Herald nur Zeitmarke (A = B)")
+PRESET_SOURCE = {"fock1": "spdc", "fock2": "spdc", "fock3": "spdc", "fock01": "spdc",
+                 "cat_even_1": "squeezed", "cat_odd_1": "squeezed", "cat_even_2": "squeezed", "cat_odd_2": "squeezed",
+                 "kitten_3dB": "squeezed", "squeezed_3dB": "squeezed", "squeezed_6dB": "squeezed",
+                 "coherent_1": "test", "thermal_0.5": "test"}
+_SRC_CACHE: dict = {}
+
+
+def _subtracted(r: float, k: int, phi: float, n_fock: int = 60) -> np.ndarray:
+    sq = Squeezed(r=r, phi=phi); sq.n_fock = n_fock
+    c = sq.coeffs()
+    for _ in range(k):
+        d = np.zeros_like(c); d[:-1] = np.sqrt(np.arange(1, len(c))) * c[1:]; c = d
+    return c / np.linalg.norm(c)
+
+
+def source_model(preset: str, model: str = "auto", squeeze_dB: float | None = None) -> dict:
+    """Quellmodell zum Zustand ``preset``: Art, Quetschstärke (dB, r), Achse φ, Zahl der subtrahierten Photonen,
+    Treue der Näherung und Zustand ohne Herald (Spezifikation für :func:`make_state`, None = Vakuum/SPDC)."""
+    key = (preset, model, squeeze_dB)
+    if key in _SRC_CACHE:
+        return dict(_SRC_CACHE[key])
+    m = PRESET_SOURCE.get(preset, "spdc") if model in ("auto", "", None) else model
+    if m not in SOURCE_MODELS:
+        raise ValueError(f"source.model: auto oder eine von {', '.join(SOURCE_MODELS)}")
+    spec = STATE_PRESETS[preset]["spec"] if preset in STATE_PRESETS else {"type": preset}
+    out = dict(model=m, label=SOURCE_LABELS[m], auto=model in ("auto", "", None))
+    if m == "squeezed":
+        t = spec.get("type")
+        if t in ("squeezed", "kitten"):
+            r = Squeezed.r_from_dB(float(spec.get("dB", 3.0))); phi, k, F = 0.0, (1 if t == "kitten" else 0), 1.0
+            note = "Kätzchen = a·S(r)|0⟩ aus derselben Quelle" if t == "kitten" else "Herald nur Zeitmarke (Testmuster): A zeigt dieselbe Quelle"
+        elif t == "cat":
+            from scipy.optimize import minimize_scalar
+            a, par = float(spec.get("alpha", 1.0)), int(spec.get("parity", 1))
+            k = 1 if par < 0 else 2
+            phi = float(np.pi / 2)                  # Antiquetschung entlang Re α (x), Quetschung in p
+            tgt = Cat(alpha=a, parity=par); tgt.n_fock = 60
+            cc = tgt.rho()[:, int(np.argmax(np.abs(np.diag(tgt.rho()))))]
+            ct = cc / np.linalg.norm(cc)
+            res = minimize_scalar(lambda r: -abs(np.vdot(ct, _subtracted(r, k, phi))) ** 2, bounds=(0.01, 2.0),
+                                  method="bounded", options=dict(xatol=1e-5))
+            r, F = float(res.x), float(-res.fun)
+            note = f"Katze genähert durch {k}-Photonen-Subtraktion aus gequetschtem Vakuum (Treue {F:.3f})"
+        else:
+            r, phi, k, F = Squeezed.r_from_dB(3.0), 0.0, 0, float("nan")
+            note = "Zustand nicht aus Subtraktion ableitbar: Quelle 3 dB angenommen"
+        if squeeze_dB:
+            r = Squeezed.r_from_dB(float(squeeze_dB)); note += f"; Quetschstärke vorgegeben ({squeeze_dB:g} dB)"
+        out.update(r=r, dB=float(10 * np.log10(np.exp(2 * r))), phi=phi, n_subtracted=k, fidelity=F, note=note,
+                   unheralded=dict(type="squeezed", r=r, phi=phi))
+    elif m == "test":
+        out.update(note="kein Präparationsschema per Herald; der Herald ist nur eine Zeitmarke", unheralded=dict(spec))
+    else:
+        out.update(note="Lauf B: unbedingter Zustand ≈ Vakuum (CW-SPDC, kleine mittlere Photonenzahl je Mode)",
+                   unheralded=None)
+    _SRC_CACHE[key] = out
+    return dict(out)
+
 
 def state_info(spec: dict | str) -> dict:
     """Beschreibung für Metadaten und Auswertung: Typ, Anzeigename, phasenempfindlich, ⟨n⟩ (verlustfrei)."""
@@ -383,3 +477,37 @@ def make_state(spec: dict | str) -> State:
     if spec:
         raise ValueError(f"unbekannte Zustandsparameter {sorted(spec)}")
     return st
+
+
+def background_rho(state_info_: dict | None, n_fock: int = 40):
+    """Dichtematrix des Zustands ohne Herald aus der Zustandsbeschreibung (``state["source"]``, ab 0.15);
+    None = Vakuum (SPDC bzw. ältere Sitzungen ohne Angabe)."""
+    src = (state_info_ or {}).get("source") or {}
+    m = src.get("model")
+    if m == "squeezed" and src.get("r") is not None:
+        st = Squeezed(r=float(src["r"]), phi=float(src.get("phi", 0.0)))
+    elif m == "test" and (state_info_ or {}).get("preset"):
+        st = make_state(state_info_["preset"])
+    else:
+        return None
+    if isinstance(st, Squeezed):
+        st.n_fock = max(st.n_fock, n_fock)
+    r = st.rho()
+    if r.shape[0] < n_fock:
+        r = np.pad(r, ((0, n_fock - r.shape[0]), (0, n_fock - r.shape[0])))
+    return r[:n_fock, :n_fock]
+
+
+def source_short(src: dict | None) -> str:
+    """Kurzbezeichnung des Quellmodells für Anzeige und Laufplanbeschreibung."""
+    src = src or {}
+    m = src.get("model")
+    if m == "squeezed":
+        k = src.get("n_subtracted", 0)
+        return (f"Quetschquelle {src.get('dB', 0):.1f} dB" + (f", {k}-Photonen-Subtraktion" if k else ", Herald nur Zeitmarke")
+                + " · B: gequetschtes Vakuum")
+    if m == "test":
+        return "Testmuster (Zustand dauernd, Herald nur Zeitmarke) · B: derselbe Zustand"
+    if m == "spdc":
+        return "SPDC-Paarquelle · B: thermisch ≈ Vakuum"
+    return "Quelle nicht angegeben"

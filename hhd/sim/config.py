@@ -146,6 +146,8 @@ class SourceCfg:
     heralded_state: str = P("fock1", doc="Zustand der geheraldeten Mode: Voreinstellung aus hhd.sim.states.STATE_PRESETS (fock1, fock2, fock3, "
                                                   "fock01, cat_even_1, cat_odd_1, cat_even_2, cat_odd_2, kitten_3dB, coherent_1, "
                                                   "squeezed_3dB, squeezed_6dB, thermal_0.5)", status="Vorschlag")
+    model: str = P("auto", doc="Quellmodell (ab 0.15): auto (aus dem Zustand), spdc (Paarquelle, Herald im Idler-Arm; ohne Herald thermisch ≈ Vakuum), squeezed (Quetschquelle mit Photonensubtraktion; ohne Herald gequetschtes Vakuum in jeder Mode) oder test (Testmuster: Zustand dauernd, Herald nur Zeitmarke)", status="Vorschlag")
+    squeeze_dB: float = P(0.0, "dB", doc="Quetschstärke der Quetschquelle (model squeezed); 0 = aus dem Zustand abgeleitet", status="Vorschlag")
     mode_shape: str = P("double_exponential", doc="Temporale Mode: double_exponential f(t)=√γ·e^(−γ|t|) (CW-SPDC) oder gauss", status="Vorschlag")
     gamma: float = P(1 / 40e-9, "1/s", doc="Abklingrate der Mode (1/γ = 40 ns); bei gauss: 1/σ", source=SYNC_REP)
     sigma_spd: float = P(round(HERALD_PRESETS["snspd"]["sigma_spd"], 15), "s", doc="Jitter des Herald-Detektors (rms), gemeinsam für Harp und TRIG; Preset SNSPD 40 ps FWHM (ID281 Standard; Eos ≤ 15 ps), InGaAs-APD 150 ps FWHM", status="Spez.", source=IDQ_281 + "; " + IDQ_QUBE)
@@ -531,6 +533,10 @@ class SimConfig:
         from .states import STATE_PRESETS
         if s.heralded_state not in STATE_PRESETS:
             e.append(f"source.heralded_state: eine der Voreinstellungen {', '.join(STATE_PRESETS)}")
+        if s.model not in ("auto", "spdc", "squeezed", "test"):
+            e.append("source.model: auto, spdc, squeezed oder test")
+        if s.squeeze_dB < 0 or s.squeeze_dB > 20:
+            e.append("source.squeeze_dB: 0 … 20 dB")
         if s.mode_shape not in ("double_exponential", "gauss"):
             e.append("source.mode_shape: double_exponential oder gauss")
         ids = [b.id for b in self.blocks]

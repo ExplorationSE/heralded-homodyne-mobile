@@ -76,3 +76,4 @@ html,body{overflow-x:hidden}
 .shot main{padding-bottom:12px}
 .logrow{padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;word-break:break-word}.logrow small{font-size:12px}
 .lg.kt{background:var(--kt)}
+h3.sub{font-size:14px;margin:.9em 0 .3em;color:var(--mut)}.tbl.verdict td{vertical-align:top}.tbl.verdict td small{font-size:11px}

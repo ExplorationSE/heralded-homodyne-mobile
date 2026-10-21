@@ -442,7 +442,7 @@ def _vac_moments(cal, moms, kinds):
 
 def bootstrap_hist(H, keys, point, cal, vac, ap, rng):
     N, c4 = vac
-    res = {k: {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var", "mean_n", "p1")} for k in keys}
+    res = {k: {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var", "mean_n", "p1", "mandel_Q", "g2")} for k in keys}
     res["diff"] = {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit")}
     sd_q0 = np.sqrt(cal.var_kv / N); sd_v = np.sqrt(max(c4 - cal.var_kv ** 2, 0.0) / N)
     k0 = np.sqrt(VAC / cal.var_kv)
@@ -460,6 +460,8 @@ def bootstrap_hist(H, keys, point, cal, vac, ap, rng):
             for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var", "mean_n"):
                 res[k][q].append(g[q])
             res[k]["p1"].append(g["p_n"][1])
+            ps_ = photon_stats(np.asarray(g["p_n"], float))
+            res[k]["mandel_Q"].append(ps_["mandel_Q"]); res[k]["g2"].append(ps_["g2"])
         if "A" in st and "B" in st:
             for q in res["diff"]:
                 res["diff"][q].append(st["A"][q] - st["B"][q])
@@ -625,6 +627,10 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
                 pv = g[q] if q not in ("mean_n", "p1") else (g["mean_n"] if q == "mean_n" else g["p_n"][1])
                 s = _summ(boot[k][q], pv)
                 gg[f"{q}_err"] = s["err"]; gg[f"{q}_boot"] = s
+            for q in ("mandel_Q", "g2"):                   # Mandel Q / g²(0) aus p_n je Ziehung (nan bei ⟨n⟩ ≈ 0)
+                v = np.asarray(boot[k].get(q, []), float); v = v[np.isfinite(v)]
+                gg[f"{q}_err"] = float(np.std(v, ddof=1)) if len(v) > 2 else float("nan")
+                gg[f"{q}_n_boot"] = int(len(v))
             cis = {}
             for q in CI_QUANT:
                 ci = intervals(g[q], boot[k][q])

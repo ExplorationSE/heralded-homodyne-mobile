@@ -38,9 +38,13 @@ for _p, _k in PHASE_PLANS.items():
 
 def plan_state(plan: str) -> dict:
     """Vorgesehener geheraldeter Zustand eines Laufplans (Kurzinfo für Sitzungsliste/Metadaten)."""
-    from ..sim.states import state_info
-    i = state_info(STATE_PLANS.get(plan) or PHASE_PLANS.get(plan) or "fock1")
-    return {k: i[k] for k in ("preset", "label", "phase_sensitive", "mean_n_ideal", "W00_ideal")}
+    from ..sim.states import source_model, source_short, state_info
+    key = STATE_PLANS.get(plan) or PHASE_PLANS.get(plan) or "fock1"
+    i = state_info(key)
+    out = {k: i[k] for k in ("preset", "label", "phase_sensitive", "mean_n_ideal", "W00_ideal")}
+    sm = source_model(key)
+    out["source"] = dict(model=sm["model"], short=source_short(sm), dB=sm.get("dB"))
+    return out
 
 
 # Gruppen der Auswahlliste (Web-App: <optgroup>)
@@ -726,6 +730,8 @@ class MeasurementService:
             st = meta.get("state") or plan_state(meta.get("plan") or "")
             out.append(dict(id=d.name, plan=meta.get("plan"), plan_label=PLANS.get(meta.get("plan"), meta.get("plan")),
                             state=st.get("preset"), state_label=st.get("label"),
+                            source=(st.get("source") or plan_state(meta.get("plan") or "").get("source") or {}).get("model")
+                            if meta.get("simulated", True) else None,
                             phase_sensitive=bool(st.get("phase_sensitive")), runs=meta.get("runs_done"), simulated=meta.get("simulated", True),
                             mode=meta.get("acquisition_mode", meta.get("mode", "sim")), modes=meta.get("device_modes", {}),
                             note=meta.get("note", ""), analyzed=res.exists(),
@@ -756,7 +762,8 @@ class MeasurementService:
 GROUP_KEYS = ("n", "var_x", "var_err", "W00", "W00_ci68", "W00_ci95", "W00_err", "eta_fit", "eta_fit_err",
               "eta_fit_ci68", "eta_fit_ci95", "eta_var", "mean_n", "g2", "mandel_Q", "fidelity_fock1",
               "fidelity_lossy_fock1", "p_n", "wigner_r", "wigner_radial", "estimator", "W00_ci_method",
-              "eta_fit_ci_method", "W00_moments", "W00_moments_err", "eta_n", "eta_n_err")
+              "eta_fit_ci_method", "W00_moments", "W00_moments_err", "eta_n", "eta_n_err", "mandel_Q_err", "g2_err",
+              "mandel_Q_n_boot")
 
 
 def result_summary(r: dict) -> dict:
@@ -786,4 +793,10 @@ def phase_summary(ph: dict | None) -> dict:
                                   "boot", "var_theta", "coverage", "wigner2d", "theta_err_A", "warnings")}
     out["metrics"] = {k: v for k, v in (ph.get("metrics") or {}).items() if k != "p_n"} | {"p_n": (ph.get("metrics") or {}).get("p_n")}
     out["calibration"] = dict(quality=c.get("quality"), ref_blocks=c.get("ref_blocks"), deg=c.get("deg"))
+    B = ph.get("B") or {}
+    out["B"] = ({k: B.get(k) for k in ("available", "n_records", "N", "eta_tomo", "metrics", "boot", "var_theta",
+                                       "wigner2d", "theta_err", "note")} if B.get("available")
+                else dict(available=False, reason=B.get("reason", "keine B-Läufe mit Phase")))
+    if B.get("available"):
+        out["B"]["metrics"] = {k: v for k, v in (B.get("metrics") or {}).items() if k != "p_n"}
     return out
