@@ -165,7 +165,9 @@ function render() {
       if (G.state === "warn") { cls += " warn"; t += ` · <b>ÜBER GRENZWERT</b> seit ${(G.over_s || 0).toFixed(1)} s – Anhalten nach ${G.stop_s} s`; }
       if (G.state === "stop" || R.stopped_msg) cls += " stop";
     } else if (R.msg) t = esc(R.msg);
-    if (R.stopped_msg) t += `<br><b>Angehalten:</b> ${esc(R.stopped_msg)}`;
+    const hint = m => esc(m).replace(/\s*(Zählrate senken:)/, "<br>$1");
+    if (R.stopped_msg) t += `<br><b>Angehalten:</b> ${hint(R.stopped_msg)}`;
+    else if (G.state === "warn") t += `<br>${esc(R.hints || "")}`;
     rb.innerHTML = t; rb.className = cls;
   }
   const L = S.live || {}, runs = L.runs || [];

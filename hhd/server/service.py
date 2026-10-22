@@ -417,7 +417,7 @@ class MeasurementService:
         return HINTS
 
     def rate_status(self) -> dict:
-        return dict(self.rate_limit, ready=self._rate_ready.is_set(), guard=self.rate_guard.to_dict(),
+        return dict(self.rate_limit, ready=self._rate_ready.is_set(), guard=self.rate_guard.to_dict(), hints=self._rate_hints(),
                     stopped_msg=self._rate_stop_msg)
 
     def status(self) -> dict:
@@ -748,7 +748,7 @@ class MeasurementService:
             self.state = "abgebrochen" if stopped else "fertig"
             self.msg = f"Sitzung {sid}: {n_done}/{len(runs)} Läufe" + (" (gestoppt)" if stopped else "")
             if self._rate_stop_msg:
-                self.msg += f" – RATENGRENZE: {self._rate_stop_msg}"
+                self.msg += " – RATENGRENZE: Ereignisrate zu hoch, Lauf angehalten (Details und Hinweise in der Ratenzeile)"
             self.run_idx = -1
             if n_done and self.display.get("auto_analyze") and not stopped:
                 if acq == "mixed":

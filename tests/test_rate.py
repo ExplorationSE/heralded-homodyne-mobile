@@ -175,7 +175,9 @@ def test_sim_overrate_stops_with_message(tmp_path):
         st = svc.status()["rate"]
         assert st["limit_mcps"] == 0.2 and "harp_max_mcps" in st["source"]
         d = _start(svc)
-        assert svc.state == "abgebrochen" and "RATENGRENZE" in svc.msg and "Abschwäch" in svc.msg, svc.msg
+        assert svc.state == "abgebrochen" and "RATENGRENZE" in svc.msg, svc.msg
+        sm = svc.status()["rate"]["stopped_msg"]
+        assert "Ereignisrate" in sm and "Abschwäch" in sm and "verworfen" in sm, sm
         kinds = [w["kind"] for w in svc.live.warnings]
         assert "rate_stop" in kinds
         assert "0/7 Läufe" in svc.msg and not d.exists()      # erster Lauf angehalten → wie Stopp verworfen
