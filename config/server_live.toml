@@ -24,3 +24,5 @@ adq_json_override = ""
 auto_analyze = true
 n_boot = 100
 streaming_records = 200000      # Datenstrom-Auswertung (beschränkter Speicher) ab so vielen Records; 0 = nie
+analysis_workers = 0            # Bootstrap-Prozesse: 0 = alle Kerne (automatisch), 1 = seriell
+h5_compression = "blosc-lz4"    # digitizer.h5: blosc-lz4 (schnell, hdf5plugin) | gzip (Rückfall, ohne Plugin lesbar) | none

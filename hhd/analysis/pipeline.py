@@ -67,6 +67,13 @@ class AnalysisParams:
     n_boot_tomo: int = 20
     var_theta_bins: int = 24
     wigner2d_points: int = 61
+    # Mehrkern (ab 0.15): Bootstrap/Jackknife-Ziehungen auf Prozesse verteilt (hhd.parallel). 0 = alle Kerne
+    # (os.sched_getaffinity/os.cpu_count), 1 = seriell; Umgebung HHD_WORKERS hat Vorrang. Unter parallel_min_values
+    # (n_boot · Σ Gruppengrößen) bleibt es seriell, solange kein Pool läuft (Start ≈ 0,7 s lohnt dann nicht).
+    # Die Zufallszahlen werden immer im Hauptprozess in derselben Reihenfolge gezogen → Ergebnis unabhängig von der
+    # Worker-Zahl (reproduzierbar mit seed).
+    workers: int = 0
+    parallel_min_values: int = 1_000_000
 
     def calib_params(self) -> CalibParams:
         return CalibParams(norm=self.norm, clearance_dB=self.clearance_dB, drift_z=self.drift_z)
@@ -146,23 +153,49 @@ class Normalizer:
         return var, kv_vars, q0
 
 
+def _boot_job(job: tuple) -> dict:
+    """Worker (Prozess-Pool, spawn): eine Bootstrap-/Jackknife-Rekonstruktion."""
+    xb, nmax, est, p0, tol = job
+    return group_stats(xb, nmax, est, p0=p0, full=False, tol=tol)
+
+
+def _n_workers(ap: AnalysisParams, n_values: int) -> int:
+    from ..parallel import pool_running, resolve_workers
+    nw = resolve_workers(ap.workers)
+    if nw > 1 and n_values < ap.parallel_min_values and not pool_running():
+        return 1
+    return nw
+
+
 def bootstrap_groups(norm: Normalizer, keys, point: dict, ap: AnalysisParams, rng) -> dict:
-    """Gemeinsamer Bootstrap: je Ziehung dieselbe Vakuumkalibrierung für alle Gruppen, Records je Gruppe neu gezogen."""
+    """Gemeinsamer Bootstrap: je Ziehung dieselbe Vakuumkalibrierung für alle Gruppen, Records je Gruppe neu gezogen.
+
+    Die Ziehungen (Vakuum, Indizes) entstehen im Hauptprozess in fester Reihenfolge aus ``rng``; nur die
+    Rekonstruktionen laufen parallel (``ap.workers``), die Ergebnisse kommen in Eingabereihenfolge zurück."""
+    from ..parallel import ordered_map
     base = {k: norm.x(k) for k in keys}
     res = {k: {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var", "mean_n", "p1",
                                "mandel_Q", "g2", "var_x_se", "W00_moments_se", "eta_fit_se")} for k in keys}
     res["diff"] = {q: [] for q in ("var_x", "W00", "W00_moments", "eta_fit")}
+    nw = _n_workers(ap, ap.n_boot * sum(len(v) for v in base.values()))
+
+    def jobs():
+        for _ in range(ap.n_boot):
+            if ap.boot_vacuum:
+                var_kv, kv_vars, q0 = norm.vacuum_draw(rng)
+                xs = {k: norm.x(k, var_kv=var_kv, kv_vars=kv_vars, q0=q0) for k in keys}
+            else:
+                xs = base
+            for k in keys:
+                x = xs[k]
+                xb = x[rng.integers(0, len(x), len(x))]
+                yield xb, ap.nmax, _est(ap, len(xb)), point[k]["_p"], max(ap.tol, 1e-7)
+
+    out = ordered_map(_boot_job, jobs(), nw)
     for _ in range(ap.n_boot):
-        if ap.boot_vacuum:
-            var_kv, kv_vars, q0 = norm.vacuum_draw(rng)
-            xs = {k: norm.x(k, var_kv=var_kv, kv_vars=kv_vars, q0=q0) for k in keys}
-        else:
-            xs = base
         st = {}
         for k in keys:
-            x = xs[k]
-            xb = x[rng.integers(0, len(x), len(x))]
-            g = group_stats(xb, ap.nmax, _est(ap, len(xb)), p0=point[k]["_p"], full=False, tol=max(ap.tol, 1e-7))
+            g = next(out)
             st[k] = g
             for q in ("var_x", "W00", "W00_moments", "eta_fit", "eta_var"):
                 res[k][q].append(g[q])
@@ -189,11 +222,14 @@ CI_DEFAULT = {"var_x": "normal", "eta_var": "normal", "eta_fit": "normal", "W00"
 
 
 def jackknife_values(norm: Normalizer, key: str, point: dict, ap: AnalysisParams, rng) -> dict:
+    from ..parallel import ordered_map
     from ..recon.intervals import jackknife_groups
     x = norm.x(key)
     out = {q: [] for q in CI_QUANT}
-    for m in jackknife_groups(len(x), ap.jackknife_groups, rng):
-        g = group_stats(x[m], ap.nmax, _est(ap, int(m.sum())), p0=point["_p"], full=False, tol=max(ap.tol, 1e-7))
+    masks = list(jackknife_groups(len(x), ap.jackknife_groups, rng))
+    nw = _n_workers(ap, len(masks) * len(x))
+    jobs = ((x[m], ap.nmax, _est(ap, int(m.sum())), point["_p"], max(ap.tol, 1e-7)) for m in masks)
+    for g in ordered_map(_boot_job, jobs, nw):
         for q in CI_QUANT:
             out[q].append(g[q])
     return out
@@ -505,7 +541,11 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
         timing["phase"] = time.time() - t
     result["warnings"] = warnings
     timing["total"] = time.time() - t0
-    result["performance"] = dict(timing_s=timing, n_records=int(sum(len(q.q) for q in quads.values())))
+    from ..io.h5filters import status as _h5status
+    from ..parallel import available_cpus, resolve_workers
+    result["performance"] = dict(timing_s=timing, n_records=int(sum(len(q.q) for q in quads.values())),
+                                 workers=resolve_workers(ap.workers), cpus=available_cpus(),
+                                 maxlik_accel=bool(_accel()), h5=_h5status())
     if write:
         od = Path(out_dir) if out_dir else Path(session.path) / "analysis"
         od.mkdir(parents=True, exist_ok=True)
@@ -515,6 +555,11 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
         write_report(result, od / "report.md")
         result["_out_dir"] = str(od)
     return result
+
+
+def _accel() -> bool:
+    from ..recon import core
+    return core.ACCEL
 
 
 def _vacuum_sample_var(gV, offset, max_records=2000):

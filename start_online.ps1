@@ -108,6 +108,10 @@ $spArgs = @{
     RedirectStandardError  = "$srvLog.err"
 }
 $env:PYTHONUTF8 = '1'
+# Rechenzeit (0.15): je Prozess 1 BLAS-Thread (OpenBLAS/MKL), parallel ueber Prozesse (hhd.parallel)
+foreach ($v in 'OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS') {
+    if (-not [Environment]::GetEnvironmentVariable($v)) { [Environment]::SetEnvironmentVariable($v, '1') }
+}
 if ($onWindows) { $spArgs['WindowStyle'] = 'Hidden' }
 Say "Starte Server auf http://127.0.0.1:$Port ..."
 $server = Start-Process @spArgs

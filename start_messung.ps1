@@ -100,6 +100,10 @@ if (Test-PortInUse $Port) {
 
 # --- 3. Geraetepruefung (ohne Messung) -------------------------------------------------
 $env:PYTHONUTF8 = '1'
+# Rechenzeit (0.15): je Prozess 1 BLAS-Thread (OpenBLAS/MKL), parallel ueber Prozesse (hhd.parallel)
+foreach ($v in 'OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS') {
+    if (-not [Environment]::GetEnvironmentVariable($v)) { [Environment]::SetEnvironmentVariable($v, '1') }
+}
 $env:PYTHONIOENCODING = 'utf-8'
 $env:PYTHONUNBUFFERED = '1'
 Say 'Geraetepruefung (Treiber laden, Geraete oeffnen und abfragen - keine Messung) ...'

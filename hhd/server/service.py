@@ -96,6 +96,8 @@ class ServerConfig:
     auto_analyze: bool = True
     n_boot: int = 100
     streaming_records: int = 200000       # Datenstrom-Auswertung ab so vielen Records (0 = nie)
+    analysis_workers: int = 0             # Bootstrap-Prozesse: 0 = alle Kerne (os.cpu_count), 1 = seriell; HHD_WORKERS
+    h5_compression: str = "blosc-lz4"     # blosc-lz4 (hdf5plugin) | gzip (Rückfall, lesbar ohne Plugin) | none
     status_hz: float = 2.0
     delta_T_ns: float = 76.1
     seed0: int = 20261100
@@ -117,7 +119,7 @@ def load_config(path: str | Path | None) -> ServerConfig:
     return cfg
 
 
-def run_analysis_job(session_dir: str, n_boot: int, streaming_records: int = 0) -> dict:
+def run_analysis_job(session_dir: str, n_boot: int, streaming_records: int = 0, workers: int = 0) -> dict:
     """Auftrag: Synchronisation (falls nötig) und Auswertung; Rückgabe Kurzfassung.
 
     Ab ``streaming_records`` Records (Summe über alle Läufe, 0 = nie) wird die Datenstrom-Auswertung
@@ -125,6 +127,8 @@ def run_analysis_job(session_dir: str, n_boot: int, streaming_records: int = 0) 
     from ..analysis.pipeline import AnalysisParams, analyze_session
     from ..analysis.syncdata import ensure_sync
     from ..io.session import load_session
+    from ..parallel import limit_blas_threads
+    limit_blas_threads()                  # Auswerteprozess: 1 BLAS-Thread, parallel nur über Prozesse (hhd.parallel)
     t0 = time.time()
     s = load_session(session_dir, lazy=True)
     n_rec = sum(r.n_records for r in s.runs)
@@ -141,9 +145,9 @@ def run_analysis_job(session_dir: str, n_boot: int, streaming_records: int = 0) 
     del s
     t_sync = time.time() - t0
     if streaming:
-        res = analyze_session_streaming(session_dir, AnalysisParams(n_boot=n_boot))
+        res = analyze_session_streaming(session_dir, AnalysisParams(n_boot=n_boot, workers=workers))
     else:
-        res = analyze_session(session_dir, AnalysisParams(n_boot=n_boot))
+        res = analyze_session(session_dir, AnalysisParams(n_boot=n_boot, workers=workers))
     return dict(t_sync=round(t_sync, 2), t_total=round(time.time() - t0, 2), streaming=streaming,
                 n_records=n_rec, warnings=res.get("warnings", [])[:20])
 
@@ -173,6 +177,9 @@ class MeasurementService:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.lock = ControlLock(cfg.lock_timeout_s)
         self.log = CommandLog(self._abs(cfg.log_dir))
+        from ..io import h5filters
+        h5filters.set_compression(cfg.h5_compression)
+        h5filters.effective()                 # fehlt hdf5plugin: RuntimeWarning, Rückfall gzip
         self.policy = ParamPolicy()
         self.modes = M.check({"harp": cfg.harp_mode or cfg.device_mode,
                               "digitizer": cfg.digitizer_mode or cfg.device_mode})
@@ -651,9 +658,9 @@ class MeasurementService:
             path = str(self.data_dir / j.session)
             nb = int(self.display.get("n_boot", self.cfg.n_boot))
             if self._pool is None:
-                j.info = run_analysis_job(path, nb, self.cfg.streaming_records)
+                j.info = run_analysis_job(path, nb, self.cfg.streaming_records, self.cfg.analysis_workers)
             else:
-                j.info = self._pool.submit(run_analysis_job, path, nb, self.cfg.streaming_records).result()
+                j.info = self._pool.submit(run_analysis_job, path, nb, self.cfg.streaming_records, self.cfg.analysis_workers).result()
             j.state = "fertig"
         except Exception as e:  # noqa: BLE001
             j.state, j.error = "fehler", f"{type(e).__name__}: {e}"

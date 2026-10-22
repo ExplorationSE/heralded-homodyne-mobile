@@ -9,7 +9,7 @@ description = "ExplorationSE Harp ADQ32 HHD Mobil – Heralded Homodyne: Simulat
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-dependencies = ["numpy>=1.26", "scipy>=1.11", "h5py>=3.10", "pyyaml>=6.0"]
+dependencies = ["numpy>=1.26", "scipy>=1.11", "h5py>=3.10", "pyyaml>=6.0", "hdf5plugin>=4.0", "threadpoolctl>=3.1"]
 
 [project.optional-dependencies]
 test = ["pytest>=8", "httpx>=0.27"]
