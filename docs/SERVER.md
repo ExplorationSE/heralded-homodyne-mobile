@@ -291,7 +291,7 @@ belegte Kerne):
 | Fall | vorher (0d863af) | nachher | 4 Kerne belegt: vorher → nachher |
 |---|---|---|---|
 | Fock 2 Batch | 32,9 s | 17,7 s | 34,5 → 15,9 s |
-| Gequetscht 6 dB Phase, Batch | 115 s | 32 s | 620 → 32 s |
+| Gequetscht 6 dB Phase, Batch | 115 s | 34 s | 620 → 32 s |
 | Gequetscht 6 dB Phase, Datenstrom-Simulator | 197 s | 42 s | 1605 → 42 s |
 | Katze gerade α = 2, Batch | 422 s | 32 s | 816 → 33 s |
 

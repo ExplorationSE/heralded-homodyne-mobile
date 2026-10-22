@@ -28,7 +28,7 @@ Auftrag „Rechenzeit, Maßnahmen 1–4“ (Freigabe Herr Eilers, 22.10.2026):
 - **Anforderungen:** `hdf5plugin>=4.0`, `threadpoolctl>=3.1` (requirements.txt, pyproject.toml).
 - **Tests:** `tests/test_speed.py` (SQUAREM = RρR, Blosc-Roundtrip, gzip-Altdatei, Bootstrap 1/2/3 Worker identisch,
   Pool-Ausfall, T2-Dekodierung gegen Referenz, BLAS-Umgebung).
-- Laufzeiten (Box, 8 Kerne, Serverpfad): Gequetscht 6 dB Batch 115 → 32 s, Katze gerade α = 2 422 → 32 s, bei
+- Laufzeiten (Box, 8 Kerne, Serverpfad): Gequetscht 6 dB Batch 115 → 34 s, Katze gerade α = 2 422 → 32 s, bei
   4 belegten Kernen 620 → 32 s bzw. 816 → 33 s (Tabelle `docs/SERVER.md` 7f).
 
 Auftrag „Ergebnisseite: Phasenabdeckung, Windows-Tests“ (Herr Eilers, 21.10.2026):
