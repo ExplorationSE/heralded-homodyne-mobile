@@ -17,7 +17,7 @@ Speicher:
    K-V-Momenten neu gezogen und als Skalierung x' = c·(x + δ) angewandt (wie ``boot_vacuum``).
 
 Speicher: Block (``chunk`` Records) + Histogramme (≈ 15 kB je Lauf und Gruppe), unabhängig von der Sitzungsdauer.
-Unterschiede zur In-Memory-Auswertung: MaxLik stets auf Bins (0,05 breit), KS-Test aus Histogramm-CDFs
+Unterschiede zur In-Memory-Auswertung: MaxLik stets auf Bins (1/120 breit, bis 0.14: 0,05), KS-Test aus Histogramm-CDFs
 (asymptotischer p-Wert), Konfidenzintervalle normal/Perzentil (kein Jackknife/BCa), keine PCA-Prüfung,
 ``mode_source`` = parametrisch.
 """
@@ -44,7 +44,7 @@ from .pipeline import (CI_QUANT, SCHEMA, AnalysisParams, _clean, _summ, drift_ab
 LIM, FINE = 8.0, 120                          # Histogramm ±8, Breite 1/120
 NB = int(2 * LIM * FINE)
 EDGES = np.linspace(-LIM, LIM, NB + 1)
-REBIN = 6                                     # MaxLik-Bins 0,05
+REBIN = 1                                     # MaxLik-Bins 1/120 ≈ 0,0083 (bis 0.14: 6 → 0,05)
 KEY = {"heralded": "A", "free_running": "B", "random_trigger": "B", "vacuum": "KV", "herald_blocked": "KH",
        "state": "state", "electronic": "EL"}
 

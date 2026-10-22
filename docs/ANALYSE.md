@@ -350,7 +350,7 @@ Server ab `streaming_records` Records). Der Speicher hängt nur von der Blockgr�
 
    Var(x), W(0,0) aus Momenten und deren Fehler sind deshalb **exakt gleich** zur Auswertung im Speicher.
 4. **Rekonstruktion** aus den Histogrammen:
-   - MaxLik auf groben Bins von 0,05 (wie `estimator = "binned"`);
+   - MaxLik auf den Bins 1/120 (ab 0.15; bis 0.14 grobe Bins 0,05), wie `estimator = "binned"`;
    - η-Fit, W(0,0);
    - Poisson-Bootstrap je Bin und Lauf;
    - die Vakuumnormierung wird je Ziehung aus den K-V-Momenten neu gezogen.

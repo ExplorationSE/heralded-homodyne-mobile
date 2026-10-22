@@ -108,8 +108,9 @@ erzwingen:
   `ADQ_PARAMETER_ID_PULSE_GENERATOR0` bzw. `PORT_GPIOA`; Schlüssel mit `GetParametersString` auslesen).
 
 **Ablauf je Lauf (beide live):** Rollen und Pegel aus dem Laufplan setzen (`arm`), dann ADQ32 starten, dann
-HydraHarp starten. Die Daten werden im Strom geschrieben: PTU je Lauf und ein Block in `digitizer.h5` (gzip,
-wachsende Datensätze). Ein abgebrochener Lauf wird verworfen; abgeschlossene Läufe bleiben erhalten.
+HydraHarp starten. Die Daten werden im Strom geschrieben: PTU je Lauf und ein Block in `digitizer.h5` (ab 0.15 Blosc-LZ4
+über `hdf5plugin`, Rückfall gzip mit `h5_compression = "gzip"`; wachsende Datensätze). HDFView/h5dump brauchen für
+Blosc-Dateien das Blosc-Filter-Plugin (HDF5-Filter 32001), siehe docs/SERVER.md 7f. Ein abgebrochener Lauf wird verworfen; abgeschlossene Läufe bleiben erhalten.
 
 ## 3 Betriebsarten und Kennzeichnung
 

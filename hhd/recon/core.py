@@ -86,11 +86,17 @@ class ReconResult:
 # Schritt. Ein Zyklus = zwei normale Schritte, Extrapolation, ein Stabilisierungsschritt; das Abbruchkriterium ist das
 # der normalen Iteration (am Stabilisierungsschritt). Sinkt die Likelihood gegenüber dem letzten akzeptierten Punkt
 # oder verlässt die Extrapolation den Simplex, gilt der normale Doppelschritt (Rückfall); nach 5 Rückfällen in Folge
-# läuft die Iteration ohne Beschleunigung weiter. Abbruch zusätzlich erst bei erfüllter KKT-Bedingung (siehe unten).
+# folgen 50 normale Schritte. Abbruch zusätzlich erst bei erfüllter KKT-Bedingung (siehe unten).
 # Messung (squeezed 6 dB und Fock 2, je 16 Bootstrap-Ziehungen warm/kalt, tol 1e-8): Abstand zur bis tol 1e-14
-# auskonvergierten Lösung |ΔW(0,0)| ≤ 2,6e-6 (normale Iteration bei tol 1e-8: bis 2,4e-3 durch Scheinkonvergenz). ``HHD_MAXLIK_ACCEL=0`` schaltet ab (Vergleich, Fehlersuche). ``n_iter`` = Zahl der Schritte.
+# auskonvergierten Lösung |ΔW(0,0)| ≤ 2,6e-6 (normale Iteration bei tol 1e-8: bis 2,4e-3 durch Scheinkonvergenz).
+# ``HHD_MAXLIK_ACCEL=0`` schaltet ab (Vergleich, Fehlersuche). ``n_iter`` = Zahl der Schritte.
 ACCEL = os.environ.get("HHD_MAXLIK_ACCEL", "1").strip() not in ("0", "false", "no", "aus")
 KKT_TOL = 1e-4
+# Histogramm-MaxLik (estimator "binned", ab binned_above Werten je Gruppe): Binbreite. Bis 0.14: 200 Bins über
+# ±max(6, max|x|) (≥ 0,06). Gemessen (squeezed 6 dB, 12 Bootstrap-Ziehungen, gegen die auskonvergierte MaxLik ohne
+# Bins): Binfehler |ΔW(0,0)| bis 3,0e-3 bei 200 Bins, ≤ 4,8e-4 bei 0,012, ≤ 3,1e-4 bei 0,006. Die > 1σ-Abweichung
+# (bis 1,5e-2) kam von der Scheinkonvergenz der Iteration (Warmstart, tol 1e-7), behoben durch das KKT-Kriterium.
+BINNED_WIDTH = 0.01
 
 
 def _step(P, Wn, p, power):
@@ -112,11 +118,18 @@ def _iterate(P: np.ndarray, w: np.ndarray | None, power: int, max_iter: int, tol
     W = np.ones(P.shape[1]) if w is None else w
     Wn = W / W.sum()
     accel = ACCEL if accel is None else bool(accel)
+    if accel and p0 is not None:
+        # Warmstart (Bootstrap: Punktschätzung) mit 0,1 % Gleichverteilung mischen: Komponenten nahe 0 (bis 1e-70
+        # gesehen) kann die multiplikative Iteration sonst kaum anheben → Scheinkonvergenz am falschen Punkt.
+        p = (1.0 - 1e-3) * p / p.sum() + 1e-3 / n
     ll_old = -np.inf
     it = 0
     fails = 0
+    plain_left = 0
     while it < max_iter:
-        if accel and fails < 5 and it + 3 <= max_iter:
+        if accel and fails >= 5:                                   # nach 5 Rückfällen in Folge 50 normale Schritte
+            fails, plain_left = 0, 50
+        if accel and plain_left == 0 and it + 3 <= max_iter:
             p1, ll0, _ = _step(P, Wn, p, power)
             p2, _, _ = _step(P, Wn, p1, power)
             it += 2
@@ -142,17 +155,19 @@ def _iterate(P: np.ndarray, w: np.ndarray | None, power: int, max_iter: int, tol
                     fails = 0
                 pn = p2 if pn is None else pn
             dp = float(np.max(np.abs(q - pn)))
-            # Zusätzlich KKT (Optimalität): R ≤ 1 + KKT_TOL auf dem Träger. Die multiplikative Iteration kann bei sehr
-            # kleinen Komponenten scheinbar stehen (dp, Δll klein, aber noch nicht am Maximum); mit SQUAREM trat das
-            # sichtbar auf (ΔW bis 1,6e-3 ohne diese Prüfung, ≤ 2,6e-6 mit ihr, gegen tol = 1e-14). Exakte Nullen
-            # (Startwert) bleiben außen vor, sie kann die multiplikative Iteration nicht mehr anheben.
-            sup = pn > 0.0
-            kkt_ok = not np.any(sup) or float(np.max(R[sup])) - 1.0 < KKT_TOL
         else:
-            q, ll, _ = _step(P, Wn, p, power)
+            pn = p
+            q, ll, R = _step(P, Wn, p, power)
             it += 1
+            plain_left = max(plain_left - 1, 0)
             dp = float(np.max(np.abs(q - p)))
             kkt_ok = True
+        if accel:
+            # Zusätzlich KKT (Optimalität): R ≤ 1 + KKT_TOL auf dem Träger. Die multiplikative Iteration kann bei sehr
+            # kleinen Komponenten scheinbar stehen (dp, Δll klein, aber noch nicht am Maximum; gemessen ΔW bis 1,5e-2
+            # bei Warmstart und tol 1e-7). Exakte Nullen bleiben außen vor, sie kann die Iteration nicht anheben.
+            sup = pn > 0.0
+            kkt_ok = not np.any(sup) or float(np.max(R[sup])) - 1.0 < KKT_TOL
         p = q
         if dp < tol and abs(ll - ll_old) < tol * 1e-2 and kkt_ok:
             return p, it, True, ll
@@ -161,7 +176,7 @@ def _iterate(P: np.ndarray, w: np.ndarray | None, power: int, max_iter: int, tol
 
 
 def reconstruct(x: np.ndarray, nmax: int = 10, estimator: str = "maxlik", eta: float = 1.0, max_iter: int = 20000,
-                tol: float = 1e-8, bins: int = 200, p0=None) -> ReconResult:
+                tol: float = 1e-8, bins: int | None = None, p0=None) -> ReconResult:
     x = np.asarray(x, float)
     if estimator in ("maxlik", "em"):
         P = patterns(x, nmax, eta)
@@ -169,6 +184,8 @@ def reconstruct(x: np.ndarray, nmax: int = 10, estimator: str = "maxlik", eta: f
         return ReconResult(p, estimator, nmax, it, ok, ll * len(x), eta)
     if estimator == "binned":
         lim = max(6.0, float(np.max(np.abs(x))) + 1e-9)
+        if not bins:                                   # ab 0.15: feste Breite statt 200 Bins (siehe BINNED_WIDTH)
+            bins = int(np.ceil(2 * lim / BINNED_WIDTH))
         edges = np.linspace(-lim, lim, bins + 1)
         h, _ = np.histogram(x, edges)
         # Bin-Mittel der Muster (Simpson über 5 Stützstellen je Bin)
