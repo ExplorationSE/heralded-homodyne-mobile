@@ -112,6 +112,30 @@ HydraHarp starten. Die Daten werden im Strom geschrieben: PTU je Lauf und ein Bl
 über `hdf5plugin`, Rückfall gzip mit `h5_compression = "gzip"`; wachsende Datensätze). HDFView/h5dump brauchen für
 Blosc-Dateien das Blosc-Filter-Plugin (HDF5-Filter 32001), siehe docs/SERVER.md 7f. Ein abgebrochener Lauf wird verworfen; abgeschlossene Läufe bleiben erhalten.
 
+### 2a Ereignisrate begrenzen (0.15)
+
+Der Server begrenzt die HydraHarp-Ereignisrate auf das, was der Rechner sicher zerlegen und schreiben kann
+(docs/SERVER.md 7g). Senken lässt sich die Rate am Gerät mit folgenden Mitteln der HH500Lib; **der Server ruft sie
+nicht auf** (keine Änderung am Treiber, nur Dokumentation; Quelle: HH500Lib Programming Library V 1.0.0.0, Kap. 5.8
+und Funktionsliste, sowie HydraHarp-500-Handbuch):
+
+* **Geräteobergrenze:** „Max. sustained count rate 85 · 10⁶ cps“ (Handbuch, technische Daten; USB 3.0).
+  `hhd.server.rateguard.HARP_MAX_SUSTAINED_MCPS = 85`. Einen einstellbaren Ratenbegrenzer gibt es in der
+  Funktionsliste nicht.
+* **Verlängerte Totzeit:** `HH500_SetInputDeadTime(devidx, channel, on, deadtime_ps)` bzw. `HH500_SetSyncDeadTime`
+  (EXTDEADMIN … EXTDEADMAX, Schritt = Grundauflösung). Gedacht gegen Nachpulse; unterdrückt Ereignisse innerhalb
+  der Totzeit und wirkt auch auf die Zählratenanzeige. Wirkt sich auf die Herald-Statistik aus (Totzeitverluste) –
+  nur nach Rücksprache.
+* **Ereignisfilter in Hardware:** Gruppenfilter (`HH500_SetGroupEventFilter`, `HH500_EnableGroupEventFilter`)
+  und Hauptfilter (`HH500_SetMainEventFilterParams`, `HH500_SetMainEventFilterChannels`, `HH500_EnableMainEventFilter`),
+  Testbetrieb ohne USB-Übertragung (`HH500_SetFilterTestMode`, `HH500_GetGroupFilteredRates`,
+  `HH500_GetMainFilteredRates`). Der Filter behält nur Ereignisse mit Koinzidenz in `timerange`; Kanäle mit
+  „pass“ laufen unverändert durch. **Für Herald + SYNC-Marker ungeeignet ohne „pass“**: einzelne Heralds und
+  die Sync-Marker dürfen nicht weggefiltert werden.
+* **Eingänge:** nicht benötigte Eingänge abschalten (`HH500_SetInputChannelEnable`, macht der Server bereits nach
+  den Kanalrollen), Triggerpegel (`herald_level_mV`, CFD/ETR) anheben.
+* Vor der Messung zeigt `HH500_GetAllCountRates` die Rate; der Server vergleicht sie vor jedem Lauf mit dem Grenzwert.
+
 ## 3 Betriebsarten und Kennzeichnung
 
 Jedes Gerät läuft für sich als **sim**, **replay** oder **live**:

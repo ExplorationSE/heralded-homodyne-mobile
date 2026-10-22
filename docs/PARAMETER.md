@@ -67,6 +67,8 @@ Erzeugt mit `hhd-sim params --markdown` aus `hhd/sim/config.py`. Status: **Spez.
 | `harp.marker_error_max` | 1e-07 | s | **Spez.** | HydraHarp 500 Manual, Kap. 9.3.1 | Grenze des Marker-Zeitfehlers in T2 (Modell wird hier abgeschnitten) |
 | `harp.marker_holdoff` | 0 | s | **Spez.** | HydraHarp 500 Manual, Kap. 6.3 | Marker-Hold-off (unterdrückt Folge-Marker) |
 | `harp.R_spurious` | 0.2 | 1/s | Annahme | Vorbericht Synchronisation, Parameter | Störmarker (Glitches) an der Harp |
+| `harp.extra_rate_hz` | 0 | 1/s | Test |  | Testlast (ab 0.15): zusätzliche Poisson-Ereignisse auf extra_rate_channel, um die Ratenbegrenzung des Servers zu prüfen; 0 = aus (Ergebnisse unverändert) |
+| `harp.extra_rate_channel` | 3 |  | Test |  | Kanal der Testlast (Standard CH3, sonst reserviert); Rolle rate_test |
 | `digitizer.model` | ADQ32 |  | **Spez.** | ED-6 | Digitizer-Modell |
 | `digitizer.form_factor` | PCIe |  | **Spez.** | ADQ32 Datenblatt 20-2378 | Bauform PCIe (ED-14) oder USB |
 | `digitizer.clock_option` | S2G5 |  | **Spez.** | ADQ32 Datenblatt 20-2378 | S2G5 (2,5 GS/s je Kanal, 5 GS/s 1-Kanal) oder S2G0 (2/4 GS/s); Festlegung ED-14: S2G5 |

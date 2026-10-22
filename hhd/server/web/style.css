@@ -93,3 +93,6 @@ h3.sub{font-size:14px;margin:.9em 0 .3em;color:var(--mut)}.tbl.verdict td{vertic
   .covtext .tbl.small th{white-space:normal}
   @container (min-width:600px){.covcols{grid-template-columns:1fr 1fr}}}
 .legend .fitlines{flex:1 1 100%;line-height:1.5}
+.ratebar{font-size:13px;margin-top:6px;padding:4px 8px;border-radius:6px;border:1px solid var(--line)}
+.ratebar.warn{background:rgba(245,158,11,.14);color:#fde68a}.ratebar.stop{background:rgba(239,68,68,.16);color:#fecaca}
+.ratebar:empty{display:none}

@@ -154,6 +154,20 @@ function render() {
   if (S.sim_engine && document.activeElement !== $("simeng")) $("simeng").value = S.sim_engine;
   $("simeng").disabled = !mine || running || paused;
   $("sessinfo").textContent = [(S.session_id && !(S.msg || "").includes(S.session_id)) ? `Sitzung ${S.session_id}` : "", S.msg || ""].filter(Boolean).join(" · ") + (S.device_error ? " · " + S.device_error : "");
+  { // Ratenbegrenzung (0.15): Grenzwert, aktuelle Rate, Zustand
+    const R = S.rate || {}, G = R.guard || {}, rb = $("ratebar"), f = x => (x || 0).toPrecision(3);
+    let t = "", cls = "ratebar";
+    if (!R.ready) t = "Ereignisrate: Selbsttest läuft …";
+    else if (R.state === "fehler") { t = esc(R.msg); cls += " stop"; }
+    else if (R.limit_mcps > 0) {
+      t = `Max. Ereignisrate <b>${f(R.limit_mcps)} Mcps</b> (${esc(R.source || "")})`;
+      if (running || G.peak_mcps) t += ` · aktuell ${f(G.rate_mcps)} Mcps · Spitze ${f(G.peak_mcps)} Mcps`;
+      if (G.state === "warn") { cls += " warn"; t += ` · <b>ÜBER GRENZWERT</b> seit ${(G.over_s || 0).toFixed(1)} s – Anhalten nach ${G.stop_s} s`; }
+      if (G.state === "stop" || R.stopped_msg) cls += " stop";
+    } else if (R.msg) t = esc(R.msg);
+    if (R.stopped_msg) t += `<br><b>Angehalten:</b> ${esc(R.stopped_msg)}`;
+    rb.innerHTML = t; rb.className = cls;
+  }
   const L = S.live || {}, runs = L.runs || [];
   $("planbar").innerHTML = (S.plan || []).map((r, i) => {
     const cls = i < runs.length && runs[i]?.done ? "done" : (i === S.run_index ? "cur" : "");

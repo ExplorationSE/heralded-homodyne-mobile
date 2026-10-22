@@ -299,6 +299,65 @@ belegte Kerne):
 Warmstart (einzelne Bootstrap-Ziehungen bis ΔW 1,5e-2), behoben durch das KKT-Abbruchkriterium; der reine Binfehler
 betrug bis 3,0e-3 (200 Bins) und ist mit Breite 0,01 ≤ 4,8e-4 (≤ 0,05 σ).
 
+## 7g Zerlege-Prozess und Ratenbegrenzung HydraHarp (0.15)
+
+**Zerlegen in eigenem Prozess** (`hhd/io/t2split.py`): Im Live-Betrieb dekodiert und zerlegt ein eigener Prozess
+(`multiprocessing` spawn, Windows-sicher) die T2-Records in Herald- und Markerzeiten für die Live-Vorschau. Die
+Records gehen über einen Ringpuffer im Shared Memory (16 Slots × 1 Mio. Records), über die Queues nur kurze
+Nachrichten. Das Schreiben der PTU-Datei wartet nie auf den Prozess: ist kein Slot frei, bleiben die Blöcke im
+Rückstau des Hauptprozesses. Es gibt **keine Stichprobe und kein Verwerfen**; jedes Ereignis wird geschrieben und
+zerlegt. Wächst der Rückstau über `split_backlog_mb` (512 MB), wird der Lauf sofort angehalten. Stirbt der Prozess
+oder meldet er einen Fehler, endet die Sitzung mit Zustand „fehler“ und der Meldung „Zerlege-Prozess … beendet,
+Exit-Code …“. Es gibt keinen Rückfall auf seriell.
+
+**Grenzwert:** Er wird beim Serverstart im Hintergrund in einem Selbsttest gemessen (≈ 2 s): 25,5 Mio. synthetische
+Records (85 Mcps) durch den Zerlege-Prozess und als PTU mit `fsync` ins Datenverzeichnis.
+
+* Grenzwert = `harp_rate_safety` (0,6) × min(Zerlegen, Schreiben), höchstens 85 Mcps (Gerätegrenze laut Handbuch).
+* Der Selbsttest läuft nur bei Live-Harp oder mit `sim_harp_extra_mcps`.
+* Vorrang vor dem Selbsttest haben `HHD_HARP_MAX_MCPS` (Umgebung) und danach `harp_max_mcps` (server.toml).
+* Schlägt der Selbsttest fehl und ist kein fester Wert gesetzt, startet keine Live-Messung (laute Meldung).
+* Die App zeigt in der Sitzungskarte den Grenzwert mit Quelle, die aktuelle Rate und die Spitze. `status.rate`
+  enthält dieselben Werte.
+
+**Ablauf:**
+
+* Vor jedem Lauf wird die Zählrate des Geräts (`GetAllCountRates`) mit dem Grenzwert verglichen. Liegt sie
+  darüber, gibt es eine Warnung mit Hinweisen.
+* Während des Laufs wird die Rate über `harp_rate_window_s` (1 s) Messzeit gemittelt. Liegt sie über dem Grenzwert,
+  erscheint eine Warnung in der App (Vorschau-Warnungen, gelbe Ratenzeile) und im Server-Log (`rate`).
+* Bleibt sie `harp_rate_stop_s` (10 s) ununterbrochen darüber, wird der Lauf **angehalten** (Server-Log `rate_stop`,
+  Zustand „abgebrochen“, Meldung „RATENGRENZE: …“ mit Hinweisen).
+* Bis zum Anhalten sind alle Ereignisse geschrieben. Der angehaltene Lauf wird wie beim Stopp verworfen,
+  abgeschlossene Läufe bleiben. `server_session.json` enthält `rate_stop` und `rate_limit`.
+
+**Hinweise zum Senken der Rate** (stehen auch in der Meldung):
+
+* Abschwächer oder ND-Filter vor den Detektoren.
+* Herald- bzw. Eingangsschwelle anheben (`herald_level_mV`, `aux_level_mV`, CFD).
+* Nicht benötigte Eingänge abschalten.
+* Detektor-Totzeit bzw. HydraHarp-Eingangstotzeit (`HH500_SetInputDeadTime`) erhöhen; Hardware-Ereignisfilter
+  siehe docs/HARDWARE.md 2a. Der Server stellt beides nicht selbst ein.
+* Grenzwert auf einem stärkeren Rechner neu messen.
+
+**Simulator:** `sim_harp_extra_mcps` (server.toml) bzw. `HarpCfg.extra_rate_hz` legt Poisson-Testlast auf CH3
+(Rolle `rate_test`). Die übrigen Kanäle bleiben unverändert (eigener Zufallsstrom), die Auswertung ignoriert CH3.
+
+```toml
+harp_max_mcps = 0.0        # > 0: fester Grenzwert statt Selbsttest
+harp_rate_safety = 0.6
+harp_rate_selftest = true
+harp_rate_window_s = 1.0
+harp_rate_stop_s = 10.0
+split_backlog_mb = 512.0
+sim_harp_extra_mcps = 0.0  # nur Simulator: Testlast in Mcps
+```
+
+**Messung** (Box, 8 Kerne, nicht der Laptop; `scratch_perf/split_bench.py`, `rate_bench.py`): siehe
+`rechenzeit/ergebnis_rate.md`. Werte unten.
+
+(Messwerte folgen.)
+
 ## 8 Grenzen
 
 * Echte Geräte: Treiber nach Handbuch, nur gegen Mock-Bibliotheken getestet; offene Punkte in

@@ -36,6 +36,15 @@ adq_trace_dir = "logs/adq_trace"
 adq_marker_capture = "channel_b_sync"   # channel_b_sync (Kanal B auf SYNC = Marker, ED-7) | channel_b_trig
 adq_json_override = ""            # JSON mit zusätzlichen ADQAPI-Parametern (nach Inbetriebnahme)
 adq_drain_ms = 200
+# Ratenbegrenzung HydraHarp (ab 0.15): Zerlegen läuft in einem eigenen Prozess; der Grenzwert wird beim Start
+# per Selbsttest gemessen (Zerlegen + Schreiben, × harp_rate_safety). Darüber Warnung, dauerhaft darüber Abbruch.
+harp_max_mcps = 0.0               # > 0: fester Grenzwert in Mcps statt Selbsttest (Umgebung HHD_HARP_MAX_MCPS geht vor)
+harp_rate_safety = 0.6            # Sicherheitsfaktor auf den Selbsttest
+harp_rate_selftest = true         # Selbsttest beim Start (nur Live-Harp oder mit sim_harp_extra_mcps)
+harp_rate_window_s = 1.0          # Mittelungsfenster der Zählrate (Messzeit)
+harp_rate_stop_s = 10.0           # so lange ununterbrochen über dem Grenzwert → Lauf angehalten
+split_backlog_mb = 512.0          # Rückstau vor dem Zerlege-Prozess; darüber sofortiger Abbruch
+sim_harp_extra_mcps = 0.0         # nur Simulator: Testlast auf CH3 (Mcps), um die Begrenzung zu prüfen
 
 [analysis]
 auto_analyze = true
