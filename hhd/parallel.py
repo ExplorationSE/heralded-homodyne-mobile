@@ -107,6 +107,7 @@ def ordered_map(fn, jobs, workers: int, chunksize: int = 1):
             yield fn(j)
         return
     from collections import deque
+    from concurrent.futures.process import BrokenProcessPool
     pending = deque()
     it = iter(jobs)
     limit = max(2, 4 * workers)
@@ -114,12 +115,27 @@ def ordered_map(fn, jobs, workers: int, chunksize: int = 1):
         while True:
             while len(pending) < limit:
                 try:
-                    pending.append(pool.submit(fn, next(it)))
+                    j = next(it)
                 except StopIteration:
                     break
+                pending.append((j, pool.submit(fn, j)))
             if not pending:
                 return
-            yield pending.popleft().result()
+            j, f = pending[0]
+            try:
+                r = f.result()
+            except BrokenProcessPool:                  # Worker abgestürzt (z. B. Speicher): seriell weiter
+                import warnings
+                warnings.warn("Prozess-Pool ausgefallen – Rest seriell", RuntimeWarning, stacklevel=2)
+                shutdown_pool()
+                for j, _ in pending:
+                    yield fn(j)
+                pending.clear()
+                for j in it:
+                    yield fn(j)
+                return
+            pending.popleft()
+            yield r
     finally:
-        for f in pending:
+        for _, f in pending:
             f.cancel()

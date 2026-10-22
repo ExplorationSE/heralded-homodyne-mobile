@@ -154,3 +154,21 @@ def test_blas_env_set_before_numpy():
                           " os.environ['MKL_NUM_THREADS'])"], capture_output=True, text=True, env=env,
                          cwd=os.path.dirname(os.path.dirname(__file__)))
     assert out.stdout.split() == ["1", "1"]
+
+
+def _crash_on_3(j):
+    import multiprocessing as mp
+    if j == 3 and os.environ.get("HHD_TEST_CRASH") == "1" and mp.parent_process() is not None:
+        os._exit(1)
+    return j * j
+
+
+def test_pool_failure_falls_back_to_serial(monkeypatch):
+    from hhd import parallel
+    monkeypatch.setenv("HHD_TEST_CRASH", "1")                 # Kindprozesse erben die Umgebung
+    try:
+        with pytest.warns(RuntimeWarning):
+            out = list(parallel.ordered_map(_crash_on_3, range(8), 2))
+    finally:
+        parallel.shutdown_pool()
+    assert out == [j * j for j in range(8)]
