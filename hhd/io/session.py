@@ -26,6 +26,7 @@ from typing import Any, Iterator
 import h5py
 import numpy as np
 
+from . import h5filters
 from . import ptu as P
 from . import schema as S
 
@@ -382,6 +383,11 @@ def load_session(path: str | Path, verify: bool = True, lazy: bool = False) -> S
                 continue
             g = blocks[bid]
             rec = g["records"]
+            if "data" in rec:                            # Blosc-Datei ohne hdf5plugin: klare Meldung (ab 0.15)
+                try:
+                    h5filters.check_readable(rec["data"], str(h5p))
+                except RuntimeError as e:
+                    raise ImportError_(str(e)) from None
             ptu = d / r.get("ptu_file", f"harp_{bid}.ptu")
             tags = {}
             if ptu.exists():

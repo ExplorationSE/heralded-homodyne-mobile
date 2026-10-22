@@ -54,6 +54,7 @@ from typing import Any
 
 import h5py
 import numpy as np
+from . import h5filters
 
 SCHEMA_VERSION = "1.3"         # 1.3: Rampenspannung je Record, Lauf K-θ (0.15); 1.2: Kanal B, Kanalrollen
 READABLE_VERSIONS = ("1.0", "1.1", "1.2", "1.3")
@@ -101,8 +102,7 @@ def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.nda
     r = g.create_group("records")
     n, L = data.shape if data.ndim == 2 else (0, int(f["device"].attrs["record_length"]))
     data = data.reshape(n, L).astype(np.int16)
-    r.create_dataset("data", data=data, chunks=(max(1, min(256, n)), L) if n else None,
-                     compression="gzip" if n else None, compression_opts=4 if n else None)
+    r.create_dataset("data", data=data, chunks=(max(1, min(256, n)), L) if n else None, **h5filters.kwargs(n))
     r.create_dataset("timestamp", data=np.asarray(timestamp, np.int64))
     r.create_dataset("record_start", data=np.asarray(record_start, np.int64))
     r.create_dataset("record_number", data=np.arange(n, dtype=np.uint32))
@@ -113,7 +113,7 @@ def write_block(f: h5py.File, block_id: str, attrs: dict[str, Any], data: np.nda
         Lb = int(f["device"].attrs.get("channel_b_record_length", data_b.shape[1] if data_b.ndim == 2 else 0))
         db = np.asarray(data_b, np.int16).reshape(n, Lb)
         r.create_dataset("data_b", data=db, chunks=(max(1, min(1024, n)), Lb) if n and Lb else None,
-                         compression="gzip" if n else None, compression_opts=4 if n else None)
+                         **h5filters.kwargs(n if Lb else 0))
         r["data_b"].attrs.update(units="ADC LSB", channel="B", role=str(f["device"].attrs.get("channel_b_role", "")))
     for name, v in (aux or {}).items():                     # Zusatzspuren je Record (ab 1.3: ramp_raw)
         if v is not None:

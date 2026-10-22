@@ -4,7 +4,8 @@ wachsen während des Laufs; der Speicherbedarf hängt nicht von der Laufdauer ab
 * :class:`PtuStreamWriter` – Kopf mit Platzhalter für ``TTResult_NumberOfRecords``, Records werden angehängt, die
   Anzahl wird beim Schließen eingetragen (eine unvollständig geschlossene Datei hat Anzahl 0 → beim Lesen als leer
   erkannt, Rohdaten bleiben erhalten).
-* :class:`DigitizerStreamWriter` – eine Gruppe je Lauf mit erweiterbaren, gzip-komprimierten Datensätzen; nach jedem
+* :class:`DigitizerStreamWriter` – eine Gruppe je Lauf mit erweiterbaren, komprimierten Datensätzen (Blosc-LZ4 bzw. gzip,
+  ``hhd.io.h5filters``); nach jedem
   Lauf ``flush``.
 """
 from __future__ import annotations
@@ -17,6 +18,7 @@ import h5py
 import numpy as np
 
 from . import ptu as P
+from . import h5filters
 from . import schema as S
 
 
@@ -77,7 +79,7 @@ class DigitizerStreamWriter:
         g = self.f.require_group("blocks").create_group(block_id)
         S._attrs(g, attrs)
         r = g.create_group("records")
-        kw = dict(compression="gzip", compression_opts=4)
+        kw = h5filters.kwargs()
         r.create_dataset("data", (0, L), np.int16, maxshape=(None, L), chunks=(256, L), **kw)
         r["data"].attrs.update(units="ADC LSB", channel="A")
         for name, typ in (("timestamp", np.int64), ("record_start", np.int64), ("record_number", np.uint32),
