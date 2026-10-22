@@ -206,6 +206,8 @@ class HarpCfg:
     marker_error_max: float = P(100e-9, "s", doc="Grenze des Marker-Zeitfehlers in T2 (Modell wird hier abgeschnitten)", status="Spez.", source=HH500_MANUAL)
     marker_holdoff: float = P(0.0, "s", doc="Marker-Hold-off (unterdrückt Folge-Marker)", status="Spez.", source="HydraHarp 500 Manual, Kap. 6.3")
     R_spurious: float = P(0.2, "1/s", doc="Störmarker (Glitches) an der Harp", source=SYNC_REP)
+    extra_rate_hz: float = P(0.0, "1/s", doc="Testlast (ab 0.15): zusätzliche Poisson-Ereignisse auf extra_rate_channel, um die Ratenbegrenzung des Servers zu prüfen; 0 = aus (Ergebnisse unverändert)", status="Test")
+    extra_rate_channel: int = P(3, "", doc="Kanal der Testlast (Standard CH3, sonst reserviert); Rolle rate_test", status="Test")
 
 
 @dataclass
@@ -391,6 +393,8 @@ class SimConfig:
             roles.setdefault(str(h.random_tag_channel), "aux (Zufalls-/Zustandstrigger, sonst Reserve)")
         if self.markers.on_timing_channel:
             roles[str(h.marker_timing_channel)] = "sync_marker"
+        if h.extra_rate_hz > 0:
+            roles[str(h.extra_rate_channel)] = "rate_test"
         return dict(sorted(roles.items(), key=lambda kv: int(kv[0])))
 
     def marker_roles(self) -> dict[str, str]:

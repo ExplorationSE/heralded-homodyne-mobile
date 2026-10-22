@@ -144,6 +144,8 @@ class HarpData:
     n_records: int = 0
     run_done: bool = False
     records: np.ndarray | None = None   # rohe T2-Records (uint32) für den Datenstrom-Schreiber
+    t_acq_s: float | None = None        # Messzeit (s seit Laufbeginn), bis zu der ``records`` gelesen sind (Ratenwächter);
+                                        # None = t_end_s (Simulator/Wiedergabe)
 
 
 @dataclass
@@ -242,6 +244,7 @@ class SimBackend:
         self._decoder = None
         self._roles = ({}, {})
         self.kinds = {"harp", "digitizer"}    # gemischter Betrieb: nur die simulierten Geräte lesen
+        self.harp_extra_hz = 0.0              # Testlast (ServerConfig.sim_harp_extra_mcps), Ratenbegrenzung prüfen
 
     # Konfiguration der Sitzung
     def make_config(self, session_id: str, seed: int, plan: str = "standard"):
@@ -265,6 +268,8 @@ class SimBackend:
         if self.time_scale:
             for b in cfg.blocks:
                 b.duration_s = float(b.duration_s) * self.time_scale
+        if self.harp_extra_hz > 0:
+            cfg.harp.extra_rate_hz = float(self.harp_extra_hz)
         return cfg
 
     def prepare(self, cfg) -> list[RunSpec]:

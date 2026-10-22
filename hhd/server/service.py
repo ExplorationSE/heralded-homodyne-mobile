@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import json
+import logging
 import multiprocessing as mp
+import os
 import threading
 import time
 import tomllib
@@ -20,6 +22,7 @@ from pathlib import Path
 from .. import __version__
 from .control import (ALLOWED_CMDS, CommandError, CommandLog, ControlLock, ParamPolicy, safe_session_dir)
 from ..io import modes as M
+from ..io.t2split import SplitOverload
 from .devices import SIM_ENGINES, DeviceError, ReplayBackend, RunSpec, SimBackend, make_devices, make_sim_backend
 from .live import KIND_LABEL, LiveParams, LivePreview
 from ..io.recorder import SessionRecorder
@@ -62,6 +65,9 @@ STATES = {"bereit": "bereit", "vorbereitung": "Simulation/Vorbereitung", "messun
           "fehler": "Fehler"}
 
 
+log = logging.getLogger("hhd.server")
+
+
 @dataclass
 class ServerConfig:
     host: str = "0.0.0.0"                 # LAN; für den Tunnel genügt 127.0.0.1
@@ -98,6 +104,14 @@ class ServerConfig:
     streaming_records: int = 200000       # Datenstrom-Auswertung ab so vielen Records (0 = nie)
     analysis_workers: int = 0             # Bootstrap-Prozesse: 0 = alle Kerne (os.cpu_count), 1 = seriell; HHD_WORKERS
     h5_compression: str = "blosc-lz4"     # blosc-lz4 (hdf5plugin) | gzip (Rückfall, lesbar ohne Plugin) | none
+    # Ratenbegrenzung HydraHarp (hhd.server.rateguard): Grenzwert aus Selbsttest × Sicherheitsfaktor oder fest
+    harp_max_mcps: float = 0.0            # > 0: fester Grenzwert (Mcps) statt Selbsttest; HHD_HARP_MAX_MCPS hat Vorrang
+    harp_rate_safety: float = 0.6         # Sicherheitsfaktor auf den Selbsttest (Minimum aus Zerlegen und Schreiben)
+    harp_rate_selftest: bool = True       # Selbsttest beim Start (≈ 2 s); false und harp_max_mcps = 0: keine Grenze
+    harp_rate_window_s: float = 1.0       # Mittelungsfenster der Zählrate (Messzeit)
+    harp_rate_stop_s: float = 10.0        # Lauf anhalten, wenn der Grenzwert so lange ununterbrochen überschritten ist
+    split_backlog_mb: float = 512.0       # Live: Rückstau vor dem Zerlege-Prozess, darüber sofort anhalten
+    sim_harp_extra_mcps: float = 0.0      # Simulator: zusätzliche Zählrate (Mcps) auf CH3 zum Test der Ratenbegrenzung
     status_hz: float = 2.0
     delta_T_ns: float = 76.1
     seed0: int = 20261100
@@ -206,6 +220,14 @@ class MeasurementService:
         self.waiting_continue = False
         self._checking = threading.Event()
         self.last_check: dict | None = None
+        # Ratenbegrenzung: Grenzwert (Selbsttest im Hintergrund oder fest), Wächter je Lauf
+        from .rateguard import RateGuard
+        self.rate_limit = dict(limit_mcps=0.0, source="", selftest=None, state="pruefung", msg="")
+        self.rate_guard = RateGuard(0.0, cfg.harp_rate_window_s, cfg.harp_rate_stop_s)
+        self._rate_ready = threading.Event()
+        self._rate_stop_msg = ""
+        self._rate_last_warn = 0.0
+        threading.Thread(target=self._rate_init, daemon=True, name="rate-selftest").start()
 
     # ------------------------------------------------------------------ Geräte
     def _live_cfg(self):
@@ -224,7 +246,7 @@ class MeasurementService:
                        hh500_debug_dir=absd(c.log_dir), adq_lib=c.adq_lib, adq_device_index=c.adq_device_index,
                        adq_trace_dir=absd(c.adq_trace_dir), adq_marker_capture=c.adq_marker_capture,
                        adq_json_override=absd(c.adq_json_override), adq_drain_ms=c.adq_drain_ms,
-                       sim_device_attrs=nominal)
+                       sim_device_attrs=nominal, split_backlog_mb=c.split_backlog_mb)
 
     def _build_devices(self) -> None:
         cfg = self.cfg
@@ -318,6 +340,86 @@ class MeasurementService:
     def simulated(self) -> bool:
         return not self.live_any
 
+    # ------------------------------------------------------------------ Ratenbegrenzung
+    def _rate_init(self) -> None:
+        from .rateguard import HARP_MAX_SUSTAINED_MCPS, selftest
+        c, rl = self.cfg, self.rate_limit
+        try:
+            env = os.environ.get("HHD_HARP_MAX_MCPS", "").strip()
+            if env:
+                rl.update(limit_mcps=float(env), source="Umgebung HHD_HARP_MAX_MCPS")
+            elif c.harp_max_mcps > 0:
+                rl.update(limit_mcps=float(c.harp_max_mcps), source="Konfiguration harp_max_mcps")
+            need = self.modes.get("harp") == "live" or c.sim_harp_extra_mcps > 0
+            if c.harp_rate_selftest and need:
+                st = selftest(self.data_dir, c.harp_rate_safety)
+                rl["selftest"] = st
+                if not rl["source"]:
+                    rl.update(limit_mcps=st["limit_mcps"], source=f"Selbsttest ({st['bottleneck']} begrenzt, "
+                                                                 f"Faktor {c.harp_rate_safety:g})")
+            if not rl["source"]:
+                rl.update(limit_mcps=0.0, source="keine Grenze (Selbsttest aus)" if need or not c.harp_rate_selftest
+                          else "keine Grenze (Harp simuliert; Selbsttest nur im Live-Betrieb oder mit "
+                               "sim_harp_extra_mcps)")
+            lim = rl["limit_mcps"]
+            rl["state"] = "ok"
+            rl["msg"] = (f"Max. Ereignisrate {lim:.3g} Mcps ({rl['source']})" if lim > 0 else rl["source"])
+            if lim > HARP_MAX_SUSTAINED_MCPS:
+                rl["msg"] += f"; über {HARP_MAX_SUSTAINED_MCPS:.0f} Mcps liefert die HydraHarp 500 nicht dauerhaft"
+            self.rate_guard.limit_mcps = lim
+            log.info("Ratenbegrenzung: %s", rl["msg"])
+        except Exception as e:  # noqa: BLE001 – laut melden, Messung nur mit festem Grenzwert
+            rl.update(state="fehler", msg=f"Selbsttest der Ereignisrate fehlgeschlagen: {type(e).__name__}: {e}")
+            log.error(rl["msg"])
+            if not rl["source"]:
+                rl["limit_mcps"] = 0.0
+            self.rate_guard.limit_mcps = rl["limit_mcps"]
+        finally:
+            self._rate_ready.set()
+            self._notify()
+
+    def _rate_event(self, kind: str, msg: str) -> None:
+        with self._mtx:
+            self.live._warn(kind, msg)
+        log.warning(msg)
+        try:
+            self.log.write("server", "-", kind, {}, kind != "rate_stop", msg)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _rate_check(self, h, run) -> None:
+        """Zählrate des Blocks prüfen; Warnung bzw. Anhalten (setzt _stop, Meldung in _rate_stop_msg)."""
+        g = self.rate_guard
+        if h is None or g.limit_mcps <= 0:
+            return
+        t = h.t_acq_s if h.t_acq_s is not None else h.t_end_s
+        rec = getattr(h, "records", None)
+        st = g.feed(len(rec) if rec is not None else h.n_records, t)     # alle T2-Records (auch Nebenkanäle)
+        if st == "warn" and time.monotonic() - self._rate_last_warn > 5:
+            self._rate_last_warn = time.monotonic()
+            self._rate_event("rate", f"Ereignisrate {g.rate_mcps:.3g} Mcps über Grenzwert {g.limit_mcps:.3g} Mcps "
+                                     f"(Lauf {run.block_id}, seit {g.over_s_total:.1f} s; Anhalten nach "
+                                     f"{g.stop_s:g} s). {self._rate_hints()}")
+        elif st == "stop" and not self._rate_stop_msg:
+            self._rate_stop(f"Lauf {run.block_id} angehalten: Ereignisrate {g.rate_mcps:.3g} Mcps seit "
+                            f"{g.over_s_total:.1f} s über dem Grenzwert {g.limit_mcps:.3g} Mcps "
+                            f"({self.rate_limit.get('source', '')}).")
+
+    def _rate_stop(self, msg: str) -> None:
+        self._rate_stop_msg = msg + " Bis dahin sind alle Ereignisse geschrieben; der angehaltene Lauf wird wie " \
+                                    "beim Stopp verworfen, abgeschlossene Läufe bleiben. " + self._rate_hints()
+        self._rate_event("rate_stop", self._rate_stop_msg)
+        self._stop.set()
+
+    @staticmethod
+    def _rate_hints() -> str:
+        from .rateguard import HINTS
+        return HINTS
+
+    def rate_status(self) -> dict:
+        return dict(self.rate_limit, ready=self._rate_ready.is_set(), guard=self.rate_guard.to_dict(),
+                    stopped_msg=self._rate_stop_msg)
+
     def status(self) -> dict:
         with self._mtx:
             live = self.live.snapshot()
@@ -335,6 +437,7 @@ class MeasurementService:
                     plans=PLANS, plan_doc=PLAN_DOC, plan_groups=PLAN_GROUPS, lock=self.lock.state(), display=self.display, live=live,
                     jobs=[j.to_dict() for j in sorted(self.jobs.values(), key=lambda j: -j.t_submit)][:10],
                     devices=dict(harp=self.harp.info(), digitizer=self.dig.info()), device_error=self.device_error,
+                    rate=self.rate_status(),
                     server_time=time.strftime("%Y-%m-%d %H:%M:%S"))
 
     def _notify(self) -> None:
@@ -480,6 +583,7 @@ class MeasurementService:
         be = self.backend
         if isinstance(be, SimBackend):
             self.n_sessions += 1
+            be.harp_extra_hz = self.cfg.sim_harp_extra_mcps * 1e6
             runs = be.prepare(be.make_config(sid, self.cfg.seed0 + self.n_sessions, plan))
             return runs, be.session_meta(), dict(be.device_attrs)
         if isinstance(be, ReplayBackend):
@@ -524,6 +628,15 @@ class MeasurementService:
                 self.live.p.coupled = acq != "mixed"        # gemischt: Geräte nicht gekoppelt, Sync ohne Aussage
             if self.device_error:
                 raise DeviceError(self.device_error)
+            self._rate_stop_msg = ""
+            if not self._rate_ready.wait(60):
+                raise DeviceError("Selbsttest der Ereignisrate läuft noch (> 60 s) – bitte erneut starten")
+            rl = self.rate_limit
+            if rl["state"] == "fehler" and rl["limit_mcps"] <= 0 and self.modes.get("harp") == "live":
+                raise DeviceError(rl["msg"] + " – ohne Grenzwert keine Live-Messung; harp_max_mcps setzen oder "
+                                              "Ursache beheben")
+            if rl["limit_mcps"] > 0:
+                self.msg = f"Sitzung {sid}: {rl['msg']}"
             runs, meta, dev_attrs = self._plan(sid, plan)
             if modes["digitizer"] == "live":
                 dev_attrs = dict(self.dig.device_attrs)
@@ -554,6 +667,12 @@ class MeasurementService:
                     self.backend.start_run(i)
                 for d in (self.harp, self.dig):
                     d.arm(run)
+                self.rate_guard.reset()
+                cr = getattr(self.harp, "count_rate_mcps", lambda: None)()
+                if cr is not None and self.rate_guard.limit_mcps > 0 and cr > self.rate_guard.limit_mcps:
+                    self._rate_event("rate", f"Zählrate vor Lauf {run.block_id}: {cr:.3g} Mcps > Grenzwert "
+                                             f"{self.rate_guard.limit_mcps:.3g} Mcps – der Lauf wird angehalten, wenn "
+                                             f"das {self.rate_guard.stop_s:g} s anhält. {self._rate_hints()}")
                 if rec is not None:
                     if modes["digitizer"] == "live":
                         rec.update_device(self.dig.device_attrs)
@@ -563,7 +682,12 @@ class MeasurementService:
                 self._notify()
                 h_done = d_done = False
                 while not (h_done and d_done):
-                    h = None if h_done else self.harp.read()
+                    try:
+                        h = None if h_done else self.harp.read()
+                    except SplitOverload as e:               # Rechner kommt nicht mit: anhalten, nicht verwerfen
+                        self._rate_stop(f"Lauf {run.block_id} angehalten: {e}.")
+                        h = None
+                        h_done = True
                     d = None if d_done else self.dig.read()
                     if h is None or h.run_done:
                         h_done = True
@@ -573,6 +697,7 @@ class MeasurementService:
                         rec.feed(h, d)
                     with self._mtx:
                         self.live.feed(h, d)
+                    self._rate_check(h, run)
                     if self._stop.is_set():
                         break
                 for d in (self.harp, self.dig):
@@ -607,7 +732,8 @@ class MeasurementService:
                               device_modes=modes, acquisition_mode=acq, sim_engine=self.sim_engine,
                               simulated=self.simulated, plan=plan, plan_label=PLANS.get(plan, plan),
                               state=plan_state(plan), note=note, runs_done=n_done, runs_planned=len(runs),
-                              stopped=self._stop.is_set(), devices=dict(harp=self.harp.info()["params"],
+                              stopped=self._stop.is_set(), rate_stop=self._rate_stop_msg,
+                              rate_limit=self.rate_status(), devices=dict(harp=self.harp.info()["params"],
                                                                         digitizer=self.dig.info()["params"]),
                               hardware={k: d.info().get("hardware", {}) for k, d in (("harp", self.harp), ("digitizer", self.dig))
                                         if modes[k] == "live"},
@@ -621,6 +747,8 @@ class MeasurementService:
             stopped = self._stop.is_set()
             self.state = "abgebrochen" if stopped else "fertig"
             self.msg = f"Sitzung {sid}: {n_done}/{len(runs)} Läufe" + (" (gestoppt)" if stopped else "")
+            if self._rate_stop_msg:
+                self.msg += f" – RATENGRENZE: {self._rate_stop_msg}"
             self.run_idx = -1
             if n_done and self.display.get("auto_analyze") and not stopped:
                 if acq == "mixed":

@@ -333,6 +333,9 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
         inputs[h.trigger_copy_channel] = rel(t_copy + h.d_TC)
     if len(t_rand):
         inputs[h.random_tag_channel] = rel(t_rand + h.d_RH)
+    if h.extra_rate_hz > 0:                # Testlast für die Ratenbegrenzung (eigener Zufallsstrom)
+        r_x = np.random.default_rng(ss.spawn(1)[0])
+        inputs[h.extra_rate_channel] = np.sort(r_x.uniform(0.0, T, r_x.poisson(h.extra_rate_hz * T)))
     if len(t_state):
         inputs[h.state_tag_channel] = rel(t_state + h.d_RH)
     markers = {}

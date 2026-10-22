@@ -39,6 +39,8 @@ class LiveCfg:
     adq_json_override: str = ""          # JSON-Datei: Liste von Parametersätzen {"id": …, …} (nach der Grundeinstellung)
     adq_drain_ms: int = 200              # max. Nachlauf der Auslese nach Laufende (Host-Zeit)
     lo_monitor_skip: int = 25
+    split_backlog_mb: float = 512.0      # Rückstau vor dem Zerlege-Prozess, darüber Lauf anhalten (Rate zu hoch)
+    split_finish_timeout_s: float = 60.0
     sim_device_attrs: dict = field(default_factory=dict)   # Nennwerte (aus der Simulator-Konfiguration)
 
 
@@ -115,6 +117,9 @@ class HydraHarp500Live(_LiveDevice):
         super().__init__(lc)
         self.dev = None
         self._roles = ({0: "sync_marker", 1: "herald"}, {})
+        self._split = None                      # Zerlege-Prozess (hhd.io.t2split), ab dem ersten Lauf
+        self._finishing = False
+        self._t_acq = 0.0
 
     def open(self) -> dict:
         from ..drivers import LibraryNotFound
@@ -141,9 +146,22 @@ class HydraHarp500Live(_LiveDevice):
         return self.info()
 
     def close(self) -> None:
+        if self._split is not None:
+            self._split.close()
+            self._split = None
         if self.dev is not None:
             self.dev.close()
         self.is_open = False
+
+    def count_rate_mcps(self) -> float | None:
+        """Summe der Zählraten (Sync + Eingänge) vor Messbeginn (HH500_GetAllCountRates), Mcps."""
+        if self.dev is None or not self.is_open:
+            return None
+        try:
+            r = self.dev.rates()
+        except Exception:  # noqa: BLE001
+            return None
+        return (r["sync"] + sum(r["inputs"])) / 1e6
 
     def _incfg(self, level: float, offset: int = 0, enable: bool = True):
         from ..drivers.hh500 import InputCfg
@@ -187,9 +205,17 @@ class HydraHarp500Live(_LiveDevice):
         mr = _roles(a.get("harp_marker_roles"))
         self._roles = (cr, mr)
         self._apply_all({k: v for k, v in cr.items() if k > 0 and not v.startswith("aux")})
-        from ..io.ptu import T2Decoder
-        self._dec = T2Decoder()
+        from ..io.t2split import SplitProcessError, T2SplitProcess
+        try:
+            if self._split is None:
+                self._split = T2SplitProcess(max_backlog_mb=float(self.lc.split_backlog_mb))
+            self._split.begin_run(self._roles)
+        except SplitProcessError as e:
+            self._split = None
+            raise DeviceError(f"HydraHarp 500: {e}") from None
         self._t_end = 0.0
+        self._t_acq = 0.0
+        self._finishing = False
 
     def _acquire(self, run: RunSpec) -> None:
         from ..drivers import hh500 as H
@@ -199,7 +225,7 @@ class HydraHarp500Live(_LiveDevice):
             while True:
                 rec = d.read_fifo()
                 if len(rec):
-                    self._q.put(rec)
+                    self._q.put((rec, time.monotonic() - self._t_start))
                 f = d.flags()
                 if f & H.FLAG_FIFOFULL:
                     raise RuntimeError("FIFO-Überlauf (FLAG_FIFOFULL) – Daten verloren, Zählraten/USB prüfen")
@@ -213,24 +239,42 @@ class HydraHarp500Live(_LiveDevice):
                         rec = d.read_fifo()
                         if not len(rec):
                             break
-                        self._q.put(rec)
+                        self._q.put((rec, time.monotonic() - self._t_start))
                     break
         finally:
             d.stop()
 
     def read(self):
+        """Rohdaten sofort an den Schreiber; Zerlegen im eigenen Prozess (``hhd.io.t2split``), Ergebnisse folgen
+        verzögert. Am Laufende zuerst die letzten Records, dann (nächster Aufruf) der Rest der Zerlegung."""
+        from ..io.t2split import SplitProcessError
         if not self.running and self._done:
             return None
-        items, done = self._drain()
-        rec = np.concatenate(items) if items else np.empty(0, np.uint32)
-        from ..io.ptu import T2_WRAP
-        from ..io.session import split_events
-        ev = self._dec.decode(rec)
-        hs = split_events(ev, *self._roles)
-        last = max(int(ev.event_time_ps[-1]) if len(ev.event_time_ps) else 0, self._dec.ofl * T2_WRAP)
-        self._t_end = max(self._t_end, last * 1e-12)
-        self._done = done
-        return HarpData(self._t_end, hs.role_s("herald"), hs.role_s("sync_marker"), len(rec), done, records=rec)
+        try:
+            if self._finishing:
+                res = self._split.finish_run(timeout_s=float(self.lc.split_finish_timeout_s))
+                self._done, self._finishing = True, False
+                return self._harp_data(res, np.empty(0, np.uint32), True)
+            items, done = self._drain()
+            rec = np.concatenate([r for r, _ in items]) if items else np.empty(0, np.uint32)
+            if items:
+                self._t_acq = max(self._t_acq, items[-1][1])
+            if len(rec):
+                self._split.submit(rec)              # SplitOverload → Ratenwächter (Service)
+            res = self._split.poll()
+        except SplitProcessError as e:
+            self.error = str(e)
+            raise DeviceError(f"HydraHarp 500: {e}") from None
+        if done:
+            self._finishing = True
+        return self._harp_data(res, rec, False)
+
+    def _harp_data(self, res, rec, done: bool) -> HarpData:
+        her = np.concatenate([r.herald_s for r in res]) if res else np.empty(0)
+        mk = np.concatenate([r.markers_s for r in res]) if res else np.empty(0)
+        if res:
+            self._t_end = max(self._t_end, max(r.last_ps for r in res) * 1e-12)
+        return HarpData(self._t_end, her, mk, len(rec), done, records=rec, t_acq_s=self._t_acq)
 
 
 # ---------------------------------------------------------------------- ADQ32

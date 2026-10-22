@@ -81,21 +81,24 @@ def encode_t2(times_ps: np.ndarray, kinds: np.ndarray, codes: np.ndarray) -> tup
         out[:] = word.astype(np.uint32)
         out_t[:] = t
         return out, out_t
-    pos = 0
-    for i in range(len(t)):            # selten: nur Ereignisse mit Periodenwechsel brauchen Überläufe
-        j = int(jump[i])
-        if j > 0:
-            base = int(prev[i])
-            while j > 0:
-                m = min(j, T2_WRAP - 1)
-                base += m
-                out[pos] = (1 << 31) | (63 << 25) | m
-                out_t[pos] = base * T2_WRAP
-                pos += 1
-                j -= m
-        out[pos] = word[i]
-        out_t[pos] = t[i]
-        pos += 1
+    # ab 0.15 vektorisiert: je Ereignis n_ofl_rec Überlauf-Records davor; Normalfall 1 Record mit m = jump
+    pos_ev = np.arange(len(t)) + np.cumsum(n_ofl_rec)
+    out[pos_ev] = word.astype(np.uint32)
+    out_t[pos_ev] = t
+    one = np.flatnonzero(n_ofl_rec == 1)
+    p1 = pos_ev[one] - 1
+    out[p1] = ((1 << 31) | (63 << 25) | jump[one]).astype(np.uint32)
+    out_t[p1] = wrap[one] * T2_WRAP
+    for i in np.flatnonzero(n_ofl_rec > 1):     # selten: Lücke > 2^25 − 1 Wrap-Perioden (≈ 1126 s)
+        j, base = int(jump[i]), int(prev[i])
+        pos = int(pos_ev[i]) - int(n_ofl_rec[i])
+        while j > 0:
+            m = min(j, T2_WRAP - 1)
+            base += m
+            out[pos] = (1 << 31) | (63 << 25) | m
+            out_t[pos] = base * T2_WRAP
+            pos += 1
+            j -= m
     return out, out_t
 
 
