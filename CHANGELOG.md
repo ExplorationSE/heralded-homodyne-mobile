@@ -2,6 +2,28 @@
 
 ## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
 
+Auftrag „Zerlege-Prozess und Ratenbegrenzung HydraHarp“ (Herr Eilers, 22.10.2026):
+
+- **Zerlege-Prozess** (`hhd/io/t2split.py`): Dekodieren und Aufteilen der T2-Records für die Live-Vorschau in einem
+  eigenen Prozess (spawn, Windows-sicher), Ringpuffer im Shared Memory (16 × 1 Mio. Records), Rückstau im
+  Hauptprozess. Das Schreiben wartet nie; keine Stichprobe, nichts wird verworfen. Rückstau > `split_backlog_mb`
+  (512 MB) → Lauf angehalten. Prozess tot oder Fehler → Zustand „fehler“ mit Meldung, kein Rückfall auf seriell.
+  Neuer Lauf verwirft Reste eines abgebrochenen Laufs.
+- **Ratenbegrenzung** (`hhd/server/rateguard.py`, `service.py`): Grenzwert per Selbsttest beim Start
+  (Zerlegen + Schreiben mit fsync, × `harp_rate_safety` 0,6, höchstens 85 Mcps laut Handbuch) oder fest
+  (`harp_max_mcps`, `HHD_HARP_MAX_MCPS`). Prüfung der Gerätezählrate vor jedem Lauf. Gleitende Rate (Messzeit):
+  darüber Warnung (App, Server-Log `rate`); `harp_rate_stop_s` (10 s) ununterbrochen darüber → Lauf angehalten
+  (`rate_stop`, Meldung mit Hinweisen: Abschwächer, Schwelle, Totzeit). App: Ratenzeile in der Sitzungskarte;
+  `status.rate`, `server_session.json: rate_stop, rate_limit`.
+- **Simulator-Testlast:** `HarpCfg.extra_rate_hz`/`extra_rate_channel` (CH3, Rolle `rate_test`), Server
+  `sim_harp_extra_mcps`; übrige Kanäle unverändert.
+- `encode_t2`: Überlauf-Records vektorisiert (identisch).
+- **Durchsatz Schreiben + Zerlegen** (Box): seriell 22,8–25,8 → Prozess 33,6–36,8 Mcps; live-ähnlich bis
+  30 Mcps ohne Rückstau (docs/SERVER.md 7g). Laptop nicht gemessen.
+- Doku: docs/SERVER.md 7g, docs/HARDWARE.md 2a (HH500_SetInputDeadTime, Ereignisfilter – nur dokumentiert).
+- Tests: `tests/test_rate.py` (Prozess = seriell, Rückstau, Absturz, Grenzwert Sim und Live-Mock, Selbsttest,
+  RateGuard, Testlast, encode_t2).
+
 Auftrag „Rechenzeit, Maßnahmen 1–4“ (Freigabe Herr Eilers, 22.10.2026):
 
 - **BLAS-Threads = 1** je Prozess: `hhd/__init__.py` setzt `OPENBLAS/OMP/MKL/BLIS/VECLIB/NUMEXPR_NUM_THREADS`

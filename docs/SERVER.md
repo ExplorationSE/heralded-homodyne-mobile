@@ -356,7 +356,17 @@ sim_harp_extra_mcps = 0.0  # nur Simulator: Testlast in Mcps
 **Messung** (Box, 8 Kerne, nicht der Laptop; `scratch_perf/split_bench.py`, `rate_bench.py`): siehe
 `rechenzeit/ergebnis_rate.md`. Werte unten.
 
-(Messwerte folgen.)
+| Messung (synthetische T2-Records, 85 Mcps-Blöcke à 0,1 s) | vorher (seriell, bis bc6f35b) | nachher (Zerlege-Prozess) |
+|---|---|---|
+| Schreiben + Zerlegen, so schnell wie möglich (3 Läufe à 255 Mio. Records) | 22,8–25,8 Mcps | 33,6–36,8 Mcps |
+| davon Hauptprozess (Schreiben + Übergabe) | – | 141–154 Mcps |
+| nur PTU schreiben | 236–266 Mcps | – |
+| Selbsttest beim Start (Zerlegen / Schreiben mit fsync → Grenzwert × 0,6) | – | 31,7–34,1 / 171–215 → 19,0–20,5 Mcps, ≈ 1,9 s |
+
+Live-ähnlich (`rate_bench.py`, Blöcke à 0,1 s im Echtzeittakt, 10 s je Rate): 10, 15, 20, 25 und 30 Mcps ohne Rückstau,
+Nachlauf am Laufende ≤ 0,09 s, Hauptprozess zu 5–16 % belegt. Bei 40 Mcps wächst der Rückstau um ≈ 24 MB/s (236 MB nach
+10 s); mit dem Standard 512 MB wäre nach ≈ 21 s Schluss. Im Server hält die Ratenbegrenzung
+(Grenzwert ≈ 20 Mcps auf der Box) den Lauf schon nach 10 s an.
 
 ## 8 Grenzen
 
