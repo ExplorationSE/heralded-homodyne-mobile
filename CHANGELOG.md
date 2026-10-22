@@ -2,6 +2,35 @@
 
 ## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
 
+Auftrag „Rechenzeit, Maßnahmen 1–4“ (Freigabe Herr Eilers, 22.10.2026):
+
+- **BLAS-Threads = 1** je Prozess: `hhd/__init__.py` setzt `OPENBLAS/OMP/MKL/BLIS/VECLIB/NUMEXPR_NUM_THREADS`
+  (Standard 1, `HHD_BLAS_THREADS`) vor dem numpy-Import, sofern nicht gesetzt; Startskripte (`start_*.bat/.ps1`,
+  `geraete_pruefen.bat`) setzen sie ebenfalls; Auswerteprozess und Worker zusätzlich über `threadpoolctl`.
+  Vorher gemessen: eine Bootstrap-Ziehung 0,29 s ohne Last, 4,86 s bei 4 belegten Kernen (Überbuchung).
+- **SQUAREM-MaxLik** (`hhd/recon/core.py: _iterate`): Varadhan-Roland S3 um den RρR-Schritt; sinkt die Likelihood
+  oder verlässt die Extrapolation den Simplex → normaler Schritt (Rückfall). Abbruch zusätzlich mit KKT-Prüfung
+  (max R − 1 < 1e-4), Warmstart mit 0,1 % Gleichverteilung gemischt. Damit ist auch die Scheinkonvergenz der bisherigen
+  Iteration behoben (gemessen bis ΔW 1,5e-2 je Bootstrap-Ziehung, jetzt ≤ 2,2e-4 gegen die auskonvergierte Lösung).
+  `HHD_MAXLIK_ACCEL=0` schaltet ab.
+- **Histogramm-MaxLik:** feste Binbreite 0,01 statt 200 Bins (`BINNED_WIDTH`), Datenstrom-Auswertung auf den
+  Feinbins 1/120 statt 0,05. Binfehler W(0,0) ≤ 4,8e-4 (vorher bis 3,0e-3); Bootstrap-σ im Datenstrom nicht mehr
+  unterschätzt (A: −14 % → −3 % gegen die ungebinnte Auswertung). Details `docs/SERVER.md` 7f.
+- **digitizer.h5 mit Blosc-LZ4** (`hhd/io/h5filters.py`, Paket `hdf5plugin`): Schreiben 993 statt 43 MB/s,
+  Datei 0,56 statt 0,64 der Rohgröße. gzip-Dateien bleiben lesbar; `h5_compression = "gzip"` (server.toml) bzw.
+  `HHD_H5_COMPRESSION` als Rückfall; fehlt `hdf5plugin`, wird mit Warnung gzip geschrieben. Blosc-Dateien ohne Plugin:
+  klare Fehlermeldung mit `pip install hdf5plugin`. **HDFView/h5dump brauchen das Blosc-Filter-Plugin (ID 32001).**
+- **Bootstrap/Jackknife auf mehreren Prozessen** (`hhd/parallel.py`): spawn-Pool (Windows-sicher), Worker mit
+  1 BLAS-Thread, Zahl automatisch (`os.sched_getaffinity`/`os.cpu_count`), `analysis_workers` (server.toml),
+  `AnalysisParams.workers`, `HHD_WORKERS`. Zufallszahlen im Hauptprozess → Ergebnis unabhängig von der Worker-Zahl.
+  Kleine Aufträge bleiben seriell; fällt der Pool aus, wird seriell weitergerechnet.
+- **Datenstrom HydraHarp:** T2-Dekodierung und `split_events` schneller (identisches Ergebnis).
+- **Anforderungen:** `hdf5plugin>=4.0`, `threadpoolctl>=3.1` (requirements.txt, pyproject.toml).
+- **Tests:** `tests/test_speed.py` (SQUAREM = RρR, Blosc-Roundtrip, gzip-Altdatei, Bootstrap 1/2/3 Worker identisch,
+  Pool-Ausfall, T2-Dekodierung gegen Referenz, BLAS-Umgebung).
+- Laufzeiten (Box, 8 Kerne, Serverpfad): Gequetscht 6 dB Batch 115 → 32 s, Katze gerade α = 2 422 → 32 s, bei
+  4 belegten Kernen 620 → 32 s bzw. 816 → 33 s (Tabelle `docs/SERVER.md` 7f).
+
 Auftrag „Ergebnisseite: Phasenabdeckung, Windows-Tests“ (Herr Eilers, 21.10.2026):
 
 - **Ergebnisseite:** Karte „Phasenabdeckung“ ist die letzte im Diagrammbereich und nimmt die volle Rasterbreite ein.

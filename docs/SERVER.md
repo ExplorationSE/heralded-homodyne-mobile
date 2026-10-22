@@ -266,6 +266,39 @@ Ergebnisse gegen die Simulator-Wahrheit:
 * Validierung aller 23 Laufpläne: `tools/quelle_runs_015.py`; Screenshots `app_screens/60_*.png`
   (Desktop 1280 px und mobil 390 px).
 
+## 7f Rechenzeit: Mehrkern, SQUAREM, Blosc-LZ4 (0.15)
+
+**Einstellungen** (`config/server*.toml`):
+
+```toml
+analysis_workers = 0            # Bootstrap-Prozesse: 0 = alle Kerne (automatisch), 1 = seriell
+h5_compression = "blosc-lz4"    # blosc-lz4 | gzip (Rückfall, ohne Plugin lesbar) | none
+```
+
+Umgebung (Vorrang): `HHD_WORKERS`, `HHD_H5_COMPRESSION`, `HHD_BLAS_THREADS` (Standard 1), `HHD_MAXLIK_ACCEL=0`
+(SQUAREM aus). Die Kernzahl richtet sich nach dem Rechner (`os.sched_getaffinity`, sonst `os.cpu_count`); auf
+einem stärkeren Rechner wird ohne Änderung mit mehr Prozessen gerechnet. Jeder Prozess rechnet mit 1 BLAS-Thread.
+Der Pool bleibt im Auswerteprozess bestehen (Start ≈ 0,7 s, je Worker ≈ 100 MB Speicher).
+
+**HDFView / h5dump:** `digitizer.h5` ist ab 0.15 mit Blosc-LZ4 komprimiert (HDF5-Filter 32001). Fremdprogramme
+brauchen dafür das Blosc-Filter-Plugin (z. B. aus `hdf5plugin`: Verzeichnis von `hdf5plugin.PLUGIN_PATH` in
+`HDF5_PLUGIN_PATH` eintragen, oder HDFView mit Plugin-Paket). Python mit `import hhd` bzw. `import hdf5plugin`
+liest die Dateien direkt. Wer die Dateien ohne Plugin öffnen muss: `h5_compression = "gzip"`.
+
+**Messung** (Box 8 Kerne, nicht der Laptop; Serverpfad `run_analysis_job`, n_boot 100; Last = zusätzlich
+belegte Kerne):
+
+| Fall | vorher (0d863af) | nachher | 4 Kerne belegt: vorher → nachher |
+|---|---|---|---|
+| Fock 2 Batch | 32,9 s | 17,7 s | 34,5 → 15,9 s |
+| Gequetscht 6 dB Phase, Batch | 115 s | 32 s | 620 → 32 s |
+| Gequetscht 6 dB Phase, Datenstrom-Simulator | 197 s | 42 s | 1605 → 42 s |
+| Katze gerade α = 2, Batch | 422 s | 32 s | 816 → 33 s |
+
+**Histogramm-MaxLik:** Die Abweichung > 1σ (Analyse 21.10.) kam überwiegend von Scheinkonvergenz der Iteration bei
+Warmstart (einzelne Bootstrap-Ziehungen bis ΔW 1,5e-2), behoben durch das KKT-Abbruchkriterium; der reine Binfehler
+betrug bis 3,0e-3 (200 Bins) und ist mit Breite 0,01 ≤ 4,8e-4 (≤ 0,05 σ).
+
 ## 8 Grenzen
 
 * Echte Geräte: Treiber nach Handbuch, nur gegen Mock-Bibliotheken getestet; offene Punkte in
