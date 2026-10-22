@@ -172,3 +172,34 @@ def test_pool_failure_falls_back_to_serial(monkeypatch):
     finally:
         parallel.shutdown_pool()
     assert out == [j * j for j in range(8)]
+
+
+def _decode_ref(rec, ofl=0):
+    """T2-Dekodierung wie bis 0.14 (Referenz)."""
+    from hhd.io.ptu import T2_WRAP
+    r = np.asarray(rec, dtype=np.uint32).astype(np.int64)
+    special = r >> 31; chan = (r >> 25) & 0x3F; ttag = r & 0x1FFFFFF
+    is_ofl = (special == 1) & (chan == 63)
+    cum = ofl + np.cumsum(np.where(is_ofl, np.where(ttag == 0, 1, ttag), 0))
+    t = cum * T2_WRAP + ttag
+    ev = special == 0; sy = (special == 1) & (chan == 0); mk = (special == 1) & (chan >= 1) & (chan <= 15)
+    evm = ev | sy
+    return t[evm], np.where(ev, chan + 1, 0)[evm], t[mk], chan[mk], int(cum[-1]) if len(r) else ofl
+
+
+def test_t2_decode_fast_equals_reference():
+    from hhd.io import ptu as P
+    rng = np.random.default_rng(5)
+    n = 200_000
+    t = np.sort(rng.integers(0, 10 ** 12, n))                 # viele Überläufe (1 s / 33,5 µs), auch Lücken > 1 Wrap
+    kinds = rng.choice([P.KIND_EVENT, P.KIND_MARKER], n, p=[0.95, 0.05])
+    codes = np.where(kinds == P.KIND_EVENT, rng.integers(1, 5, n), rng.integers(1, 16, n))
+    rec, _ = P.encode_t2(t, kinds, codes)
+    rec = np.concatenate([rec, np.array([(1 << 31) | 0 | 123], np.uint32)])     # Sync-Record
+    dec = P.T2Decoder(); ofl = 0
+    for part in np.array_split(rec, 7):                       # blockweise wie im Datenstrom
+        ev = dec.decode(part)
+        a, b, c, d, ofl = _decode_ref(part, ofl)
+        assert np.array_equal(ev.event_time_ps, a) and np.array_equal(ev.event_channel, b)
+        assert np.array_equal(ev.marker_time_ps, c) and np.array_equal(ev.marker_bits, d)
+        assert dec.ofl == ofl

@@ -100,16 +100,21 @@ class HarpStream:
 
 
 def split_events(ev: P.T2Events, channel_roles: dict[int, str], marker_roles: dict[int, str]) -> HarpStream:
+    def _sorted(t):                                               # Marker können leicht ungeordnet sein
+        return t if len(t) < 2 or bool(np.all(t[1:] >= t[:-1])) else np.sort(t)
     ch = {}
-    for c in np.unique(ev.event_channel):
-        t = ev.event_time_ps[ev.event_channel == c]
-        ch[int(c)] = np.sort(t)                                   # Marker können leicht ungeordnet sein
+    present = np.flatnonzero(np.bincount(ev.event_channel, minlength=1)) if len(ev.event_channel) else []
+    if len(present) == 1:
+        ch[int(present[0])] = _sorted(ev.event_time_ps)
+    else:
+        for c in present:
+            ch[int(c)] = _sorted(ev.event_time_ps[ev.event_channel == c])
     mk = {}
     for bit in range(4):
         m = 1 << bit
         t = ev.marker_time_ps[(ev.marker_bits & m) != 0]
         if len(t):
-            mk[m] = np.sort(t)
+            mk[m] = _sorted(t)
     return HarpStream(ch, mk, channel_roles, marker_roles)
 
 

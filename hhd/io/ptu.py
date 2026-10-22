@@ -121,23 +121,32 @@ class T2Decoder:
     n_records: int = 0
 
     def decode(self, rec: np.ndarray) -> T2Events:
-        r = np.asarray(rec, dtype=np.uint32).astype(np.int64)
-        special = r >> 31
-        chan = (r >> 25) & 0x3F
-        ttag = r & 0x1FFFFFF
-        is_ofl = (special == 1) & (chan == 63)
-        n_ofl = np.where(is_ofl, np.where(ttag == 0, 1, ttag), 0)
-        cum = self.ofl + np.cumsum(n_ofl)
-        t = cum * T2_WRAP + ttag
-        ev = special == 0
-        sy = (special == 1) & (chan == 0)
-        mk = (special == 1) & (chan >= 1) & (chan <= 15)
-        if len(r):
+        # ab 0.15 schneller (Datenstrom bis 85 Mcps): Bitoperationen auf uint32, Überlaufzähler nur an den (seltenen)
+        # Überlauf-Records statt kumulativer Summe über alle Records; Ergebnis identisch zur bisherigen Fassung.
+        r = np.asarray(rec, dtype=np.uint32)
+        top = r >> np.uint32(25)                       # special·64 + Kanal
+        ttag = (r & np.uint32(0x1FFFFFF)).astype(np.int64)
+        i_ofl = np.flatnonzero(top == 127)
+        if len(i_ofl):
+            n_ofl = ttag[i_ofl]
+            n_ofl[n_ofl == 0] = 1
+            cum = self.ofl + np.cumsum(n_ofl)
+            seg = np.diff(np.concatenate([[0], i_ofl, [len(r)]]))
+            base = np.repeat(np.concatenate([[self.ofl], cum]), seg)
             self.ofl = int(cum[-1])
+        else:
+            base = np.full(len(r), self.ofl, np.int64)
+        t = base * T2_WRAP + ttag
         self.n_records += len(r)
-        evm = ev | sy
-        ch = np.where(ev, chan + 1, 0)
-        return T2Events(t[evm], ch[evm], t[mk], chan[mk])
+        evm = top <= 64                                # Eingänge (0..63) und Sync (64)
+        i_mk = np.flatnonzero((top >= 65) & (top <= 79))
+        if len(i_ofl) + len(i_mk) == 0 or bool(evm.all()):
+            te, ch = t, np.add(top, 1, dtype=np.int64)  # Normalfall: fast nur Eingangsereignisse, keine Kopie
+        else:
+            te, ch = t[evm], np.add(top[evm], 1, dtype=np.int64)
+        if bool((ch == 65).any()):
+            ch[ch == 65] = 0                           # Sync
+        return T2Events(te, ch, t[i_mk], (top[i_mk] - 64).astype(np.int64))
 
 
 # ---------------------------------------------------------------------------- Kopf
