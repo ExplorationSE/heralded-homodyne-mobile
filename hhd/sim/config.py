@@ -148,7 +148,10 @@ class SourceCfg:
                                                   "squeezed_3dB, squeezed_6dB, thermal_0.5)", status="Vorschlag")
     model: str = P("auto", doc="Quellmodell (ab 0.15): auto (aus dem Zustand), spdc (Paarquelle, Herald im Idler-Arm; ohne Herald thermisch ≈ Vakuum), squeezed (Quetschquelle mit Photonensubtraktion; ohne Herald gequetschtes Vakuum in jeder Mode) oder test (Testmuster: Zustand dauernd, Herald nur Zeitmarke)", status="Vorschlag")
     squeeze_dB: float = P(0.0, "dB", doc="Quetschstärke der Quetschquelle (model squeezed); 0 = aus dem Zustand abgeleitet", status="Vorschlag")
-    mode_shape: str = P("double_exponential", doc="Temporale Mode: double_exponential f(t)=√γ·e^(−γ|t|) (CW-SPDC) oder gauss", status="Vorschlag")
+    laser_mode: str = P("cw", doc="Laserbetrieb der Pumpe (ab 0.15): cw (Dauerstrich, Paare und Heralds Poisson in der Zeit) oder pulsed (gepulst: Paare nur in den Pumppulsen auf dem Raster pulse_rate_Hz, Zufallstrigger pulssynchron, Mode ohne Angabe gauss); in den Geräteattributen für die Auswertung (Modenform)", status="Vorschlag", source="Entscheidung Herr Eilers (28.10.2026)")
+    pulse_rate_Hz: float = P(1.0e6, "Hz", doc="Pulsfolgefrequenz bei laser_mode pulsed (Pulsabstand ≫ Modenbreite, sonst überlappen Nachbarpulse im Fenster)", status="Annahme")
+    pulse_offset_s: float = P(0.0, "s", doc="Lage des Pulsrasters gegen den Sitzungsbeginn (wahre Zeit) bei laser_mode pulsed", status="Annahme")
+    mode_shape: str = P("double_exponential", doc="Temporale Mode: double_exponential f(t)=√γ·e^(−γ|t|) (CW-SPDC) oder gauss (gepulst); ohne Angabe bei laser_mode pulsed gauss", status="Vorschlag")
     gamma: float = P(1 / 40e-9, "1/s", doc="Abklingrate der Mode (1/γ = 40 ns); bei gauss: 1/σ", source=SYNC_REP)
     sigma_spd: float = P(round(HERALD_PRESETS["snspd"]["sigma_spd"], 15), "s", doc="Jitter des Herald-Detektors (rms), gemeinsam für Harp und TRIG; Preset SNSPD 40 ps FWHM (ID281 Standard; Eos ≤ 15 ps), InGaAs-APD 150 ps FWHM", status="Spez.", source=IDQ_281 + "; " + IDQ_QUBE)
 
@@ -300,6 +303,8 @@ def default_blocks(time_scale: float = SIM_TIME_SCALE) -> list[dict]:
     return blocks
 
 
+LASER_MODES = ("cw", "pulsed")
+LASER_LABEL = {"cw": "CW (Dauerstrich)", "pulsed": "Puls"}
 BLOCK_KINDS = ("heralded", "random", "free_running", "vacuum", "herald_blocked", "electronic", "state", "phase_ref")
 BANDWIDTH = {"BW1G0": 1.0e9, "BW2G5": 2.5e9}
 
@@ -543,6 +548,17 @@ class SimConfig:
             e.append("source.squeeze_dB: 0 … 20 dB")
         if s.mode_shape not in ("double_exponential", "gauss"):
             e.append("source.mode_shape: double_exponential oder gauss")
+        if s.laser_mode not in LASER_MODES:
+            e.append("source.laser_mode: cw oder pulsed")
+        elif s.laser_mode == "pulsed":
+            if s.pulse_rate_Hz <= 0:
+                e.append("source.pulse_rate_Hz > 0")
+            else:
+                p_pulse = (s.R_herald / s.eta_herald + s.R_dark) / s.pulse_rate_Hz
+                if p_pulse > 0.1:
+                    w.append(f"source: Paarwahrscheinlichkeit je Puls {p_pulse:.2g} > 0,1 – Mehrpaaranteil (nicht modelliert)")
+                if 1.0 / s.pulse_rate_Hz < 2 * (10.0 if s.mode_shape == "double_exponential" else 6.0) / s.gamma:
+                    w.append("source.pulse_rate_Hz: Pulsabstand kleiner als die Modenbreite – Nachbarpulse überlappen im Fenster")
         ids = [b.id for b in self.blocks]
         if len(set(ids)) != len(ids):
             e.append("blocks: id doppelt")
@@ -630,6 +646,8 @@ class SimConfig:
             for k, v in pre.items():
                 if k not in src_given:
                     setattr(self.source, k, float(v))
+        if self.source.laser_mode == "pulsed" and "mode_shape" not in src_given:
+            self.source.mode_shape = "gauss"
         if "eta_herald" not in src_given:
             self.source.eta_herald = round(self.source.det_eff * self.source.herald_arm_T, 4)
         lm = self.lo_monitor
@@ -638,6 +656,19 @@ class SimConfig:
         for k in ("lsb_nominal", "dark_lsb", "noise_lsb"):
             if k not in lm_given:
                 setattr(lm, k, lev[k])
+
+    def set_laser_mode(self, mode: str) -> "SimConfig":
+        """Laserbetrieb setzen (Server, Kasten Sitzung): pulsed → Mode gauss; cw → Modenform der Grundkonfiguration
+        (double_exponential, wenn die Grundkonfiguration für Puls gauss nur abgeleitet hatte)."""
+        if mode not in LASER_MODES:
+            raise ConfigError(f"Laserbetrieb {mode!r}: cw oder pulsed")
+        s = self.source
+        if mode == "pulsed":
+            s.mode_shape = "gauss"
+        elif s.laser_mode == "pulsed":
+            s.mode_shape = "double_exponential"
+        s.laser_mode = mode
+        return self
 
     @classmethod
     def load(cls, path: str | Path) -> "SimConfig":

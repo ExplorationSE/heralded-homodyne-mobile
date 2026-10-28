@@ -24,6 +24,30 @@ from scipy import signal as _sig
 N_FRAC = 32
 
 
+MODE_SHAPES = ("double_exponential", "gauss")
+
+
+def resolve_mode_shape(shape: str, device: dict | None = None) -> str:
+    """``auto``: Nenn-Modenform aus den Geräteattributen der Sitzung (``device.mode_shape``, vom Laserbetrieb
+    abgeleitet: CW → double_exponential, Puls → gauss); ältere Sitzungen ohne Attribut → double_exponential."""
+    if shape != "auto":
+        return shape
+    v = (device or {}).get("mode_shape")
+    v = v.decode() if isinstance(v, bytes) else (str(v) if v is not None else None)
+    return v if v in MODE_SHAPES else "double_exponential"
+
+
+def laser_info(device: dict | None) -> dict:
+    """Laserbetrieb der Sitzung für das Ergebnis: cw | pulsed (ältere Sitzungen ohne Attribut: cw)."""
+    d = device or {}
+    m = d.get("laser_mode", "cw")
+    m = m.decode() if isinstance(m, bytes) else str(m)
+    out = dict(mode=m if m in ("cw", "pulsed") else "cw", mode_shape=resolve_mode_shape("auto", d))
+    if out["mode"] == "pulsed" and d.get("pulse_rate_Hz") is not None:
+        out["pulse_rate_Hz"] = float(d["pulse_rate_Hz"])
+    return out
+
+
 @dataclass
 class ModeSpec:
     shape: str = "double_exponential"

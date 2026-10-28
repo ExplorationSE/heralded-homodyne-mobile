@@ -25,6 +25,9 @@ from ..io import modes as M
 from ..io.t2split import SplitOverload
 from .devices import SIM_ENGINES, DeviceError, ReplayBackend, RunSpec, SimBackend, make_devices, make_sim_backend
 from .live import KIND_LABEL, LiveParams, LivePreview
+from ..modes.extract import resolve_mode_shape
+from ..sim.config import LASER_MODES
+from ..sim.digitizer import laser_attrs
 from ..io.recorder import SessionRecorder
 
 from ..sim.state_plans import (PHASE_PLANS, STATE_PLANS, phase_plan_doc, phase_plan_label, plan_doc,
@@ -202,7 +205,7 @@ class MeasurementService:
         self._build_devices()
         self.live = LivePreview(LiveParams(delta_T_s=cfg.delta_T_ns * 1e-9))
         self.display = dict(hist_range=4.0, plan="standard", speed=cfg.speed, auto_analyze=cfg.auto_analyze,
-                            n_boot=cfg.n_boot)
+                            n_boot=cfg.n_boot, laser_mode="cw")
         self.state = "bereit"
         self.session_id = ""
         self.plan: list[RunSpec] = []
@@ -489,6 +492,9 @@ class MeasurementService:
         if not 0.05 <= speed <= 50:
             raise CommandError("speed: 0,05 … 50")
         note = str(p.get("note", ""))[:200]
+        laser = str(p.get("laser_mode", self.display.get("laser_mode", "cw")))
+        if laser not in LASER_MODES:
+            raise CommandError(f"Laserbetrieb {laser!r}: cw oder pulsed")
         if self.live_any:
             speed = 1.0                                        # Live-Gerät: Echtzeit (Simulator/Wiedergabe mit)
             if self.cfg.live_remote_start_confirm:
@@ -498,7 +504,8 @@ class MeasurementService:
                     return dict(ok=False, needs_confirm=True, confirm=info,
                                 msg=f"Start mit LIVE-Gerät ({', '.join(k for k, m in self.modes.items() if m == 'live')}) "
                                     "aus der Ferne bitte ausdrücklich bestätigen (ED-8b)")
-        self.display.update(plan=plan, speed=speed)
+        self.display.update(plan=plan, speed=speed, laser_mode=laser)
+        self.session_laser = laser
         if self.backend is not None:
             self.backend.speed = speed
             if self.live_any:
@@ -533,6 +540,10 @@ class MeasurementService:
             if k == "plan":
                 if v not in PLANS:
                     raise CommandError(f"Laufplan {v!r} unbekannt")
+                out[k] = v
+            elif k == "laser_mode":
+                if v not in LASER_MODES:
+                    raise CommandError(f"Laserbetrieb {v!r}: cw oder pulsed")
                 out[k] = v
             elif k == "auto_analyze":
                 out[k] = bool(v)
@@ -581,10 +592,11 @@ class MeasurementService:
         """Laufplan, Sitzungsdaten und Nenn-Geräteattribute: aus Simulator, Wiedergabe oder (nur live) der
         Simulator-Konfiguration ohne Simulation (``plan_block_attrs``)."""
         be = self.backend
+        laser = getattr(self, "session_laser", None) or self.display.get("laser_mode", "cw")
         if isinstance(be, SimBackend):
             self.n_sessions += 1
             be.harp_extra_hz = self.cfg.sim_harp_extra_mcps * 1e6
-            runs = be.prepare(be.make_config(sid, self.cfg.seed0 + self.n_sessions, plan))
+            runs = be.prepare(be.make_config(sid, self.cfg.seed0 + self.n_sessions, plan, laser))
             return runs, be.session_meta(), dict(be.device_attrs)
         if isinstance(be, ReplayBackend):
             runs = be.prepare()
@@ -594,14 +606,20 @@ class MeasurementService:
             return runs, meta, dict(be.device_attrs)
         from ..sim.engine import plan_block_attrs
         cfg = SimBackend(self._abs(self.cfg.sim_config) if self.cfg.sim_config else None,
-                         time_scale=self.cfg.time_scale or None).make_config(sid, 0, plan)
+                         time_scale=self.cfg.time_scale or None).make_config(sid, 0, plan, laser)
         cfg.session.campaign = "K-LIVE"
         t0, runs = cfg.session.start_s, []
         for i, (b, rid) in enumerate(zip(cfg.blocks, cfg.run_ids())):
             runs.append(RunSpec(b.id, b.kind, float(b.duration_s), i, rid,
                                 dict(attrs=plan_block_attrs(cfg, b, i, t0, cfg.calibration_id, rid))))
             t0 += b.duration_s + cfg.session.gap_s
-        return runs, dict(session_id=sid, campaign_id="K-LIVE", calibration_id=cfg.calibration_id), {}
+        return runs, dict(session_id=sid, campaign_id="K-LIVE", calibration_id=cfg.calibration_id), laser_attrs(cfg)
+
+    def _laser_attrs(self, plan: str) -> dict:
+        """Laserbetrieb und Nenn-Modenform für Live-Digitizer-Sitzungen (Geräteattribute ``device``)."""
+        laser = getattr(self, "session_laser", None) or self.display.get("laser_mode", "cw")
+        cfg = SimBackend(self._abs(self.cfg.sim_config) if self.cfg.sim_config else None).make_config("X", 0, plan, laser)
+        return laser_attrs(cfg)
 
     def _wait_continue(self, i: int, n: int) -> bool:
         self._continue.clear()
@@ -639,10 +657,11 @@ class MeasurementService:
                 self.msg = f"Sitzung {sid}: {rl['msg']}"
             runs, meta, dev_attrs = self._plan(sid, plan)
             if modes["digitizer"] == "live":
-                dev_attrs = dict(self.dig.device_attrs)
+                dev_attrs = dict(self.dig.device_attrs) | self._laser_attrs(plan)
+            laser = str(dev_attrs.get("laser_mode", "cw"))     # Wiedergabe: Laserbetrieb der Quellsitzung
             fs = float(dev_attrs.get("sampling_rate_Hz", 2.5e9))
             with self._mtx:
-                self.live.fs = fs
+                self.live.set_mode(resolve_mode_shape("auto", dev_attrs), fs)
             self.plan = runs
             streamed = bool(getattr(self.backend, "records_stream", False))
             if acq not in ("sim", "replay") or streamed:       # live/gemischt/Simulator im Datenstrom: Schreiber
@@ -730,7 +749,7 @@ class MeasurementService:
                     self.backend.write_files(out, n_done)
                 meta_s = dict(format="hhd-server-session", software=f"hhd {__version__}", mode=acq,
                               device_modes=modes, acquisition_mode=acq, sim_engine=self.sim_engine,
-                              simulated=self.simulated, plan=plan, plan_label=PLANS.get(plan, plan),
+                              simulated=self.simulated, plan=plan, plan_label=PLANS.get(plan, plan), laser_mode=laser,
                               state=plan_state(plan), note=note, runs_done=n_done, runs_planned=len(runs),
                               stopped=self._stop.is_set(), rate_stop=self._rate_stop_msg,
                               rate_limit=self.rate_status(), devices=dict(harp=self.harp.info()["params"],
@@ -869,7 +888,7 @@ class MeasurementService:
                             if meta.get("simulated", True) else None,
                             phase_sensitive=bool(st.get("phase_sensitive")), runs=meta.get("runs_done"), simulated=meta.get("simulated", True),
                             mode=meta.get("acquisition_mode", meta.get("mode", "sim")), modes=meta.get("device_modes", {}),
-                            note=meta.get("note", ""), analyzed=res.exists(),
+                            note=meta.get("note", ""), analyzed=res.exists(), laser_mode=meta.get("laser_mode", "cw"),
                             mtime=time.strftime("%Y-%m-%d %H:%M", time.localtime(d.stat().st_mtime)),
                             job=next((j.state for j in self.jobs.values() if j.session == d.name), None)))
         return out
@@ -914,7 +933,8 @@ def result_summary(r: dict) -> dict:
                 calibration={k: cal.get(k) for k in ("var_kv", "eta_el", "eta_el_err", "clearance", "normalization",
                                                     "n_kv", "n_el") if k in cal},
                 drift=r.get("drift_vacuum_lo"), warnings=r.get("warnings", []), performance=r.get("performance"),
-                phase=phase_summary(r.get("phase")))
+                phase=phase_summary(r.get("phase")), laser=r.get("laser"),
+                mode={k: (r.get("mode") or {}).get(k) for k in ("shape", "gamma") if k in (r.get("mode") or {})})
 
 
 def phase_summary(ph: dict | None) -> dict:

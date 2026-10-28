@@ -34,7 +34,7 @@ import numpy as np
 
 from .. import __version__
 from ..calib.calibrate import VAC, Calibration, crosstalk_check, drift_vacuum_lo
-from ..modes.extract import ModeSpec, adc_offset, project_records, template_bank
+from ..modes.extract import ModeSpec, adc_offset, project_records, laser_info, resolve_mode_shape, template_bank
 from ..recon.core import _iterate, fidelity_diag, lossy_fock1, patterns, photon_stats, wigner_radial
 from ..recon.stats import R_GRID, w00_score_coeffs
 from ..sync import assign as A
@@ -538,7 +538,7 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
     warnings: list[str] = []
     if ap.mode_source != "parametric":
         warnings.append(f"Datenstrom-Auswertung: mode_source {ap.mode_source!r} nicht unterstützt → parametrisch")
-    spec = ModeSpec(ap.mode_shape, ap.gamma, session.device["sampling_rate_Hz"],
+    spec = ModeSpec(resolve_mode_shape(ap.mode_shape, session.device), ap.gamma, session.device["sampling_rate_Hz"],
                     session.device.get("analog_bandwidth_Hz") if ap.bandwidth_model else None)
     bank = template_bank(spec)
     kv_runs = session.runs_of("vacuum")
@@ -604,6 +604,7 @@ def analyze_session_streaming(path, ap: AnalysisParams | None = None, out_dir=No
                         session_id=session.session_id, campaign_id=session.campaign_id,
                         calibration_id=session.calibration_id, params=asdict(ap),
                         mode=dict(spec.to_dict(), bandwidth_effect=float(bank.bandwidth_effect), adc_offset_lsb=off),
+                        laser=laser_info(session.device),
                         calibration=cal.to_dict(), drift_vacuum_lo=drift_kv, crosstalk=xt, pca=pca, groups=groups,
                         streaming=dict(chunk_records=chunk, hist_lim=LIM, hist_bin=1 / FINE, maxlik_bin=REBIN / FINE,
                                        bootstrap="Poisson je Bin und Lauf, Vakuum aus K-V-Momenten",

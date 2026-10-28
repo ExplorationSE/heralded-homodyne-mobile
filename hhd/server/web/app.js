@@ -146,8 +146,12 @@ function render() {
   plan.title = (S.plan_doc || {})[plan.value] || "";
   { // Quellmodell des gewählten Laufplans sichtbar (aus der Planbeschreibung; Fock-Pläne ohne Angabe: SPDC)
     const doc = (S.plan_doc || {})[plan.value] || "", m = doc.match(/(Quetschquelle|SPDC-Paarquelle|Testmuster)[^·]*(· B: [^·]*)?/);
-    $("plansrc").innerHTML = `Quellmodell: <b>${esc(m ? m[0].trim() : "SPDC-Paarquelle · B: thermisch ≈ Vakuum")}</b>`;
+    $("plansrc").innerHTML = `Quellmodell: <b>${esc(m ? m[0].trim() : "SPDC-Paarquelle · B: thermisch ≈ Vakuum")}</b> · ${laserShort({ mode: S.display.laser_mode || "cw" })}`;
   }
+  const lz = $("laser");
+  if (document.activeElement !== lz) lz.value = S.display.laser_mode || "cw";
+  lz.disabled = !mine || running || paused;
+  lz.title = lz.title.split("\n")[0] + "\nGewählt: " + (lz.value === "pulsed" ? "Puls – Paare nur in den Pumppulsen, pulssynchrone Trigger (Zufall/Herald), Mode gauß" : "CW – Paare/Heralds zufällig in der Zeit (Poisson), Mode doppelt-exponentiell");
   if (document.activeElement !== $("speed")) $("speed").value = S.display.speed;
   $("autoana").checked = !!S.display.auto_analyze;
   $("simeng_l").classList.toggle("hidden", !S.sim_engine);
@@ -281,7 +285,7 @@ async function api(path) { const r = await fetch(path, { credentials: "same-orig
 async function loadSessions() {
   try {
     lastSessions = await (await api("/api/sessions")).json();
-    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")}${s.state && s.state !== "fock1" ? " · " + esc(s.state_label || s.state) + (s.phase_sensitive ? ((s.plan || "").startsWith("kurzphase_") ? " (Phase bekannt)" : " (phasengem.)") : "") : ""}${s.source ? " · Quelle " + esc(({ spdc: "SPDC", squeezed: "Quetschquelle", test: "Testmuster" })[s.source] || s.source) : ""} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
+    $("sesslist").innerHTML = lastSessions.length ? lastSessions.map(s => `<div class="sess ${s.id === selSession ? "sel" : ""}" data-s="${esc(s.id)}"><div><b>${esc(s.id)}</b><br><small>${esc(s.plan || "")}${s.state && s.state !== "fock1" ? " · " + esc(s.state_label || s.state) + (s.phase_sensitive ? ((s.plan || "").startsWith("kurzphase_") ? " (Phase bekannt)" : " (phasengem.)") : "") : ""}${s.source ? " · Quelle " + esc(({ spdc: "SPDC", squeezed: "Quetschquelle", test: "Testmuster" })[s.source] || s.source) : ""}${s.laser_mode === "pulsed" ? " · Puls" : ""} · ${s.runs ?? "?"} Läufe · ${esc(s.mtime)}${s.mode && s.mode !== "sim" ? " · " + esc(({ live: "LIVE", mixed: "gemischt", replay: "Wiedergabe" })[s.mode] || s.mode) : (s.simulated ? " · simuliert" : "")}</small></div><span class="${s.analyzed ? "ok-t" : "mut"}">${s.analyzed ? "ausgewertet" : (s.job ? esc(s.job) : "–")}</span></div>`).join("") : '<div class="mut">noch keine Sitzungen</div>';
     document.querySelectorAll(".sess").forEach(e => e.onclick = () => openSession(e.dataset.s));
     if (selSession && lastSessions.find(s => s.id === selSession)?.analyzed && !openSession.loaded) openSession(selSession);
     if (!selSession && lastSessions.length && lastSessions[0].analyzed) openSession(lastSessions[0].id);
@@ -297,6 +301,13 @@ async function openSession(id) {
   openSession.loaded = true;
   renderResult(R);
   try { $("report").textContent = await (await api(`/api/sessions/${encodeURIComponent(id)}/report`)).text(); } catch (e) { $("report").textContent = ""; }
+}
+// Laserbetrieb (ab 0.15): CW | Puls, mit Modenform und Pulsfolgefrequenz, wenn bekannt
+function laserShort(L) {
+  const p = L && L.mode === "pulsed";
+  const shape = L && L.mode_shape ? (L.mode_shape === "gauss" ? "Mode gauß" : "Mode doppelt-exponentiell") : (p ? "Mode gauß" : "Mode doppelt-exponentiell");
+  const fr = p && L.pulse_rate_Hz ? `, f<sub>rep</sub> = ${fmt(L.pulse_rate_Hz / 1e6, 3)} MHz` : "";
+  return `Laserbetrieb: <b>${p ? "Puls" : "CW"}</b> <small class="mut">(${p ? "pulssynchrone Fenster, " : ""}${shape}${fr})</small>`;
 }
 // Quellmodell (Simulator, ab 0.15) als Kurztext
 function srcShort(src) {
@@ -327,7 +338,8 @@ function renderResult(R) {
   const ps = !!st.phase_sensitive;
   const sq = srcShort(st.source);
   const srcLine = `<br>Quellmodell: ` + (sq ? `<b>${sq}</b>` + (st.source.model === "squeezed" && st.source.fidelity != null && st.source.fidelity < 0.999 ? ` <small class="mut">(Näherung, Treue ${fmt(st.source.fidelity, 3)})</small>` : "")
-    : `<span class="mut">nicht angegeben (Messdaten oder Sitzung vor 0.15: Lauf B wie SPDC ≈ Vakuum)</span>`);
+    : `<span class="mut">nicht angegeben (Messdaten oder Sitzung vor 0.15: Lauf B wie SPDC ≈ Vakuum)</span>`) +
+    ` · ` + laserShort(R.laser || { mode: "cw", mode_shape: (R.mode || {}).shape });
   $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +
     (ps ? ` · <span class="warn-t">phasenempfindlich – nur phasengemittelt dargestellt und ausgewertet (Sollwerte ebenso)</span>` : "") + srcLine;
   $("wiglbl").innerHTML = (ps ? "<b>phasengemittelt</b> (Phasenstruktur des Zustands nicht sichtbar)" : "phasengemittelt") + ", W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)";
@@ -358,7 +370,7 @@ function renderResult(R) {
     (R.warnings || []).map(w => "⚠ " + esc(typeof w === "string" ? w : JSON.stringify(w))).join("<br>");
   if (pk) {
     $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +
-      ` · <span class="ok-t">${esc(P.label || "Phase bekannt (Piezo-Rampe, kalibriert)")}</span>`;
+      ` · <span class="ok-t">${esc(P.label || "Phase bekannt (Piezo-Rampe, kalibriert)")}</span>` + srcLine;
     $("wiglbl").innerHTML = `<b>${esc(P.label)}</b> · W(x,p) aus ρ (MaxLik, N = ${P.N}, η = ${fmt(P.eta_tomo, 3)} korrigiert); orange &gt; 0, blau &lt; 0`;
   } else if (ps) {
     $("resstate").innerHTML += ` <small class="mut">(${esc(P.reason || "Phase unbekannt")})</small>`;
@@ -368,6 +380,14 @@ function renderResult(R) {
   if (pk && $("covdet").dataset.s !== (selSession || "")) { $("covdet").dataset.s = selSession || ""; $("covdet").open = window.innerWidth > 520; }
   if (window.innerWidth >= 900) $("covdet").open = true;
   if (pk) { drawWigner2D(P.wigner2d, P.metrics.W00); drawVarTheta(P.var_theta, PB ? PB.var_theta : null); drawCoverage(P.coverage); phaseTable(P); } else drawWigner(A);
+  // Wigner B (ohne Herald): phasenaufgelöst aus ρ_B, wenn vorhanden, sonst phasengemittelt aus W(r) von B
+  if (pk && PB && PB.wigner2d && PB.wigner2d.W) {
+    drawWigner2D(PB.wigner2d, (PB.metrics || {}).W00, "c-wigB");
+    $("wiglblB").innerHTML = `<b>phasenaufgelöst</b> · W(x,p) aus ρ<sub>B</sub> (MaxLik${PB.N ? `, N = ${PB.N}` : ""}${PB.n_records ? `, ${PB.n_records} Records` : ""}${PB.eta_tomo != null ? `, η = ${fmt(PB.eta_tomo, 3)} korrigiert` : ""}); orange &gt; 0, blau &lt; 0`;
+  } else {
+    drawWigner(B, "c-wigB");
+    $("wiglblB").innerHTML = (B.wigner_r ? (ps ? "<b>phasengemittelt</b> (Phasenstruktur nicht sichtbar)" : "phasengemittelt") + ", W(x,p) aus W(r)" : `<span class="mut">keine B-Daten</span>`) + "; orange &gt; 0, blau &lt; 0";
+  }
   drawWr(A, B); drawPn(A, B); drawAB(C);
   const eb = R.efficiency_budget || {};
   const brow = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
@@ -377,8 +397,8 @@ function renderResult(R) {
     (f1 ? brow("η_eff (Fit)", ev(eb.eta_eff_fit)) : brow("η_eff (⟨n⟩)", ev(eb.eta_eff_n)) + brow("η_eff (|1⟩-Fit, nicht gültig)", ev(eb.eta_eff_fit))) + brow(f1 ? "η_eff (Varianz)" : "Var x − ½ (= η_eff·⟨n⟩)", ev(eb.eta_eff_var)) + brow("η_rest", ev(eb.eta_rest));
 }
 function wr(g, r) { const R = g.wigner_r || [], V = g.wigner_radial || []; if (r >= R[R.length - 1]) return V[V.length - 1] || 0; let i = 1; while (i < R.length && R[i] < r) i++; const t = (r - R[i - 1]) / (R[i] - R[i - 1]); return V[i - 1] * (1 - t) + V[i] * t; }
-function drawWigner(A) {
-  const { g, w, h } = canvas("c-wig");
+function drawWigner(A, id = "c-wig") {
+  const { g, w, h } = canvas(id);
   if (!A.wigner_r) return;
   const s = Math.min(w, h) - 20, ox = (w - s) / 2, oy = 10, n = 90, xm = 3.2, vmax = 1 / Math.PI;
   const cell = s / n;
@@ -392,8 +412,8 @@ function drawWigner(A) {
   g.fillText(`W(0,0) = ${fmt(A.W00, 3)}`, ox + 4, oy + s - 6);
 }
 function wcol(v) { return v >= 0 ? [Math.round(15 + 234 * v), Math.round(23 + 92 * v), Math.round(42 - 20 * v)] : [Math.round(15 + 20 * -v), Math.round(23 + 140 * -v), Math.round(42 + 213 * -v)]; }
-function drawWigner2D(W2, w00) {
-  const { g, w, h } = canvas("c-wig");
+function drawWigner2D(W2, w00, id = "c-wig") {
+  const { g, w, h } = canvas(id);
   if (!W2 || !W2.W) return;
   const xs = W2.x, M = W2.W, n = xs.length, xm = 3.2;
   let vmax = 1e-9; for (const r of M) for (const v of r) vmax = Math.max(vmax, Math.abs(v));
@@ -512,7 +532,7 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
 });
 $("lockbtn").onclick = () => send(S && S.lock.holder === me ? "release_control" : "acquire_control");
 function startSession(confirm) {
-  const p = { plan: $("plan").value, speed: Number($("speed").value), ...(confirm ? { confirm } : {}) };
+  const p = { plan: $("plan").value, laser_mode: $("laser").value, speed: Number($("speed").value), ...(confirm ? { confirm } : {}) };
   send("start_session", p, (m) => {
     if (m.needs_confirm) {
       $("confirmtitle").textContent = "Messung mit echten Geräten starten?";
@@ -528,6 +548,7 @@ $("start").onclick = () => startSession();
 $("cont").onclick = () => send("continue_run");
 $("stop").onclick = () => { if (confirm("Sitzung stoppen? Abgeschlossene Läufe werden gespeichert.")) send("stop_session"); };
 $("plan").onchange = () => send("set_display", { plan: $("plan").value });
+$("laser").onchange = () => send("set_display", { laser_mode: $("laser").value });
 $("simeng").onchange = () => send("set_display", { sim_engine: $("simeng").value });
 $("autoana").onchange = () => send("set_display", { auto_analyze: $("autoana").checked });
 $("clrwarn").onclick = () => send("clear_warnings");

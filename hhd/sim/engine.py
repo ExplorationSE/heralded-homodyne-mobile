@@ -96,6 +96,22 @@ def _poisson_times(rng, rate, t0, T):
     return np.sort(rng.uniform(t0, t0 + T, n))
 
 
+def pulse_origin(cfg: SimConfig) -> float:
+    """Bezugszeit des Pumppulsrasters (wahre Zeit, laser_mode pulsed)."""
+    return float(cfg.session.start_s + cfg.source.pulse_offset_s)
+
+
+def snap_to_pulses(t: np.ndarray, cfg: SimConfig, t0: float, T: float, shift: float = 0.0) -> np.ndarray:
+    """Zeiten auf den nächsten Pumppuls legen (laser_mode pulsed): t' = t_P + k/f_rep − shift, nur Pulse in [t0, t0+T).
+    Bei cw unverändert. ``shift``: fester Versatz zwischen Zeitbasis von ``t`` und Photonenzeit."""
+    if cfg.source.laser_mode != "pulsed" or not len(t):
+        return t
+    f, org = cfg.source.pulse_rate_Hz, pulse_origin(cfg)
+    k = np.rint((t + shift - org) * f)
+    out = org + k / f - shift
+    return np.sort(out[(out >= t0) & (out < t0 + T)])
+
+
 def lo_scale_fn(cfg: SimConfig, b: BlockCfg, path: DriftPath | None = None):
     """relative LO-Leistung als Funktion der wahren Zeit (Drift ab Sitzungsbeginn × Laufsprung).
 
@@ -235,7 +251,7 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
     # ---------------------------------------------------------------- SPDC-Paare und Heralds (wahre Zeit)
     if spdc_on:
         R_pair = src.R_herald / src.eta_herald
-        t_pair = _poisson_times(r_src, R_pair, t0, T)
+        t_pair = snap_to_pulses(_poisson_times(r_src, R_pair, t0, T), cfg, t0, T)   # Puls: Paare nur in Pumppulsen
         herald_of_pair = r_src.random(len(t_pair)) < src.eta_herald
         t_dark = _poisson_times(r_src, src.R_dark, t0, T)
     else:
@@ -283,6 +299,10 @@ def simulate_block(cfg: SimConfig, b: BlockCfg, index: int, t0: float, clk: Digi
 
     # ---------------------------------------------------------------- Zufallstrigger und Marker (wahre Zeit)
     t_rand = _poisson_times(r_trig, b.random_rate, t0, T) if kind in ("heralded", "random") else np.empty(0)
+    if cfg.source.laser_mode == "pulsed" and len(t_rand):
+        # pulssynchroner Zufallstrigger (aus dem Laser-Sync abgeleitet): Fenster t_rand + d_RT − d_T liegt auf einem
+        # Pumppuls wie bei den Heralds; mehrere Trigger auf demselben Puls → einer
+        t_rand = np.unique(snap_to_pulses(t_rand, cfg, t0, T, shift=d.d_RT - d.d_T))
     # Quellmodell squeezed/test: an jedem Trigger ohne echten Herald (periodisch, Zufall, Dunkelzählung) liegt in der
     # ausgewerteten Mode der Zustand der Quelle; Mode an der Stelle, an der die Auswertung sie erwartet
     # (Trigger + d_S − d_T bzw. Herald + d_S), mit derselben LO-Phase θ(t)

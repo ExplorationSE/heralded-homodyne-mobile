@@ -247,7 +247,8 @@ class SimBackend:
         self.harp_extra_hz = 0.0              # Testlast (ServerConfig.sim_harp_extra_mcps), Ratenbegrenzung prüfen
 
     # Konfiguration der Sitzung
-    def make_config(self, session_id: str, seed: int, plan: str = "standard"):
+    def make_config(self, session_id: str, seed: int, plan: str = "standard", laser_mode: str | None = None):
+        """``laser_mode`` (cw | pulsed, Kasten Sitzung): Laserbetrieb der Pumpe; None = wie Grundkonfiguration."""
         from ..sim.config import SimConfig
         cfg = SimConfig.load(self.base_config) if self.base_config else SimConfig()
         cfg.session.id = session_id
@@ -270,6 +271,8 @@ class SimBackend:
                 b.duration_s = float(b.duration_s) * self.time_scale
         if self.harp_extra_hz > 0:
             cfg.harp.extra_rate_hz = float(self.harp_extra_hz)
+        if laser_mode:
+            cfg.set_laser_mode(laser_mode)
         return cfg
 
     def prepare(self, cfg) -> list[RunSpec]:

@@ -120,7 +120,7 @@ class ADQ32:
                     trigger_copy_port="GPIO", pulse_generator_step_s=c.pulse_gen_step,
                     wavelength_nm=c.optics.wavelength_nm, herald_detector=c.optics.herald_detector,
                     lo_monitor_pd=c.lo_monitor.pd_model, lo_monitor_attenuator_dB=c.lo_monitor.attenuator_dB,
-                    lo_monitor_dc_offset_V=c.lo_monitor.dc_offset_V)
+                    lo_monitor_dc_offset_V=c.lo_monitor.dc_offset_V, **laser_attrs(c))
 
     def periodic_grid(self, t0: float, duration: float, rate: float) -> np.ndarray:
         """Digitizer-Zeiten der internen periodischen Trigger im Lauf (Sample-Auflösung [Annahme])."""
@@ -254,3 +254,13 @@ class ADQ32:
         return DigitizerRecording(data, ts_rec, record_start.astype(np.int64), src.astype(np.uint8),
                                   kind_all[acc], idx_all[acc], ttrue_all[acc], ts_m, okm, n_in, cand_acc,
                                   data_b=data_b, lo_rel_true=lo_rel)
+
+
+def laser_attrs(cfg) -> dict:
+    """Laserbetrieb und Nenn-Modenform für die Geräteattribute (Gruppe ``device``): die Auswertung wählt damit die
+    Modenform (``mode_shape="auto"``); bei Puls zusätzlich die Pulsfolgefrequenz."""
+    s = cfg.source
+    out = dict(laser_mode=s.laser_mode, mode_shape=s.mode_shape)
+    if s.laser_mode == "pulsed":
+        out["pulse_rate_Hz"] = float(s.pulse_rate_Hz)
+    return out

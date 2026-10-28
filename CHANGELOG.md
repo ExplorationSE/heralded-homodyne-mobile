@@ -2,6 +2,21 @@
 
 ## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
 
+Auftrag „Laserbetrieb Puls/CW und Wigner-Funktion B“ (Herr Eilers, 28.10.2026):
+
+- **Laserbetrieb** `source.laser_mode` = `cw` (Standard) | `pulsed`, dazu `pulse_rate_Hz` (1 MHz) und
+  `pulse_offset_s`. CW unverändert (Poisson, Mode doppelt-exponentiell). Puls: Paarzeiten auf das Pulsraster
+  gerastet, zufällige Trigger pulssynchron (Fenster beginnt bei Puls + d_RT), Mode gaußförmig
+  (`mode_shape` ausdrücklich gesetzt hat Vorrang). Prüfung: Paare je Puls > 0,1 und Pulsabstand < Modenbreite → Warnung.
+- HDF5-Geräteattribute `laser_mode`, `mode_shape`, `pulse_rate_Hz`; Auswertung und Synchronisation mit
+  `mode_shape="auto"` (aus der Sitzung, alte Sitzungen doppelt-exponentiell); `result.json`/Kurzfassung: `laser`, `mode`.
+- **Server/App:** Auswahl „Laserbetrieb: Puls | CW“ in der Sitzungskarte neben dem Laufplan (Anzeige-Zustand
+  `laser_mode`, `start_session {laser_mode}`, `server_session.json: laser_mode`); Anzeige in Quellmodell-Zeile und
+  Laufplan-Beschreibung; Live-Vorschau mit passender Mode; Sitzungsliste „· Puls“.
+- **App: Karte „Wigner-Funktion B (ohne Herald)“** neben A: phasengemittelt aus W(r) (orange > 0, blau < 0);
+  mit Phase B und `wigner2d` die 2D-Karte. Mobil untereinander, Desktop nebeneinander; Phasenabdeckung bleibt zuletzt.
+- Tests: `tests/test_laser_mode.py`.
+
 Auftrag „Zerlege-Prozess und Ratenbegrenzung HydraHarp“ (Herr Eilers, 22.10.2026):
 
 - **Zerlege-Prozess** (`hhd/io/t2split.py`): Dekodieren und Aufteilen der T2-Records für die Live-Vorschau in einem

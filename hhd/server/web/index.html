@@ -31,6 +31,7 @@
     <div class="row between"><h2>Sitzung</h2><span id="state" class="pill">–</span></div>
     <div class="row wrap">
       <label>Laufplan <select id="plan"></select></label>
+      <label title="Laserbetrieb der Pumpe: CW = Dauerstrich (Paare/Heralds zufällig in der Zeit, Mode doppelt-exponentiell); Puls = gepulst (Paare nur in den Pumppulsen, pulssynchrone Trigger, gaußförmige Mode) – gilt für Simulation und Auswertung">Laserbetrieb <select id="laser"><option value="pulsed">Puls</option><option value="cw">CW</option></select></label>
       <label id="simeng_l" class="hidden" title="Simulator: Sitzung im Speicher oder in Zeitscheiben (beschränkter Speicher, lange Sitzungen)">Simulator <select id="simeng" data-ctl><option value="batch">Datei (im Speicher)</option><option value="stream">Datenstrom</option></select></label>
       <label>Tempo <input id="speed" type="number" min="0.05" max="50" step="0.5" value="1"></label>
       <label class="chk"><input id="autoana" type="checkbox" checked> automatisch auswerten</label>
@@ -92,6 +93,8 @@
     <div class="grid">
       <div class="card"><h2>Wigner-Funktion A (herald-bedingt)</h2><canvas id="c-wig" height="260"></canvas>
         <div class="legend" id="wiglbl">phasengemittelt, W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)</div></div>
+      <div class="card"><h2>Wigner-Funktion B (ohne Herald)</h2><canvas id="c-wigB" height="260"></canvas>
+        <div class="legend" id="wiglblB">phasengemittelt, W(x,p) aus W(r); orange &gt; 0, blau &lt; 0</div></div>
       <div class="card hidden" id="ph-var"><h2>Var(x<sub>θ</sub>) gegen θ</h2><canvas id="c-vth" height="220"></canvas>
         <div class="legend" id="vthlbl"><span class="lg a"></span>A <span class="lg b"></span>B <span class="lg mut2"></span>Vakuum ½</div></div>
       <div class="card"><h2>W(r) radial</h2><canvas id="c-wr" height="260"></canvas>

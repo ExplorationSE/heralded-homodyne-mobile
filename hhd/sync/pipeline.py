@@ -29,7 +29,7 @@ SYNC_SCHEMA = "hhd-sync/1.0"
 class SyncParams:
     """Auswerteparameter (keine Wahrheit): Modenform/-breite aus der Quellcharakterisierung, ADQ32-Rearm aus
     dem Datenblatt, Toleranzen."""
-    mode_shape: str = "double_exponential"
+    mode_shape: str = "auto"                # auto = aus dem Laserbetrieb der Sitzung (device.mode_shape), sonst double_exponential | gauss
     gamma: float = 1 / 40e-9
     rearm_s: float = 20e-9
     marker_period_s: float | None = None
@@ -273,7 +273,9 @@ def _vacuum_blocks(sess: SessionData, p: SyncParams) -> tuple[list, str]:
 def calibrate_delay(sess: SessionData, syncs: dict, p: SyncParams, reservoir=None) -> dict:
     t0 = time.perf_counter()
     fs = float(sess.device["sampling_rate_Hz"])
-    kern = Dl.mode_kernel(p.mode_shape, p.gamma, fs)
+    from ..modes.extract import resolve_mode_shape
+    shape = resolve_mode_shape(p.mode_shape, sess.device)
+    kern = Dl.mode_kernel(shape, p.gamma, fs)
     blocks, src = _vacuum_blocks(sess, p)
     if not blocks:
         # Ersatz: frühe Pretrigger-Samples der heraldierten Records (vor der Mode)
@@ -318,7 +320,7 @@ def calibrate_delay(sess: SessionData, syncs: dict, p: SyncParams, reservoir=Non
         trig, first, _ = rs.windows()
         pos0 = (trig[ix] - first[ix]) * fs
         sources.append((rs.run.read_records, ix, pos0))
-    res = Dl.calibrate(sources, fs, kern, norm, p.gamma, p.mode_shape, coarse=p.coarse_scan_s,
+    res = Dl.calibrate(sources, fs, kern, norm, p.gamma, shape, coarse=p.coarse_scan_s,
                        fine_half=p.fine_half_s, fine_step=p.fine_step_s, n_boot=p.n_boot, seed=p.seed,
                        method=p.delay_method)
     dT = res["delta"]; sT = res["sigma_boot"]

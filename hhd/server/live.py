@@ -81,9 +81,17 @@ class LivePreview:
         self.p = params or LiveParams()
         self.fs = fs
         self.lo_skip = lo_skip
-        self.bank = template_bank(ModeSpec("double_exponential", self.p.gamma, fs))
+        self.mode_shape = "double_exponential"
+        self.bank = template_bank(ModeSpec(self.mode_shape, self.p.gamma, fs))
         self.edges = np.linspace(-self.p.hist_range, self.p.hist_range, self.p.hist_bins + 1)
         self.reset()
+
+    def set_mode(self, shape: str, fs: float | None = None) -> None:
+        """Modenform (Laserbetrieb: CW double_exponential, Puls gauss) und Abtastrate der Vorschau setzen."""
+        fs = float(fs or self.fs)
+        if shape != self.mode_shape or fs != self.fs:
+            self.mode_shape, self.fs = shape, fs
+            self.bank = template_bank(ModeSpec(shape, self.p.gamma, fs))
 
     def reset(self) -> None:
         self.runs: list[RunStats] = []

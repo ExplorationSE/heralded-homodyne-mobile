@@ -18,7 +18,7 @@ import numpy as np
 
 from .. import __version__
 from ..calib.calibrate import CalibParams, Calibration, calibrate, crosstalk_check
-from ..modes.extract import ModeSpec, adc_offset, extract_run, template_bank
+from ..modes.extract import ModeSpec, adc_offset, extract_run, laser_info, resolve_mode_shape, template_bank
 from ..modes.pca import pca_fitted_template, pca_mode, pca_template
 from ..recon.core import photon_stats
 from ..recon.stats import group_stats
@@ -29,7 +29,7 @@ SCHEMA = "hhd-result/1.0"
 
 @dataclass
 class AnalysisParams:
-    mode_shape: str = "double_exponential"
+    mode_shape: str = "auto"                # auto = aus dem Laserbetrieb der Sitzung (device.mode_shape), sonst double_exponential | gauss
     gamma: float = 1 / 40e-9
     bandwidth_model: bool = True            # Analogbandbreite des Digitizers in der Vorlage berücksichtigen
     mode_source: str = "parametric"         # "pca": γ/Versatz aus PCA; "pca_raw": rohe Eigenmode (Prüfung)
@@ -81,7 +81,7 @@ class AnalysisParams:
 
 # ---------------------------------------------------------------- Quadraturen
 def extract_session(session, sd, ap: AnalysisParams, spec: ModeSpec | None = None):
-    spec = spec or ModeSpec(ap.mode_shape, ap.gamma, session.device["sampling_rate_Hz"],
+    spec = spec or ModeSpec(resolve_mode_shape(ap.mode_shape, session.device), ap.gamma, session.device["sampling_rate_Hz"],
                             session.device.get("analog_bandwidth_Hz") if ap.bandwidth_model else None)
     bank = template_bank(spec)
     kv = session.runs_of("vacuum")
@@ -467,7 +467,7 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
                         session=str(session.path), session_id=session.session_id,
                         campaign_id=session.campaign_id, calibration_id=session.calibration_id,
                         params=asdict(ap), mode=dict(spec.to_dict(), bandwidth_effect=float(ex["bank"].bandwidth_effect),
-                                                     adc_offset_lsb=ex["offset"]),
+                                                     adc_offset_lsb=ex["offset"]), laser=laser_info(session.device),
                         calibration=cal.to_dict(), drift_vacuum_lo=drift_kv, crosstalk=xt, pca=_pca_brief(pca),
                         groups={k: dict(runs=[b for b, _ in v], n=int(sum(m.sum() for _, m in v))) for k, v in groups.items()})
     rng = np.random.default_rng(ap.seed)

@@ -20,6 +20,9 @@ source:
   heralded_state: fock1
   model: auto
   squeeze_dB: 0.0
+  laser_mode: cw
+  pulse_rate_Hz: 1000000.0
+  pulse_offset_s: 0.0
   mode_shape: double_exponential
   gamma: 25000000.0
   sigma_spd: 1.6986e-11

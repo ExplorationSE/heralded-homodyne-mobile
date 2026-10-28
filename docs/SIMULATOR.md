@@ -83,6 +83,20 @@ Festlegung dieses Projekts, [unsicher] = noch am Gerät zu prüfen. Alle Zahlenw
   - Den Beginn jeder Rampe bzw. Stufe meldet ein Marker an die Harp (Bitmaske 2), erstmals 1 µs nach Blockbeginn.
     Daraus rekonstruiert die Analyse θ je Record.
 
+### Laserbetrieb Puls/CW (ab 0.15, 28.10.2026)
+
+- `source.laser_mode`: `cw` (Standard) oder `pulsed`. CW: Paare Poisson-verteilt, Mode `double_exponential`.
+- `pulsed`: Pulsraster t_k = `session.start_s` + `pulse_offset_s` + k/`pulse_rate_Hz` (Standard 1 MHz).
+  Paarzeiten werden Poisson gezogen und auf den nächsten Puls gerastet (Paare je Puls ≪ 1 → Warnung ab 0,1).
+  Dunkelzählungen bleiben Poisson (nicht pulssynchron).
+- Zufällige Trigger (`random_trigger`) werden so gerastet, dass t_rand + d_RT − d_T auf einem Puls liegt:
+  das Fenster steht wie bei geheraldeten Records pulssynchron (doppelte entfallen).
+- Mode: `gauss`, sofern `mode_shape` nicht ausdrücklich gesetzt ist (`set_laser_mode()` setzt beim Wechsel
+  gauss bzw. zurück doppelt-exponentiell). Warnung, wenn der Pulsabstand kleiner als die Modenbreite ist.
+- HDF5-Geräteattribute: `laser_mode`, `mode_shape`, bei Puls `pulse_rate_Hz`. Die Auswertung (`mode_shape="auto"`)
+  liest die Mode daraus; alte Sitzungen ohne Attribut → `double_exponential`.
+- Grenze: periodische Trigger (`free_running`) bleiben ADQ-intern und sind nicht pulssynchron.
+
 ## 3 HydraHarp 500 (`hhd/sim/harp.py`)
 
 **[Spez., HydraHarp 500 Manual]**:
@@ -401,6 +415,8 @@ Zufallsfenster. Die Tests (`tests/test_validation.py`) prüfen u. a.:
 ## 9 Grenzen (Stand 0.5.0.dev0)
 
 - Datenstrom-Simulator: Phasenmodi `ramp`/`steps` nicht unterstützt (siehe Abschnitt 7).
+- Laserbetrieb Puls: periodische Trigger (`free_running`) sind nicht pulssynchron; keine Pulsdauer-/Jitter-Statistik
+  des Lasers, Paare je Puls Poisson (keine Mehrpaar-Statistik je Puls über die Rasterung hinaus).
 - Die Referenzauswertung braucht die Ground Truth. Die Zuordnung Herald ↔ Record allein aus Markern folgt in
   AP4 (Synchronisation), Kalibrierung und Rekonstruktion in AP5–AP7.
 - Der Sollwert berücksichtigt keine überlappenden Nachbarmoden; bei R_h = 1 kHz und 1/γ = 40 ns ist das

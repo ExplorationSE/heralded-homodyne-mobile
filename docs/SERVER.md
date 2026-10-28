@@ -100,9 +100,9 @@ WebSocket `/ws`:
   (Betriebsart je Gerät und Sitzung), `live_any`, `fallback`, `waiting_continue`, Sitzung, Laufplan, Sperre, Anzeige,
   Geräte (Parameter, Spezifikation), Aufträge, `live` (aktueller Lauf mit Histogramm, alle Läufe, Verläufe, Warnungen).
 * Client → Server: `{"type":"command","cmd":…,"params":{…},"id":n}` → `{"type":"ack","id":n,"ok":…,"msg":…}`.
-  Befehle: `acquire_control`, `release_control`, `start_session {plan, speed, note, confirm?}` (mit Live-Gerät aus
+  Befehle: `acquire_control`, `release_control`, `start_session {plan, speed, note, laser_mode?, confirm?}` (mit Live-Gerät aus
   der Ferne zunächst `needs_confirm`), `stop_session`, `continue_run`,
-  `set_display {plan, speed, auto_analyze, hist_range, n_boot}`, `set_device {device, params, confirm?}`
+  `set_display {plan, speed, laser_mode, auto_analyze, hist_range, n_boot}`, `set_device {device, params, confirm?}`
   (Antwort `needs_confirm` + `confirm`), `analyze {session}`, `clear_warnings`.
 
 REST (lesend): `/api/health`, `/api/status`, `/api/sessions`, `/api/sessions/{id}/result` (vollständiges
@@ -367,6 +367,18 @@ Live-ähnlich (`rate_bench.py`, Blöcke à 0,1 s im Echtzeittakt, 10 s je Rate):
 Nachlauf am Laufende ≤ 0,09 s, Hauptprozess zu 5–16 % belegt. Bei 40 Mcps wächst der Rückstau um ≈ 24 MB/s (236 MB nach
 10 s); mit dem Standard 512 MB wäre nach ≈ 21 s Schluss. Im Server hält die Ratenbegrenzung
 (Grenzwert ≈ 20 Mcps auf der Box) den Lauf schon nach 10 s an.
+
+## 7h Laserbetrieb Puls/CW und Wigner-Funktion B (0.15, 28.10.2026)
+
+- Sitzungskarte: Auswahl „Laserbetrieb: Puls | CW“ neben dem Laufplan, Standard CW. Gespeichert im Anzeige-Zustand
+  (`display.laser_mode`, `set_display`), übergeben mit `start_session {laser_mode}`; gesperrt ohne Steuerung und
+  während eines Laufs. Sim und Live-Laufplan: `cfg.set_laser_mode()`; Replay übernimmt den Betrieb der Quellsitzung.
+- `server_session.json: laser_mode`; `/api/sessions`: `laser_mode`; Kurzfassung: `laser {mode, mode_shape,
+  pulse_rate_Hz?}`, `mode {shape, gamma}`. Die Live-Vorschau nutzt die Mode des Betriebs.
+- Anzeige: Quellmodell-Zeile und Laufplan-Beschreibung („Laserbetrieb Puls, pulssynchrone Fenster, Mode gauß,
+  f_rep 1 MHz“ bzw. „Laserbetrieb CW, Mode doppelt-exponentiell“).
+- Karte „Wigner-Funktion B (ohne Herald)“ neben A: phasengemittelt aus W(r), orange > 0, blau < 0; liegt Phase B
+  mit `wigner2d` vor, die 2D-Karte (MaxLik). Mobil untereinander, Desktop nebeneinander; Phasenabdeckung zuletzt.
 
 ## 8 Grenzen
 
