@@ -2,6 +2,18 @@
 
 ## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
 
+Auftrag „Wiedergabe aus Ordner, Stufe 1“ (Herr Eilers, 29.10.2026):
+
+- **App, Kasten Sitzung → „Aus Ordner wiedergeben“:** Pfad auf dem Mess-PC eingeben, „Durchsuchen…“ (Ordnerliste
+  des Mess-PCs) oder Ordner hineinziehen/„Ordner wählen…“ (Kopie nach `hhd_data/_import/`, nie `truth.h5`);
+  „Prüfen“ → „Sitzung erkannt: …“ oder Fehler; „Als Wiedergabe übernehmen“ stellt beide Geräte ohne Neustart auf
+  Wiedergabe, Kopfzeile WIEDERGABE; „Zurück zur Konfiguration“. Start gesperrt, solange ein Ordner eingetragen,
+  aber nicht übernommen ist. Laufplan und Laserbetrieb der Quellsitzung werden angezeigt und übernommen.
+- Server: `hhd/server/replaysrc.py`; Befehle `check_replay_dir`, `browse_dir`, `set_replay_dir`,
+  `clear_replay_dir` (nur mit Steuerung); `POST /api/replay/upload`; Status `replay`;
+  `server_session.json: replay_source`. Nur HHD-Sitzungsformat (Umwandlung von Hersteller-Rohdaten: Stufe 2).
+- Tests: `tests/test_replay_folder.py`; Screenshots 92_*; `docs/SERVER.md` 7i.
+
 Auftrag „Laserbetrieb Puls/CW und Wigner-Funktion B“ (Herr Eilers, 28.10.2026):
 
 - **Laserbetrieb** `source.laser_mode` = `cw` (Standard) | `pulsed`, dazu `pulse_rate_Hz` (1 MHz) und

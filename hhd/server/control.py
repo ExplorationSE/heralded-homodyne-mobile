@@ -32,7 +32,8 @@ CONFIRM_TTL_S = 120.0
 PROXY_HEADERS = ("cf-connecting-ip", "x-forwarded-for", "x-real-ip", "forwarded", "cf-ray")
 
 ALLOWED_CMDS = {"acquire_control", "release_control", "start_session", "stop_session", "set_display",
-                "set_device", "analyze", "clear_warnings", "continue_run"}
+                "set_device", "analyze", "clear_warnings", "continue_run",
+                "check_replay_dir", "set_replay_dir", "clear_replay_dir", "browse_dir"}
 
 
 class CommandError(ValueError):

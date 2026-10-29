@@ -41,6 +41,19 @@
       <button id="stop" class="bad" data-ctl>Stopp</button>
       <button id="cont" class="ok hidden" data-ctl>Weiter (nächster Lauf)</button>
     </div>
+    <details id="rsrc" class="rsrc">
+      <summary><b>Aus Ordner wiedergeben</b> <span id="rsrc_sum" class="mut"></span></summary>
+      <div id="rsrc_drop" class="dropzone" title="Ordner einer HHD-Sitzung (session.json, harp_*.ptu, digitizer.h5) hierher ziehen; die Dateien werden nach hhd_data\_import kopiert (truth.h5 nie)">Sitzungsordner hierher ziehen <span class="mut">oder</span> <label class="linkbtn">Ordner wählen…<input id="rsrc_pick" type="file" webkitdirectory multiple class="hidden"></label> <span class="mut">– oder Pfad auf dem Mess-PC:</span></div>
+      <div class="row wrap">
+        <input id="rsrc_path" type="text" class="grow" placeholder="C:\HarpADQ32HHDMobil\hhd_data\HHD-…" spellcheck="false" autocomplete="off" data-ctl>
+        <button id="rsrc_browse" class="small" data-ctl title="Ordner auf dem Mess-PC durchsuchen">Durchsuchen…</button>
+        <button id="rsrc_check" class="small" data-ctl>Prüfen</button>
+        <button id="rsrc_take" class="ok small" data-ctl title="Beide Geräte auf Wiedergabe dieses Ordners umstellen">Als Wiedergabe übernehmen</button>
+        <button id="rsrc_clear" class="small hidden" data-ctl title="Wiedergabe beenden, Betriebsart wie beim Serverstart">Zurück zur Konfiguration</button>
+      </div>
+      <div id="rsrc_msg" class="mut"></div>
+      <div id="rsrc_list" class="rsrc_list hidden"></div>
+    </details>
     <div id="plansrc" class="mut"></div>
     <div id="sessinfo" class="mut"></div>
     <div id="ratebar" class="ratebar" title="Höchste Ereignisrate, die dieser Rechner sicher zerlegt und schreibt (Selbsttest beim Serverstart oder harp_max_mcps). Darüber: Warnung, dauerhaft darüber: Lauf angehalten."></div>

@@ -96,3 +96,17 @@ h3.sub{font-size:14px;margin:.9em 0 .3em;color:var(--mut)}.tbl.verdict td{vertic
 .ratebar{font-size:13px;margin-top:6px;padding:4px 8px;border-radius:6px;border:1px solid var(--line)}
 .ratebar.warn{background:rgba(245,158,11,.14);color:#fde68a}.ratebar.stop{background:rgba(239,68,68,.16);color:#fecaca}
 .ratebar:empty{display:none}
+
+/* Wiedergabe aus Ordner (0.15) */
+.rsrc{margin:8px 0;border:1px solid var(--line);border-radius:10px;padding:6px 10px}
+.rsrc[open]{border-color:var(--acc)}.rsrc summary{cursor:pointer;padding:2px 0}
+.rsrc input.grow{flex:1 1 320px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+.dropzone{border:2px dashed var(--line);border-radius:10px;padding:12px;margin:8px 0;text-align:center;font-size:13px}
+.dropzone.over{border-color:var(--warn);background:rgba(245,158,11,.08)}.dropzone.busy{opacity:.7}
+label.linkbtn{color:var(--acc);text-decoration:underline;cursor:pointer;display:inline;font-size:13px}
+.rsrc_list{max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px;font-size:13px}
+.rsrc_list .bh{position:sticky;top:0;background:var(--card);padding:6px 8px;border-bottom:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.rsrc_list .bh code{flex:1 1 100%;word-break:break-all;color:var(--mut)}
+.rsrc_list .it{padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(34,48,79,.5)}
+.rsrc_list .it:hover{background:rgba(56,189,248,.08)}.rsrc_list .it.sess b{color:var(--warn)}
+.modebanner.replay{background:rgba(245,158,11,.12);color:#fed7aa}

@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import uuid
 from pathlib import Path
 from urllib.parse import urlencode
@@ -24,6 +25,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 
 from .control import COOKIE, Auth, CommandError, client_ip, is_https, is_local, login_page, origin_ok
+from .replaysrc import ReplaySourceError, upload_target
 from .service import MeasurementService, ServerConfig
 
 log = logging.getLogger("hhd.server")
@@ -153,6 +155,38 @@ def create_app(cfg: ServerConfig, root: Path | None = None, service: Measurement
                                            is_local(request.headers, addr))
         except CommandError as e:
             raise HTTPException(409, str(e)) from None
+
+    @app.post("/api/replay/upload")
+    async def replay_upload(request: Request, folder: str = Query(...), name: str = Query(...)):
+        """Drag-and-Drop eines Sitzungsordners (Wiedergabe, 0.15): eine Datei je Aufruf nach
+        ``<data_dir>/_import/<folder>/``; nur mit Steuerung (Kopf ``X-HHD-Client``), nie ``truth.h5``."""
+        addr = request.client.host if request.client else "?"
+        if not origin_ok(request.headers.get("origin"), request.headers.get("host"),
+                         request.headers.get("x-forwarded-host")):
+            raise HTTPException(403, "Herkunft abgelehnt")
+        cid = request.headers.get("x-hhd-client", "")
+        if not cid or not svc.lock.check(cid):
+            raise HTTPException(403, "keine Steuerberechtigung – zuerst Steuerung übernehmen")
+        try:
+            dest = upload_target(svc.data_dir / "_import", folder, name)
+        except ReplaySourceError as e:
+            raise HTTPException(400, str(e)) from None
+        if svc._thread and svc._thread.is_alive() and svc.replay_all and Path(svc.cfg.replay_dir).resolve() == dest.parent.resolve():
+            raise HTTPException(409, "dieser Ordner wird gerade wiedergegeben")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp, n = dest.with_name(dest.name + ".part"), 0
+        try:
+            with open(tmp, "wb") as f:
+                async for chunk in request.stream():
+                    f.write(chunk)
+                    n += len(chunk)
+            os.replace(tmp, dest)
+        except Exception as e:  # noqa: BLE001
+            tmp.unlink(missing_ok=True)
+            raise HTTPException(500, f"Speichern fehlgeschlagen: {e}") from None
+        svc.log.write(cid, client_ip(request.headers, addr), "upload_replay_file", dict(folder=folder, name=name,
+                      bytes=n), True, str(dest), is_local(request.headers, addr))
+        return dict(ok=True, path=str(dest.parent.resolve()), name=name, bytes=n)
 
     @app.get("/api/log")
     async def cmdlog(n: int = Query(100, ge=1, le=1000)):

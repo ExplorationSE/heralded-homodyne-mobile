@@ -29,6 +29,7 @@ from ..modes.extract import resolve_mode_shape
 from ..sim.config import LASER_MODES
 from ..sim.digitizer import laser_attrs
 from ..io.recorder import SessionRecorder
+from .replaysrc import ReplaySourceError, browse_dir, inspect_session_dir
 
 from ..sim.state_plans import (PHASE_PLANS, STATE_PLANS, phase_plan_doc, phase_plan_label, plan_doc,
                                 plan_label)
@@ -202,7 +203,11 @@ class MeasurementService:
                               "digitizer": cfg.digitizer_mode or cfg.device_mode})
         self.fallback_msg = ""
         self.device_errors: dict[str, str] = {}
+        self._modes0, self._replay_dir0 = dict(self.modes), cfg.replay_dir     # Betriebsart laut Konfiguration
+        self.replay_source: dict | None = None    # Wiedergabe-Quelle aus der App (Ordner übernommen, ab 0.15)
         self._build_devices()
+        if self.modes == {"harp": "replay", "digitizer": "replay"} and cfg.replay_dir:
+            self.replay_source = inspect_session_dir(self._abs(cfg.replay_dir)) | dict(origin="config")
         self.live = LivePreview(LiveParams(delta_T_s=cfg.delta_T_ns * 1e-9))
         self.display = dict(hist_range=4.0, plan="standard", speed=cfg.speed, auto_analyze=cfg.auto_analyze,
                             n_boot=cfg.n_boot, laser_mode="cw")
@@ -440,7 +445,7 @@ class MeasurementService:
                     plans=PLANS, plan_doc=PLAN_DOC, plan_groups=PLAN_GROUPS, lock=self.lock.state(), display=self.display, live=live,
                     jobs=[j.to_dict() for j in sorted(self.jobs.values(), key=lambda j: -j.t_submit)][:10],
                     devices=dict(harp=self.harp.info(), digitizer=self.dig.info()), device_error=self.device_error,
-                    rate=self.rate_status(),
+                    rate=self.rate_status(), replay=self.replay_status(),
                     server_time=time.strftime("%Y-%m-%d %H:%M:%S"))
 
     def _notify(self) -> None:
@@ -486,7 +491,11 @@ class MeasurementService:
         if self.device_error:
             raise CommandError(f"Geräte nicht bereit: {self.device_error}")
         plan = p.get("plan", self.display["plan"])
-        if plan not in PLANS:
+        src = (self.replay_source or {}).get("info", {}) if self.replay_all else {}
+        if self.replay_all:
+            plan = src.get("plan") or ""                       # Wiedergabe: Laufplan der Quellsitzung
+            p = dict(p, laser_mode=src.get("laser_mode") or p.get("laser_mode") or "cw")
+        elif plan not in PLANS:
             raise CommandError(f"Laufplan {plan!r} unbekannt ({', '.join(PLANS)})")
         speed = float(p.get("speed", self.display["speed"]))
         if not 0.05 <= speed <= 50:
@@ -504,7 +513,7 @@ class MeasurementService:
                     return dict(ok=False, needs_confirm=True, confirm=info,
                                 msg=f"Start mit LIVE-Gerät ({', '.join(k for k, m in self.modes.items() if m == 'live')}) "
                                     "aus der Ferne bitte ausdrücklich bestätigen (ED-8b)")
-        self.display.update(plan=plan, speed=speed, laser_mode=laser)
+        self.display.update(speed=speed, laser_mode=laser, **({"plan": plan} if plan in PLANS else {}))
         self.session_laser = laser
         if self.backend is not None:
             self.backend.speed = speed
@@ -518,7 +527,81 @@ class MeasurementService:
         self._continue.clear()
         self._thread = threading.Thread(target=self._run_session, args=(sid, plan, note), daemon=True)
         self._thread.start()
-        return dict(ok=True, msg=f"Sitzung {sid} gestartet ({plan})", session_id=sid)
+        what = (f"Wiedergabe von {src.get('session_id') or Path(self.cfg.replay_dir).name}" if self.replay_all
+                else plan)
+        return dict(ok=True, msg=f"Sitzung {sid} gestartet ({what})", session_id=sid)
+
+    # ------------------------------------------------------------------ Wiedergabe aus Ordner (Stufe 1, 0.15)
+    @property
+    def replay_all(self) -> bool:
+        return self.modes == {"harp": "replay", "digitizer": "replay"}
+
+    def replay_status(self) -> dict:
+        rs = self.replay_source
+        return dict(active=self.replay_all, path=(rs or {}).get("path") or (self.cfg.replay_dir if self.replay_all else ""),
+                    ok=bool(rs and rs.get("ok")), msg=(rs or {}).get("msg", ""), info=(rs or {}).get("info", {}),
+                    warnings=(rs or {}).get("warnings", []), origin=(rs or {}).get("origin", ""),
+                    configured_modes=dict(self._modes0), can_restore=self.modes != self._modes0 or
+                    (self.replay_all and self.cfg.replay_dir != self._replay_dir0))
+
+    def _idle_or_raise(self, what: str) -> None:
+        if self._thread and self._thread.is_alive():
+            raise CommandError(f"{what} nur ohne laufende Sitzung")
+        if self._checking.is_set():
+            raise CommandError("Geräteprüfung läuft – bitte warten")
+
+    def _cmd_check_replay_dir(self, p: dict, **_) -> dict:
+        r = inspect_session_dir(p.get("path", ""))
+        return dict(ok=r["ok"], msg=r["msg"], check=r)
+
+    def _cmd_browse_dir(self, p: dict, **_) -> dict:
+        try:
+            b = browse_dir(p.get("path") or None, self.data_dir)
+        except ReplaySourceError as e:
+            raise CommandError(str(e)) from None
+        return dict(ok=True, msg=b["path"], browse=b)
+
+    def _switch_devices(self, modes: dict, replay_dir: str) -> None:
+        """Geräte schließen und mit neuer Betriebsart/Quelle neu aufbauen; bei Fehler alter Zustand."""
+        old = (dict(self.modes), self.cfg.replay_dir, self.fallback_msg)
+        for d in (self.harp, self.dig):
+            try:
+                d.close()
+            except Exception:  # noqa: BLE001
+                pass
+        self.modes, self.cfg.replay_dir, self.fallback_msg = dict(modes), replay_dir, ""
+        try:
+            self._build_devices()
+        except Exception:
+            self.modes, self.cfg.replay_dir, self.fallback_msg = old
+            self._build_devices()
+            raise
+
+    def _cmd_set_replay_dir(self, p: dict, **_) -> dict:
+        self._idle_or_raise("Wiedergabe-Quelle wechseln")
+        r = inspect_session_dir(p.get("path", ""))
+        if not r["ok"]:
+            raise CommandError(r["msg"])
+        self._switch_devices({"harp": "replay", "digitizer": "replay"}, r["path"])
+        self.replay_source = r | dict(origin="app")
+        self.plan, self.run_idx = [], -1
+        laser = r["info"].get("laser_mode")
+        if laser in LASER_MODES:
+            self.display["laser_mode"] = laser
+        if r["info"].get("plan") in PLANS:
+            self.display["plan"] = r["info"]["plan"]
+        if self.device_error:
+            return dict(ok=False, msg=f"Wiedergabe gesetzt, Geräte nicht bereit: {self.device_error}", check=r)
+        return dict(ok=True, msg=f"Als Wiedergabe übernommen: {r['info'].get('session_id')} – „Sitzung starten“ "
+                                 "spielt sie ab", check=r)
+
+    def _cmd_clear_replay_dir(self, p: dict, **_) -> dict:
+        self._idle_or_raise("Betriebsart zurücksetzen")
+        self._switch_devices(self._modes0, self._replay_dir0)
+        self.replay_source = (inspect_session_dir(self._abs(self._replay_dir0)) | dict(origin="config")
+                              if self.replay_all and self._replay_dir0 else None)
+        return dict(ok=True, msg="Wiedergabe beendet – Betriebsart wie konfiguriert: "
+                                 + ", ".join(f"{k} {v}" for k, v in self.modes.items()))
 
     def _cmd_stop_session(self, p: dict, **_) -> dict:
         if not (self._thread and self._thread.is_alive()):
@@ -638,6 +721,7 @@ class MeasurementService:
         n_done = 0
         rec = None
         modes, acq = dict(self.modes), self.acquisition_mode
+        src_info = (self.replay_source or {}).get("info", {}) if acq == "replay" else {}
         try:
             self.state, self.msg = "vorbereitung", "Laufplan wird vorbereitet"
             self._notify()
@@ -749,8 +833,12 @@ class MeasurementService:
                     self.backend.write_files(out, n_done)
                 meta_s = dict(format="hhd-server-session", software=f"hhd {__version__}", mode=acq,
                               device_modes=modes, acquisition_mode=acq, sim_engine=self.sim_engine,
-                              simulated=self.simulated, plan=plan, plan_label=PLANS.get(plan, plan), laser_mode=laser,
-                              state=plan_state(plan), note=note, runs_done=n_done, runs_planned=len(runs),
+                              simulated=self.simulated, plan=plan,
+                              plan_label=PLANS.get(plan, plan) or (f"Wiedergabe {src_info.get('session_id', '')}".strip()),
+                              laser_mode=laser, state=plan_state(plan) if plan else dict(preset="", label="Wiedergabe"),
+                              replay_source=dict(path=str(self.cfg.replay_dir), session_id=src_info.get("session_id"),
+                                                 simulated=src_info.get("simulated")) if acq == "replay" else None,
+                              note=note, runs_done=n_done, runs_planned=len(runs),
                               stopped=self._stop.is_set(), rate_stop=self._rate_stop_msg,
                               rate_limit=self.rate_status(), devices=dict(harp=self.harp.info()["params"],
                                                                         digitizer=self.dig.info()["params"]),

@@ -120,6 +120,11 @@ function render() {
       " · kritische Parameter nur am Mess-PC oder mit Bestätigung" : "") +
       (S.fallback ? `<br><b>Rückfall:</b> ${esc(S.fallback)}` : "");
     mb.className = "modebanner " + (sm === "live" ? "live" : "mixed");
+  } else if (S.replay && S.replay.active) {
+    const I = S.replay.info || {};
+    mb.innerHTML = `<b>WIEDERGABE</b> – Quelle: ${esc(I.session_id || S.replay.path)}${I.simulated === false ? " (gemessen)" : I.simulated ? " (simuliert)" : ""} · <code>${esc(S.replay.path)}</code>` +
+      (S.replay.origin === "app" ? " · in der App gewählt" : " · laut Konfiguration") + " · truth.h5 wird nie übernommen";
+    mb.className = "modebanner replay";
   } else mb.className = "modebanner hidden";
   $("sub").textContent = `${S.devices.harp.model} · ${S.devices.digitizer.model} · hhd ${S.version}`;
   const mine = S.lock.holder === me, other = S.lock.holder && !mine;
@@ -129,7 +134,8 @@ function render() {
   document.querySelectorAll("[data-ctl]").forEach(b => b.disabled = !mine);
   const running = ["vorbereitung", "messung", "schreiben", "pause"].includes(S.state);
   const paused = S.state === "pause";
-  $("start").disabled = !mine || running || paused; $("stop").disabled = !mine || !(running || paused);
+  $("start").disabled = !mine || running || paused || rsrcBlocksStart(); $("stop").disabled = !mine || !(running || paused);
+  renderReplaySrc(mine, running || paused);
   $("cont").classList.toggle("hidden", !S.waiting_continue); $("cont").disabled = !mine;
   const st = $("state"); st.textContent = S.state_text; st.className = "pill" + (running ? " run" : S.state === "fehler" ? " err" : "");
   const plan = $("plan");
@@ -146,11 +152,16 @@ function render() {
   plan.title = (S.plan_doc || {})[plan.value] || "";
   { // Quellmodell des gewählten Laufplans sichtbar (aus der Planbeschreibung; Fock-Pläne ohne Angabe: SPDC)
     const doc = (S.plan_doc || {})[plan.value] || "", m = doc.match(/(Quetschquelle|SPDC-Paarquelle|Testmuster)[^·]*(· B: [^·]*)?/);
-    $("plansrc").innerHTML = `Quellmodell: <b>${esc(m ? m[0].trim() : "SPDC-Paarquelle · B: thermisch ≈ Vakuum")}</b> · ${laserShort({ mode: S.display.laser_mode || "cw" })}`;
+    if (S.replay && S.replay.active) {
+      const I = S.replay.info || {};
+      $("plansrc").innerHTML = `Wiedergabe: <b>${esc(I.session_id || "?")}</b> · Laufplan der Quelle: <b>${esc(I.plan_label || I.plan || "unbekannt")}</b>` +
+        (I.kinds ? ` · ${esc(I.kinds)}` : "") + ` · ${laserShort({ mode: I.laser_mode || S.display.laser_mode || "cw" })}`;
+    } else $("plansrc").innerHTML = `Quellmodell: <b>${esc(m ? m[0].trim() : "SPDC-Paarquelle · B: thermisch ≈ Vakuum")}</b> · ${laserShort({ mode: S.display.laser_mode || "cw" })}`;
   }
   const lz = $("laser");
   if (document.activeElement !== lz) lz.value = S.display.laser_mode || "cw";
-  lz.disabled = !mine || running || paused;
+  const rep = !!(S.replay && S.replay.active);
+  lz.disabled = !mine || running || paused || rep; plan.disabled = !mine || running || paused || rep;
   lz.title = lz.title.split("\n")[0] + "\nGewählt: " + (lz.value === "pulsed" ? "Puls – Paare nur in den Pumppulsen, pulssynchrone Trigger (Zufall/Herald), Mode gauß" : "CW – Paare/Heralds zufällig in der Zeit (Poisson), Mode doppelt-exponentiell");
   if (document.activeElement !== $("speed")) $("speed").value = S.display.speed;
   $("autoana").checked = !!S.display.auto_analyze;
@@ -545,6 +556,135 @@ function startSession(confirm) {
   });
 }
 $("start").onclick = () => startSession();
+
+// ------------------------------------------------------------------ Wiedergabe aus Ordner (Stufe 1, 0.15)
+const RS = { check: null, busy: false, list: null };
+const rsPath = () => $("rsrc_path").value.trim().replace(/^"|"$/g, "");
+function rsrcBlocksStart() {   // Pfad eingetragen, aber nicht (gültig) übernommen: Start gesperrt
+  const p = rsPath(); if (!p || !S || !S.replay) return false;
+  if (S.replay.active && p === S.replay.path) return false;
+  return !(S.replay.active && RS.check && RS.check.path === S.replay.path && RS.check.raw === p);
+}
+function rsMsg(html, cls = "mut") { $("rsrc_msg").className = cls; $("rsrc_msg").innerHTML = html; }
+function renderReplaySrc(mine, busy) {
+  const R = S.replay || {}, act = !!R.active, ok = !!(RS.check && RS.check.ok && RS.check.raw === rsPath());
+  $("rsrc_sum").textContent = act ? `– aktiv: ${(R.info || {}).session_id || R.path}` : "";
+  if (act && !rsPath() && document.activeElement !== $("rsrc_path")) $("rsrc_path").value = R.path || "";
+  if (act && R.origin === "app" && !$("rsrc").open && !$("rsrc").dataset.seen) { $("rsrc").open = true; $("rsrc").dataset.seen = 1; }
+  const lock = !mine || busy || RS.busy;
+  ["rsrc_path", "rsrc_browse", "rsrc_check"].forEach(id => $(id).disabled = lock);
+  $("rsrc_take").disabled = lock || !ok || (act && RS.check.path === R.path);
+  $("rsrc_clear").classList.toggle("hidden", !R.can_restore); $("rsrc_clear").disabled = lock;
+  $("rsrc_drop").classList.toggle("busy", lock);
+  if (!$("rsrc_msg").innerHTML) {
+    if (act && R.msg) rsMsg(`<span class="ok-t">✔ ${esc(R.msg)}</span>`);
+    else if (!act) rsMsg("Ordner einer HHD-Sitzung (session.json, harp_*.ptu, digitizer.h5) prüfen und als Wiedergabe übernehmen; danach „Sitzung starten“.");
+  }
+  if (rsPath() && rsrcBlocksStart() && mine && !busy) $("start").title = "Erst „Prüfen“ und „Als Wiedergabe übernehmen“ – oder das Pfadfeld leeren";
+  else $("start").title = "";
+}
+function showCheck(r, raw) {
+  RS.check = Object.assign({}, r, { raw });
+  const w = (r.warnings || []).length ? `<br><span class="warn-t">Hinweise: ${esc(r.warnings.join("; "))}</span>` : "";
+  if (r.ok) {
+    const taken = S.replay && S.replay.active && S.replay.path === r.path;
+    rsMsg(`<span class="ok-t">✔ ${esc(r.msg)}</span>` + (taken ? " · <b>übernommen</b> – „Sitzung starten“ spielt sie ab" : " · jetzt „Als Wiedergabe übernehmen“") + w);
+  } else rsMsg(`<span class="bad-t">✖ ${esc(r.msg)}</span>` + w);
+  render();
+}
+function rsCheck(path, then) {
+  const raw = path ?? rsPath(); if (path != null) $("rsrc_path").value = path;
+  if (!raw) { rsMsg('<span class="bad-t">Bitte einen Ordner angeben</span>'); return; }
+  rsMsg("prüfe …");
+  send("check_replay_dir", { path: raw }, (m) => { if (m.check) showCheck(m.check, raw); else rsMsg(`<span class="bad-t">${esc(m.msg)}</span>`); if (then && m.ok) then(); });
+}
+function rsTake() {
+  const raw = rsPath(); RS.busy = true; rsMsg("übernehme – Geräte werden auf Wiedergabe umgestellt …"); render();
+  send("set_replay_dir", { path: raw }, (m) => {
+    RS.busy = false;
+    if (m.check) RS.check = Object.assign({}, m.check, { raw });
+    if (m.ok) { rsMsg(`<span class="ok-t">✔ ${esc(m.msg)}</span>`); $("rsrc_list").classList.add("hidden"); toast("Wiedergabe übernommen"); }
+    else rsMsg(`<span class="bad-t">✖ ${esc(m.msg)}</span>`);
+    render();
+  });
+}
+function rsBrowse(path) {
+  send("browse_dir", path ? { path } : (rsPath() ? { path: rsPath() } : {}), (m) => {
+    if (!m.ok) { if (path === undefined && rsPath()) return rsBrowse(""); return toast(m.msg, true); }
+    const B = m.browse, L = $("rsrc_list"); RS.list = B;
+    L.innerHTML = `<div class="bh"><code>${esc(B.path)}</code>` +
+      (B.parent ? `<button class="small" data-p="${esc(B.parent)}">↑ übergeordnet</button>` : "") +
+      B.roots.map(r => `<button class="small ghost" data-p="${esc(r.path)}">${esc(r.name)}</button>`).join("") +
+      (B.is_session ? `<button class="small ok" data-s="${esc(B.path)}">diesen Ordner wählen</button>` : "") +
+      `<button class="small ghost" data-x="1">schließen</button></div>` +
+      (B.dirs.map(d => `<div class="it${d.session ? " sess" : ""}" data-${d.session ? "s" : "p"}="${esc(d.path)}">${d.session ? "▶ <b>" + esc(d.name) + "</b> <small class=\"mut\">HHD-Sitzung</small>" : "📁 " + esc(d.name)}</div>`).join("")
+        || '<div class="it mut">keine Unterordner</div>') + (B.truncated ? '<div class="it mut">… gekürzt</div>' : "");
+    L.classList.remove("hidden");
+  });
+}
+$("rsrc_list").onclick = (e) => {
+  const t = e.target.closest("[data-p],[data-s],[data-x]"); if (!t) return;
+  if (t.dataset.x) $("rsrc_list").classList.add("hidden");
+  else if (t.dataset.s) { rsCheck(t.dataset.s); $("rsrc_list").classList.add("hidden"); }
+  else rsBrowse(t.dataset.p);
+};
+$("rsrc_check").onclick = () => rsCheck();
+$("rsrc_take").onclick = rsTake;
+$("rsrc_browse").onclick = () => rsBrowse();
+$("rsrc_clear").onclick = () => send("clear_replay_dir", {}, (m) => { toast(m.msg, !m.ok); if (m.ok) { $("rsrc_path").value = ""; RS.check = null; rsMsg(""); } render(); });
+$("rsrc_path").oninput = () => { RS.check = null; rsMsg(""); render(); };
+$("rsrc_path").onkeydown = (e) => { if (e.key === "Enter") rsCheck(); };
+// Drag-and-Drop / Ordnerauswahl: Dateien zum Server kopieren (hhd_data/_import/<Ordner>), dann prüfen
+const UP_OK = /^(session\.json|server_session\.json|digitizer\.h5|[A-Za-z0-9_.\-]+\.ptu)$/;
+async function rsUpload(folder, files) {
+  if (!S || S.lock.holder !== me) return toast("Zuerst Steuerung übernehmen", true);
+  folder = (folder || "").replace(/[^A-Za-z0-9_.\-]/g, "_").slice(0, 80) || `Upload-${Date.now()}`;
+  const use = files.filter(f => UP_OK.test(f.name)), skip = files.filter(f => !UP_OK.test(f.name)).map(f => f.name);
+  if (!use.some(f => f.name === "session.json")) return showCheck({ ok: false, msg: "Keine gültige HHD-Sitzung: session.json fehlt im abgelegten Ordner", warnings: [] }, "");
+  const total = use.reduce((a, f) => a + f.size, 0); let done = 0, path = "";
+  RS.busy = true; render();
+  try {
+    for (const f of use) {
+      rsMsg(`kopiere ${esc(f.name)} … ${Math.round(100 * done / Math.max(total, 1))} % von ${(total / 1e6).toFixed(1)} MB`);
+      const r = await fetch(`/api/replay/upload?folder=${encodeURIComponent(folder)}&name=${encodeURIComponent(f.name)}`,
+        { method: "POST", body: f, headers: { "X-HHD-Client": me, "Content-Type": "application/octet-stream" }, credentials: "same-origin" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || r.statusText);
+      done += f.size; path = j.path;
+    }
+  } catch (e) { RS.busy = false; rsMsg(`<span class="bad-t">✖ Kopieren fehlgeschlagen: ${esc(e.message)}</span>`); render(); return; }
+  RS.busy = false;
+  if (skip.length) toast(`nicht übernommen: ${skip.slice(0, 4).join(", ")}${skip.length > 4 ? " …" : ""}`);
+  rsCheck(path);
+}
+function readDir(entry) {
+  return new Promise((res) => {
+    const rd = entry.createReader(), out = [];
+    const next = () => rd.readEntries(async (es) => {
+      if (!es.length) return res(Promise.all(out));
+      for (const e of es) if (e.isFile) out.push(new Promise((r2) => e.file(r2, () => r2(null))));
+      next();
+    }, () => res(Promise.all(out)));
+    next();
+  });
+}
+const dz = $("rsrc_drop");
+dz.ondragover = (e) => { e.preventDefault(); dz.classList.add("over"); };
+dz.ondragleave = () => dz.classList.remove("over");
+dz.ondrop = async (e) => {
+  e.preventDefault(); dz.classList.remove("over");
+  const items = [...(e.dataTransfer.items || [])].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  const dir = items.find(x => x.isDirectory);
+  if (dir) return rsUpload(dir.name, (await readDir(dir)).filter(Boolean));
+  const files = [...(e.dataTransfer.files || [])];
+  if (files.length) return rsUpload("", files);
+  toast("Bitte einen Ordner ablegen", true);
+};
+$("rsrc_pick").onchange = (e) => {
+  const fs = [...e.target.files]; if (!fs.length) return;
+  const top = (fs[0].webkitRelativePath || "").split("/")[0];
+  rsUpload(top, fs.filter(f => (f.webkitRelativePath || f.name).split("/").length <= 2)); e.target.value = "";
+};
 $("cont").onclick = () => send("continue_run");
 $("stop").onclick = () => { if (confirm("Sitzung stoppen? Abgeschlossene Läufe werden gespeichert.")) send("stop_session"); };
 $("plan").onchange = () => send("set_display", { plan: $("plan").value });

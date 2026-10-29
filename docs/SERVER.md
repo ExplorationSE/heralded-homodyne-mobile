@@ -103,11 +103,12 @@ WebSocket `/ws`:
   Befehle: `acquire_control`, `release_control`, `start_session {plan, speed, note, laser_mode?, confirm?}` (mit Live-Gerät aus
   der Ferne zunächst `needs_confirm`), `stop_session`, `continue_run`,
   `set_display {plan, speed, laser_mode, auto_analyze, hist_range, n_boot}`, `set_device {device, params, confirm?}`
-  (Antwort `needs_confirm` + `confirm`), `analyze {session}`, `clear_warnings`.
+  (Antwort `needs_confirm` + `confirm`), `analyze {session}`, `clear_warnings`; Wiedergabe aus Ordner (7i):
+  `check_replay_dir {path}`, `browse_dir {path?}`, `set_replay_dir {path}`, `clear_replay_dir`.
 
 REST (lesend): `/api/health`, `/api/status`, `/api/sessions`, `/api/sessions/{id}/result` (vollständiges
 `result.json`), `/api/sessions/{id}/summary` (Kurzfassung für die App), `/api/sessions/{id}/report`,
-`/api/sessions/{id}/live` (Aufzeichnung der Live-Vorschau), `/api/log?n=`, `/api/devices/check?alle=` (Geräteprüfung ohne Messung, nur ohne laufende Sitzung – sonst 409; `docs/HARDWARE.md` Abschnitt 6).
+`/api/sessions/{id}/live` (Aufzeichnung der Live-Vorschau), `/api/log?n=`, schreibend nur `POST /api/replay/upload?folder=&name=` (7i), `/api/devices/check?alle=` (Geräteprüfung ohne Messung, nur ohne laufende Sitzung – sonst 409; `docs/HARDWARE.md` Abschnitt 6).
 
 ## 6 Dateien einer Server-Sitzung
 
@@ -379,6 +380,41 @@ Nachlauf am Laufende ≤ 0,09 s, Hauptprozess zu 5–16 % belegt. Bei 40 Mcps w�
   f_rep 1 MHz“ bzw. „Laserbetrieb CW, Mode doppelt-exponentiell“).
 - Karte „Wigner-Funktion B (ohne Herald)“ neben A: phasengemittelt aus W(r), orange > 0, blau < 0; liegt Phase B
   mit `wigner2d` vor, die 2D-Karte (MaxLik). Mobil untereinander, Desktop nebeneinander; Phasenabdeckung zuletzt.
+
+## 7i Wiedergabe aus Ordner (Stufe 1, 0.15, 29.10.2026)
+
+Eine vorhandene **HHD-Sitzung** (`session.json`, `harp_<lauf>.ptu` je Lauf, `digitizer.h5`, optional
+`server_session.json`) lässt sich in der App als Wiedergabe-Quelle wählen, ohne `server.toml` zu ändern oder den
+Server neu zu starten. Rohdaten der Hersteller-Software (ohne `session.json`) werden nicht umgewandelt (Stufe 2).
+
+Bedienung (Kasten **Sitzung → „Aus Ordner wiedergeben“**):
+
+1. Steuerung übernehmen.
+2. Ordner angeben – eine von drei Möglichkeiten:
+   * **Pfad auf dem Mess-PC** eintragen (z. B. `C:\HarpADQ32HHDMobil\hhd_data\HHD-20261028-143012`), Enter oder „Prüfen“;
+   * **„Durchsuchen…“**: Ordnerliste des Mess-PCs (Start im Datenordner, Laufwerke, Benutzerordner;
+     HHD-Sitzungen mit ▶ oben, neueste zuerst), Klick auf eine Sitzung prüft sie;
+   * **Ordner hierher ziehen** oder **„Ordner wählen…“** (auch vom Laptop/Handy aus): die Sitzungsdateien werden nach
+     `hhd_data\_import\<Ordnername>\` kopiert (nur `session.json`, `server_session.json`, `digitizer.h5`, `*.ptu`;
+     `truth.h5` und alles andere nie), danach automatisch geprüft. Am Mess-PC ist der Pfad schneller (keine Kopie).
+3. Statuszeile: „✔ Sitzung erkannt: HHD-… · 7 Läufe (2× K-V, …) · 3 s · Laserbetrieb Puls · Laufplan … ·
+   simuliert/gemessen · 48 MB“ oder „✖ Keine gültige HHD-Sitzung: digitizer.h5 fehlt …“ (weitere Fehler: Ordner
+   nicht gefunden, `session.json` fehlt/kein HHD-Manifest, keine Läufe, PTU-Datei fehlt, Block fehlt in
+   `digitizer.h5`). Hinweise (z. B. „truth.h5 vorhanden – wird nie übernommen“) sperren nicht.
+4. **„Als Wiedergabe übernehmen“**: beide Geräte auf `replay` mit diesem Ordner (Geräte werden geschlossen und neu
+   geöffnet; nur ohne laufende Sitzung/Geräteprüfung). Kopfzeile **WIEDERGABE** (HydraHarp REPLAY, ADQ32 REPLAY) und
+   orange Leiste mit Quelle und Pfad; Laufplan und Laserbetrieb sind gesperrt und zeigen die Werte der Quellsitzung.
+5. **„Sitzung starten“** wie gewohnt: Wiedergabe wie bisher (`ReplayBackend`, Tempo wirksam), neue Sitzung im
+   Datenordner, Verweise/Kopien der Quelldateien ohne `truth.h5`; `server_session.json` mit `plan`/`laser_mode` der
+   Quelle und `replay_source {path, session_id, simulated}`; danach automatische Auswertung wie immer.
+6. **„Zurück zur Konfiguration“**: Betriebsart wie beim Serverstart (`server.toml`/Startskript).
+
+Solange ein Pfad eingetragen, aber nicht geprüft und übernommen ist, bleibt „Sitzung starten“ gesperrt (Feld leeren
+→ wieder frei). Rechte: alle vier Befehle und das Hochladen nur mit Zugangscode **und** Steuerung; Prüfen und
+Durchsuchen lesen nur (Ordnernamen, `session.json`, Kopf von `digitizer.h5`, Dateigrößen) – jeder Ordner des
+Mess-PCs ist so einsehbar. Hochladen prüft zusätzlich die Herkunft (wie der WebSocket). Alles im Befehlsprotokoll.
+Code: `hhd/server/replaysrc.py`, `service.py` (`_cmd_*_replay_dir`, `_cmd_browse_dir`, Status `replay`),
+`app.py` (`/api/replay/upload`); Tests `tests/test_replay_folder.py`; Screenshots 92_* (`tools/app_screens_wiedergabe_ordner.py`).
 
 ## 8 Grenzen
 
