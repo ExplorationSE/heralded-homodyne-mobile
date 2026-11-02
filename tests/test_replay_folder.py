@@ -141,6 +141,7 @@ def test_upload_folder_via_api(src_session, tmp_path):
                     assert msg["ok"], msg
                     break
             skipped = []
+            last_ok = None
             for p in files:
                 r = cl.post(url, params=dict(folder=src_session.name, name=p.name), content=p.read_bytes(),
                             headers={"X-HHD-Client": cid})
@@ -149,7 +150,8 @@ def test_upload_folder_via_api(src_session, tmp_path):
                     skipped.append(p.name)
                 else:
                     assert r.status_code == 200, r.text
+                    last_ok = r
             dest = tmp_path / "data" / "_import" / src_session.name
             assert skipped == ["truth.h5"] and not (dest / "truth.h5").exists()
             assert inspect_session_dir(dest)["ok"]
-            assert r.json()["path"] == str(dest.resolve())
+            assert last_ok is not None and last_ok.json()["path"] == str(dest.resolve())
