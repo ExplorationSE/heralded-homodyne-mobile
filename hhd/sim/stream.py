@@ -18,6 +18,7 @@ from typing import Callable, Iterator
 import numpy as np
 
 from .engine import BlockResult, RunResult
+from .pacing import Paced
 
 
 @dataclass
@@ -39,15 +40,16 @@ class Chunk:
     run_id: str = ""
 
 
-class SimStream:
+
+class SimStream(Paced):
     def __init__(self, res: RunResult, chunk_s: float = 0.05, speed: float = 1.0, realtime: bool = True,
                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep):
         if chunk_s <= 0 or speed <= 0:
             raise ValueError("chunk_s und speed > 0")
+        self._clock, self._sleep, self._pace_clock = clock, sleep, clock
         self.res, self.chunk_s, self.speed, self.realtime = res, chunk_s, speed, realtime
-        self._clock, self._sleep = clock, sleep
 
-    def _block_chunks(self, br: BlockResult, t_wall0: float, t_offset: float) -> Iterator[Chunk]:
+    def _block_chunks(self, br: BlockResult, t_offset: float) -> Iterator[Chunk]:
         tu = self.res.device_attrs["time_unit_s"]
         L = self.res.device_attrs["record_length"]
         fs = self.res.device_attrs["sampling_rate_Hz"]
@@ -67,10 +69,10 @@ class SimStream:
         for k in range(n):
             t1 = min((k + 1) * self.chunk_s, br.duration)
             if self.realtime:
-                due = t_wall0 + (t_offset + t1) / self.speed
-                wait = due - self._clock()
+                wait = self._pace_due(t_offset + t1) - self._clock()
                 if wait > 0:
                     self._sleep(wait)
+            self._t_last = t_offset + t1
             h1, r1, m1 = h_idx[k], r_idx[k], m_idx[k]
             yield Chunk(br.cfg.id, br.dataset_type, k, k * self.chunk_s, t1, br.harp_records[h0:h1],
                         dg.data[r0:r1], dg.timestamp[r0:r1], dg.record_start[r0:r1], dg.trigger_source[r0:r1],
@@ -79,10 +81,10 @@ class SimStream:
             h0, r0, m0 = h1, r1, m1
 
     def __iter__(self) -> Iterator[Chunk]:
-        t_wall0 = self._clock()
+        self._pace_start()
         t_off = 0.0
         for br in self.res.blocks:
-            yield from self._block_chunks(br, t_wall0, t_off)
+            yield from self._block_chunks(br, t_off)
             t_off += br.duration
 
 

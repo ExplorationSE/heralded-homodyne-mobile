@@ -32,6 +32,8 @@ from typing import Any
 
 import numpy as np
 
+from ..sim.pacing import Paced
+
 HARP_RES = 1e-12        # T2-Auflösung der HydraHarp (Zeitstempel in ps)
 
 
@@ -221,7 +223,7 @@ class Device(ABC):
 
 
 # ------------------------------------------------------------------ Simulation
-class SimBackend:
+class SimBackend(Paced):
     """Gemeinsamer Simulator beider Geräte: simuliert eine Sitzung und spielt sie laufweise in Echtzeit ab.
 
     Da Harp und Digitizer im Experiment über SYNC-Marker gekoppelt sind, kommen beide Datenströme aus derselben
@@ -230,6 +232,13 @@ class SimBackend:
 
     engine = "batch"
     records_stream = False
+    _stream = None
+
+    @Paced.speed.setter
+    def speed(self, v: float) -> None:              # Tempo während des Laufs: auch an den laufenden SimStream
+        Paced.speed.fset(self, v)
+        if self._stream is not None:
+            self._stream.speed = v
 
     def __init__(self, base_config: str | Path | None = None, chunk_s: float = 0.1, speed: float = 1.0,
                  realtime: bool = True, time_scale: float | None = None):
@@ -298,7 +307,8 @@ class SimBackend:
         self._br = br
         sub = copy.copy(self.res)
         sub.blocks = [br]
-        self._it = iter(SimStream(sub, chunk_s=self.chunk_s, speed=self.speed, realtime=self.realtime))
+        self._stream = SimStream(sub, chunk_s=self.chunk_s, speed=self.speed, realtime=self.realtime)
+        self._it = iter(self._stream)
         self._q = {"harp": [], "digitizer": []}
         self._decoder = T2Decoder()
         self._roles = ({int(k): v for k, v in json.loads(br.attrs["harp_channel_roles"]).items()},
@@ -398,7 +408,7 @@ class StreamSimBackend(SimBackend):
         self._roles = ({int(k): v for k, v in json.loads(a["harp_channel_roles"]).items()},
                        {int(k): v for k, v in json.loads(a["harp_marker_roles"]).items()})
         self._tu = self._attrs["time_unit_s"]
-        self._t_wall0 = time.monotonic()
+        self._pace_start()
 
     def _pull(self) -> bool:
         import time
@@ -409,9 +419,10 @@ class StreamSimBackend(SimBackend):
             return False
         t1, last = info["t_run_end"], info["last"]
         if self.realtime:
-            wait = self._t_wall0 + t1 / self.speed - time.monotonic()
+            wait = self._pace_due(t1) - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
+        self._t_last = t1
         if "harp" in self.kinds:
             hs = split_events(self._decoder.decode(hrec), *self._roles)
             her, mk = hs.role_s("herald"), hs.role_s("sync_marker")
@@ -500,7 +511,7 @@ class SimDigitizer(_SimDevice):
 
 
 # ------------------------------------------------------------------ Wiedergabe
-class ReplayBackend:
+class ReplayBackend(Paced):
     """Wiedergabe einer vorhandenen Sitzung (Dateien) als Datenstrom, laufweise, optional mit Echtzeitfaktor."""
 
     def __init__(self, session_dir: str | Path, chunk_s: float = 0.1, speed: float = 1.0, realtime: bool = True):
@@ -555,7 +566,7 @@ class ReplayBackend:
         self._run = run
         self._k = 0
         self._next = self._advance()
-        self._t_wall0 = time.monotonic()
+        self._pace_start()
 
     @staticmethod
     def _first_harp_s(run) -> float:
@@ -613,9 +624,10 @@ class ReplayBackend:
         if last:
             t1 = max(k * self.chunk_s, min(t1, float(run.duration_s or t1)))
         if self.realtime:
-            wait = self._t_wall0 + t1 / self.speed - time.monotonic()
+            wait = self._pace_due(t1) - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
+        self._t_last = t1
         if "harp" in self.kinds:
             raw_h = cur["harp"][0] if cur.get("harp") is not None else np.empty(0, np.uint32)
             hs = split_events(self._dec.decode(raw_h), run.channel_roles, run.marker_roles)
