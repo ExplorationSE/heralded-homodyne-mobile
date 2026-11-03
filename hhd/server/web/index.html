@@ -70,7 +70,7 @@
     <div class="card">
       <div class="row between"><h2>Varianz je Lauf</h2><span id="norminfo" class="mut"></span></div>
       <canvas id="c-var" height="220"></canvas>
-      <div class="legend"><span class="lg kv"></span>K-V <span class="lg el"></span>Dunkel <span class="lg kh"></span>K-H <span class="lg a"></span>A <span class="lg b"></span>B</div>
+      <div class="legend"><span class="lg kv"></span>K-V <span class="lg el"></span>Dunkel <span class="lg kh"></span>K-H <span class="lg kt"></span>K-θ <span class="lg a"></span>A <span class="lg b"></span>B</div>
     </div>
     <div class="card">
       <h2>LO-Monitor</h2>
@@ -105,9 +105,9 @@
   <div id="resbox" class="hidden">
     <div class="grid">
       <div class="card"><h2>Wigner-Funktion A (herald-bedingt)</h2><canvas id="c-wig" height="260"></canvas>
-        <div class="legend" id="wiglbl">phasengemittelt, W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)</div></div>
+        <div class="legend txt" id="wiglbl">phasengemittelt, W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)</div></div>
       <div class="card"><h2>Wigner-Funktion B (ohne Herald)</h2><canvas id="c-wigB" height="260"></canvas>
-        <div class="legend" id="wiglblB">phasengemittelt, W(x,p) aus W(r); orange &gt; 0, blau &lt; 0</div></div>
+        <div class="legend txt" id="wiglblB">phasengemittelt, W(x,p) aus W(r); orange &gt; 0, blau &lt; 0</div></div>
       <div class="card hidden" id="ph-var"><h2>Var(x<sub>θ</sub>) gegen θ</h2><canvas id="c-vth" height="220"></canvas>
         <div class="legend" id="vthlbl"><span class="lg a"></span>A <span class="lg b"></span>B <span class="lg mut2"></span>Vakuum ½</div></div>
       <div class="card"><h2>W(r) radial</h2><canvas id="c-wr" height="260"></canvas>

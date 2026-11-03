@@ -3,7 +3,7 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const KC = { vacuum: "--kv", electronic: "--el", herald_blocked: "--kh", heralded: "--a", free_running: "--b", random: "--b", state: "--warn", phase_reference: "--kt" };
+const KC = { vacuum: "--kv", electronic: "--el", herald_blocked: "--kh", heralded: "--a", free_running: "--b", random: "--b", state: "--warn", phase_reference: "--kt", phase_ref: "--kt" };
 const fmt = (x, d = 3) => (x === null || x === undefined || Number.isNaN(x)) ? "–" : Number(x).toFixed(d);
 const fmtE = (x, e, d = 4) => (x === null || x === undefined) ? "–" : `${fmt(x, d)}${e != null ? " ± " + fmt(e, d) : ""}`;
 
@@ -164,6 +164,11 @@ function render() {
   lz.disabled = !mine || running || paused || rep; plan.disabled = !mine || running || paused || rep;
   lz.title = lz.title.split("\n")[0] + "\nGewählt: " + (lz.value === "pulsed" ? "Puls – Paare nur in den Pumppulsen, pulssynchrone Trigger (Zufall/Herald), Mode gauß" : "CW – Paare/Heralds zufällig in der Zeit (Poisson), Mode doppelt-exponentiell");
   if (document.activeElement !== $("speed")) $("speed").value = S.display.speed;
+  { // Tempo (Echtzeitfaktor): gilt sofort, auch im laufenden Lauf; mit Live-Gerät immer Echtzeit (1)
+    const liveAny = Object.values(S.modes || {}).includes("live"), sp = $("speed");
+    sp.disabled = !mine || liveAny;
+    sp.title = liveAny ? "Mit Live-Gerät läuft die Messung immer in Echtzeit (Tempo 1)" : "Echtzeitfaktor für Simulation und Wiedergabe (0,05 … 50); gilt sofort, auch im laufenden Lauf";
+  }
   $("autoana").checked = !!S.display.auto_analyze;
   $("simeng_l").classList.toggle("hidden", !S.sim_engine);
   if (S.sim_engine && document.activeElement !== $("simeng")) $("simeng").value = S.sim_engine;
@@ -177,7 +182,7 @@ function render() {
     else if (R.limit_mcps > 0) {
       t = `Max. Ereignisrate <b>${f(R.limit_mcps)} Mcps</b> (${esc(R.source || "")})`;
       if (running || G.peak_mcps) t += ` · aktuell ${f(G.rate_mcps)} Mcps · Spitze ${f(G.peak_mcps)} Mcps`;
-      if (G.state === "warn") { cls += " warn"; t += ` · <b>ÜBER GRENZWERT</b> seit ${(G.over_s || 0).toFixed(1)} s – Anhalten nach ${G.stop_s} s`; }
+      if (G.state === "warn") { cls += " warn"; t += `<br>⚠ <b>${esc(R.reason || "Zählrate zu hoch")}</b> – ÜBER GRENZWERT seit ${(G.over_s || 0).toFixed(1)} s, Anhalten nach ${G.stop_s} s`; }
       if (G.state === "stop" || R.stopped_msg) cls += " stop";
     } else if (R.msg) t = esc(R.msg);
     const hint = m => esc(m).replace(/\s*(Zählrate senken:)/, "<br>$1");
@@ -265,7 +270,7 @@ function renderCheck(R) {
             : row("Kanäle", x.n_channels ?? "–") + row("Abtastrate", x.sampling_rate_Hz ? (x.sampling_rate_Hz / 1e9).toFixed(2) + " GS/s" : "–") + (x.product_options ? row("Optionen", esc(x.product_options)) : "");
         } else rows += row("Meldung", esc(d.error)) + row("Abhilfe", esc(d.hint));
       } else rows += row("Hinweis", esc(d.hint));
-      return `<h3 style="margin:.6em 0 .2em">${esc(d.name)}</h3><table class="tbl">${rows}</table>`;
+      return `<h3 style="margin:.6em 0 .2em">${esc(d.name)}</h3><table class="tbl chk" lang="de">${rows}</table>`;
     }).join("");
 }
 async function checkDevices() {
@@ -690,6 +695,11 @@ $("stop").onclick = () => { if (confirm("Sitzung stoppen? Abgeschlossene Läufe 
 $("plan").onchange = () => send("set_display", { plan: $("plan").value });
 $("laser").onchange = () => send("set_display", { laser_mode: $("laser").value });
 $("simeng").onchange = () => send("set_display", { sim_engine: $("simeng").value });
+$("speed").onchange = () => { // Tempo übernehmen (vorher erst beim nächsten Start und beim Verlassen des Felds zurückgesetzt)
+  const sp = $("speed"), v = Number(String(sp.value).replace(",", "."));
+  if (!isFinite(v) || v < 0.05 || v > 50) { toast("Tempo: 0,05 … 50", true); sp.value = S.display.speed; return; }
+  send("set_display", { speed: v }, (m) => toast(m.ok ? `Tempo ${String(v).replace(".", ",")} übernommen` : m.msg, !m.ok));
+};
 $("autoana").onchange = () => send("set_display", { auto_analyze: $("autoana").checked });
 $("clrwarn").onclick = () => send("clear_warnings");
 $("refresh").onclick = loadSessions;

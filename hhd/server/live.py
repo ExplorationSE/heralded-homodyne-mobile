@@ -25,7 +25,7 @@ from ..sync.stream import StreamingSynchronizer
 from .devices import DigData, HarpData, RunSpec
 
 KIND_LABEL = dict(vacuum="K-V", electronic="Dunkel", herald_blocked="K-H", heralded="A", free_running="B",
-                  random="B", state="Zustand")
+                  random="B", state="Zustand", phase_ref="K-θ")
 
 
 @dataclass

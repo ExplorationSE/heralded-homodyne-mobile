@@ -110,3 +110,10 @@ label.linkbtn{color:var(--acc);text-decoration:underline;cursor:pointer;display:
 .rsrc_list .it{padding:5px 8px;cursor:pointer;border-bottom:1px solid rgba(34,48,79,.5)}
 .rsrc_list .it:hover{background:rgba(56,189,248,.08)}.rsrc_list .it.sess b{color:var(--warn)}
 .modebanner.replay{background:rgba(245,158,11,.12);color:#fed7aa}
+
+/* 0.15.0: Legenden mit Fließtext (Wigner A/B) nicht als Flex-Zeile, sonst Lücken vor <sub>/<b> und Umbruch vor „· W(x,p)“ */
+.legend.txt{display:block;line-height:1.45}
+/* Geräteprüfung: lange Pfade/Firmware umbrechen statt aus dem Kasten laufen (mobil) */
+#chkres{overflow-wrap:anywhere}
+.tbl.chk{table-layout:fixed}.tbl.chk th{width:34%;overflow-wrap:break-word;hyphens:auto}.tbl.chk td{overflow-wrap:anywhere;word-break:break-word}
+@media(min-width:700px){.tbl.chk th{width:200px}}
