@@ -4,7 +4,7 @@ Teilpakete: ``hhd.sim`` (Simulator, AP2), ``hhd.io`` (Dateiformate, Import), ``h
 Zuordnung). Die weiteren Teilpakete laut Gesamtplan (calib, modes, recon, compare, devices, run, ...) folgen.
 """
 
-__version__ = "0.15.0.dev0"
+__version__ = "0.15.0"
 
 # BLAS-Threads (ab 0.15): OpenBLAS/MKL starten je Matrix-Vektor-Produkt sonst so viele Threads wie Kerne. Die Kerne der
 # Auswertung sind dafür zu klein; unter Last (Aufnahme, Live-Vorschau, parallele Prozesse) wird es 17–22× langsamer

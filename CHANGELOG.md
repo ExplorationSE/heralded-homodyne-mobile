@@ -1,6 +1,23 @@
 # Änderungsprotokoll – ExplorationSE Harp ADQ32 HHD Mobil
 
-## 0.15.0.dev0 – 20.10.2026 (unveröffentlicht)
+## 0.15.0 – 03.11.2026
+
+Veröffentlichte Version 0.15.0 (Freigabe Herr Eilers, 03.11.2026); Bedienungsanleitung 0.15.0 unter `docs/anleitung/`.
+
+Kleinere Änderungen vor der Veröffentlichung (03.11.2026):
+
+- **Tempo** gilt sofort, auch im laufenden Lauf (Simulation Datei/Datenstrom, Wiedergabe): der Zeitanker wird
+  verschoben, die Ausgabe springt oder stockt nicht (`hhd/sim/pacing.py`, Tests `tests/test_pacing.py`). App: Eingabe
+  wird sofort übernommen (0,05 … 50); mit Live-Gerät ist das Feld gesperrt (Tempo 1).
+- **Ratengrenze nennt den Grund** in Warnung, Anhalte-Meldung, Sitzungszeile und Protokoll: Echtzeitberechnung
+  (Zerlegen), Echtzeitspeicherung (Schreiben), Dauerleistung der HydraHarp 500 (85 Mcps) oder fester Grenzwert
+  (`status.rate.reason`; Test `test_rate_reason_text`).
+- App: Lauf **K-θ** statt `phase_ref` in Laufplanleiste und Legenden; Legenden Wigner A/B ohne Lücke/Umbruch;
+  Tabelle der Geräteprüfung bricht auf dem Handy um.
+- `requirements.txt`: `qrcode` ergänzt (wie `pyproject` `[server]`); Urheber Stefan Eilers (`LICENSE`, `pyproject.toml`).
+- Paketversion `0.15.0`; `uv.lock` wird nicht versioniert (`.gitignore`).
+
+### Entwicklungsstand 0.15.0.dev0 (20.10.–29.10.2026)
 
 Auftrag „Wiedergabe aus Ordner, Stufe 1“ (Herr Eilers, 29.10.2026):
 

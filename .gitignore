@@ -11,3 +11,4 @@ data/*
 logs/
 hhd_data/
 hhd/drivers/mock/_build/
+uv.lock

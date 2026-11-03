@@ -8,7 +8,7 @@ von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasenge
 Phase θ als Option
 (ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExplorationSE Harp GX Mobil.
 
-**Stand 0.10.0.dev0:** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
+**Stand 0.15.0 (03.11.2026):** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
 (`hhd.io.session`), **Synchronisation/Zuordnung** (`hhd.sync`; `docs/SYNC.md`) sowie die **Auswertung**:
 Normierung/Kalibrierung, Modenextraktion (parametrisch und PCA), phasengemittelte Rekonstruktion mit Bootstrap
 und Vergleich A/B (`hhd.calib`, `hhd.modes`, `hhd.recon`, `hhd.analysis`; `docs/ANALYSE.md`), ab 0.8 mit
@@ -19,6 +19,9 @@ Live-Vorschau, Auswertung per Auftrag, Ergebnisansicht auf dem Smartphone, Steue
 Ab 0.10 **Treiber für die echten Geräte** (`hhd.drivers`; `docs/HARDWARE.md`): HH500Lib und ADQAPI über ctypes,
 dynamisch geladen, gegen Mock-Bibliotheken getestet; **gemischter Betrieb** (je Gerät sim/replay/live, in jeder
 Datei und in der App gekennzeichnet) und ein **speichersparender Datenstrom-Simulator** mit Drift-Überwachung.
+Ab 0.15 Laufpläne mit Phase (Piezo-Rampe, K-θ, MaxLik, 2D-Wigner), Laserbetrieb Puls/CW, Wigner-Funktion B,
+Geräteprüfung, Ratenbegrenzung der HydraHarp, Wiedergabe aus Ordner und eine Bedienungsanleitung als PDF
+(`docs/anleitung/`).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
 K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als
