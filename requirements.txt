@@ -11,6 +11,8 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
 httpx>=0.27
+# QR-Code der Online-Adresse in der App (0.13, wie pyproject [server])
+qrcode>=7.4
 # Tests (reines Python)
 pytest>=8
 # optional: Screenshots der Web-App (tools/app_screenshots.py): playwright>=1.44 (python -m playwright install chromium)
