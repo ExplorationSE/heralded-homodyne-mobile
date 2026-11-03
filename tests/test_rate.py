@@ -174,8 +174,10 @@ def test_sim_overrate_stops_with_message(tmp_path):
     try:
         st = svc.status()["rate"]
         assert st["limit_mcps"] == 0.2 and "harp_max_mcps" in st["source"]
+        assert st["reason"].startswith("Zählrate über dem fest eingestellten Grenzwert"), st["reason"]
         d = _start(svc)
         assert svc.state == "abgebrochen" and "RATENGRENZE" in svc.msg, svc.msg
+        assert "fest eingestellten Grenzwert" in svc.msg, svc.msg       # Grund steht in der Meldung (ab 0.15.0)
         sm = svc.status()["rate"]["stopped_msg"]
         assert "Ereignisrate" in sm and "Abschwäch" in sm and "verworfen" in sm, sm
         kinds = [w["kind"] for w in svc.live.warnings]
@@ -227,3 +229,18 @@ def test_live_mock_overrate_and_crash(tmp_path, mock_libs, monkeypatch):
         assert s.state == "fehler" and "Zerlege-Prozess" in s.msg, s.msg
     finally:
         s.close()
+
+
+def test_rate_reason_text():
+    """Ab 0.15.0 nennt die Ratenwarnung den Grund (Rechenleistung, Speicher, Gerät, fester Wert)."""
+    from hhd.server.service import MeasurementService as M
+    st = lambda b: dict(bottleneck=b)
+    r = M._rate_reason(dict(limit_mcps=12.0, source="Selbsttest (zerlegen begrenzt)", selftest=st("zerlegen")), 85)
+    assert r.startswith("Zählrate zu hoch für die Echtzeitberechnung"), r
+    r = M._rate_reason(dict(limit_mcps=12.0, source="Selbsttest (schreiben begrenzt)", selftest=st("schreiben")), 85)
+    assert r.startswith("Zählrate zu hoch für die Echtzeitspeicherung"), r
+    r = M._rate_reason(dict(limit_mcps=85.0, source="Selbsttest", selftest=st("zerlegen")), 85)
+    assert "HydraHarp 500" in r and "85" in r, r
+    r = M._rate_reason(dict(limit_mcps=3.0, source="Umgebung HHD_HARP_MAX_MCPS"), 85)
+    assert "fest eingestellten" in r and "HHD_HARP_MAX_MCPS" in r, r
+    assert M._rate_reason(dict(limit_mcps=0.0, source=""), 85) == ""

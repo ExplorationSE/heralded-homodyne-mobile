@@ -370,6 +370,7 @@ class MeasurementService:
                           else "keine Grenze (Harp simuliert; Selbsttest nur im Live-Betrieb oder mit "
                                "sim_harp_extra_mcps)")
             lim = rl["limit_mcps"]
+            rl["reason"] = self._rate_reason(rl, HARP_MAX_SUSTAINED_MCPS)
             rl["state"] = "ok"
             rl["msg"] = (f"Max. Ereignisrate {lim:.3g} Mcps ({rl['source']})" if lim > 0 else rl["source"])
             if lim > HARP_MAX_SUSTAINED_MCPS:
@@ -385,6 +386,20 @@ class MeasurementService:
         finally:
             self._rate_ready.set()
             self._notify()
+
+    @staticmethod
+    def _rate_reason(rl: dict, harp_max: float) -> str:
+        """Grund des Grenzwerts in Klartext (App-Ratenzeile, Warnungen, Protokoll)."""
+        lim, src, st = rl.get("limit_mcps") or 0.0, rl.get("source") or "", rl.get("selftest") or {}
+        if lim <= 0:
+            return ""
+        if src.startswith("Selbsttest"):
+            if lim >= harp_max:
+                return f"Zählrate über der Dauerleistung der HydraHarp 500 ({harp_max:.0f} Mcps)"
+            if st.get("bottleneck") == "schreiben":
+                return "Zählrate zu hoch für die Echtzeitspeicherung (Schreiben auf den Datenträger dieses Rechners)"
+            return "Zählrate zu hoch für die Echtzeitberechnung (Zerlegen der Zeitmarken auf diesem Rechner)"
+        return f"Zählrate über dem fest eingestellten Grenzwert ({src})"
 
     def _rate_event(self, kind: str, msg: str) -> None:
         with self._mtx:
@@ -405,11 +420,11 @@ class MeasurementService:
         st = g.feed(len(rec) if rec is not None else h.n_records, t)     # alle T2-Records (auch Nebenkanäle)
         if st == "warn" and time.monotonic() - self._rate_last_warn > 5:
             self._rate_last_warn = time.monotonic()
-            self._rate_event("rate", f"Ereignisrate {g.rate_mcps:.3g} Mcps über Grenzwert {g.limit_mcps:.3g} Mcps "
+            self._rate_event("rate", f"{self._rate_why()}Ereignisrate {g.rate_mcps:.3g} Mcps über Grenzwert {g.limit_mcps:.3g} Mcps "
                                      f"(Lauf {run.block_id}, seit {g.over_s_total:.1f} s; Anhalten nach "
                                      f"{g.stop_s:g} s). {self._rate_hints()}")
         elif st == "stop" and not self._rate_stop_msg:
-            self._rate_stop(f"Lauf {run.block_id} angehalten: Ereignisrate {g.rate_mcps:.3g} Mcps seit "
+            self._rate_stop(f"Lauf {run.block_id} angehalten: {self._rate_why()}Ereignisrate {g.rate_mcps:.3g} Mcps seit "
                             f"{g.over_s_total:.1f} s über dem Grenzwert {g.limit_mcps:.3g} Mcps "
                             f"({self.rate_limit.get('source', '')}).")
 
@@ -418,6 +433,10 @@ class MeasurementService:
                                     "beim Stopp verworfen, abgeschlossene Läufe bleiben. " + self._rate_hints()
         self._rate_event("rate_stop", self._rate_stop_msg)
         self._stop.set()
+
+    def _rate_why(self) -> str:
+        r = self.rate_limit.get("reason") or ""
+        return f"{r} – " if r else ""
 
     @staticmethod
     def _rate_hints() -> str:
@@ -773,7 +792,7 @@ class MeasurementService:
                 self.rate_guard.reset()
                 cr = getattr(self.harp, "count_rate_mcps", lambda: None)()
                 if cr is not None and self.rate_guard.limit_mcps > 0 and cr > self.rate_guard.limit_mcps:
-                    self._rate_event("rate", f"Zählrate vor Lauf {run.block_id}: {cr:.3g} Mcps > Grenzwert "
+                    self._rate_event("rate", f"{self._rate_why()}Zählrate vor Lauf {run.block_id}: {cr:.3g} Mcps > Grenzwert "
                                              f"{self.rate_guard.limit_mcps:.3g} Mcps – der Lauf wird angehalten, wenn "
                                              f"das {self.rate_guard.stop_s:g} s anhält. {self._rate_hints()}")
                 if rec is not None:
@@ -855,7 +874,8 @@ class MeasurementService:
             self.state = "abgebrochen" if stopped else "fertig"
             self.msg = f"Sitzung {sid}: {n_done}/{len(runs)} Läufe" + (" (gestoppt)" if stopped else "")
             if self._rate_stop_msg:
-                self.msg += " – RATENGRENZE: Ereignisrate zu hoch, Lauf angehalten (Details und Hinweise in der Ratenzeile)"
+                self.msg += (f" – RATENGRENZE: {self.rate_limit.get('reason') or 'Ereignisrate zu hoch'}, Lauf "
+                             "angehalten (Details und Hinweise in der Ratenzeile)")
             self.run_idx = -1
             if n_done and self.display.get("auto_analyze") and not stopped:
                 if acq == "mixed":
