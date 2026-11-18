@@ -215,7 +215,7 @@ def test_live_mock_overrate_and_crash(tmp_path, mock_libs, monkeypatch):
             setattr(c, k, v)
         return MeasurementService(c, tmp_path / sub)
 
-    s = svc("over", harp_max_mcps=1e-4, harp_rate_window_s=0.05, harp_rate_stop_s=0.05)
+    s = svc("over", harp_max_mcps=1e-4, harp_rate_window_s=0.05, harp_rate_stop_s=0.02)   # kurze Läufe (time_scale): Anhalten sicher auch bei grober Leseauflösung (Windows)
     try:
         assert s.status()["modes"]["harp"] == "live"
         _start(s)

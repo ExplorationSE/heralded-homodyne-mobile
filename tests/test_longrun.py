@@ -77,12 +77,43 @@ def _replay(path, check_raw=False):
     return ok, tot
 
 
+def _peak_where(path) -> dict:
+    """Diagnose bei Überschreitung: größte Speicherspitze je Abschnitt (Öffnen, Laufstart, Lesen) mit Fundstelle."""
+    gc.collect()
+    tracemalloc.start()
+    worst = {}
+
+    def note(tag, **kw):
+        cur, pk = tracemalloc.get_traced_memory()
+        if pk > worst.get(tag, (0,))[0]:
+            worst[tag] = (pk, cur, kw)
+        tracemalloc.reset_peak()
+    try:
+        be = ReplayBackend(path, chunk_s=0.1, realtime=False)
+        specs = be.prepare()
+        note("open")
+        for i, _ in enumerate(specs):
+            be.start_run(i)
+            note("start_run", run=i)
+            k = 0
+            while True:
+                h, d = be.read("harp"), be.read("digitizer")
+                note("read", run=i, step=k, harp=None if h is None else len(h.records),
+                     dig=None if d is None else tuple(d.data.shape))
+                k += 1
+                if h is None and d is None:
+                    break
+        return worst
+    finally:
+        tracemalloc.stop()
+
+
 def test_replay_complete_and_bounded(sessions):
     sa, sb = sessions
     p0, (ok0, n0) = _peak(lambda: _replay(sa))
     p1, (ok1, n1) = _peak(lambda: _replay(sb))
     assert ok0 and ok1 and n1 > 1.5 * n0
-    assert p1 < 1.25 * p0 + 2e6, (p0, p1)                         # unabhängig von der Sitzungsdauer
+    assert p1 < 1.25 * p0 + 2e6, (p0, p1, _peak_where(sa), _peak_where(sb))   # unabhängig von der Sitzungsdauer
     assert _replay(sa, check_raw=True)[0]                        # PTU bitgleich wiedergegeben
 
 

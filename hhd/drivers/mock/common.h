@@ -16,8 +16,19 @@ static inline double mock_now_s(void) {
     LARGE_INTEGER f, c; QueryPerformanceFrequency(&f); QueryPerformanceCounter(&c);
     return (double)c.QuadPart / (double)f.QuadPart;
 }
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+/* Sleep() hat ≈ 15,6 ms Auflösung; ReadFiFo soll wie das Gerät nach ≈ 10 ms zurückkehren → hochauflösender Timer
+ * (Windows 10 1803+), sonst Sleep(). */
 static inline void mock_sleep_s(double s) {
     if (s <= 0) return;
+    HANDLE t = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    if (t) {
+        LARGE_INTEGER due; due.QuadPart = -(LONGLONG)(s * 1e7);       /* relativ, 100-ns-Einheiten */
+        if (SetWaitableTimer(t, &due, 0, NULL, NULL, FALSE)) { WaitForSingleObject(t, INFINITE); CloseHandle(t); return; }
+        CloseHandle(t);
+    }
     Sleep((DWORD)(s * 1000.0 + 0.5));
 }
 static inline const char *mock_getenv(const char *k) {
