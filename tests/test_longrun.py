@@ -110,6 +110,7 @@ def _peak_where(path) -> dict:
 
 def test_replay_complete_and_bounded(sessions):
     sa, sb = sessions
+    _replay(sa); _replay(sb)        # Aufwärmen: einmalige Kosten (Importe, erste Dateiöffnung; Windows/3.13 ≈ 4 MB) nicht mitmessen
     p0, (ok0, n0) = _peak(lambda: _replay(sa))
     p1, (ok1, n1) = _peak(lambda: _replay(sb))
     assert ok0 and ok1 and n1 > 1.5 * n0
