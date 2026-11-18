@@ -28,14 +28,14 @@ def stat(ind, k):
 
 
 def main():
-    null = json.load(open(sys.argv[1])); drift = json.load(open(sys.argv[2]))
+    null = json.load(open(sys.argv[1], encoding="utf-8")); drift = json.load(open(sys.argv[2], encoding="utf-8"))
     alpha = float(sys.argv[3]) if len(sys.argv) > 3 else 0.01
     tf = float(sys.argv[4]) if len(sys.argv) > 4 else 90.0
     signed = {k: (lambda i, k=k: i.get(k)) for k in Z_IND}
     N = [s["ind"] for s in null["sessions"]]
     scen = defaultdict(list)
     for s in drift["sessions"]:
-        name = s["dir"].rstrip("/").split("/")[-2]
+        name = s["dir"].replace("\\", "/").rstrip("/").split("/")[-2]   # auch Windows-Pfade
         scen[name].append(s["ind"])
     out = dict(alpha=alpha, time_factor=tf, n_null=len(N), scenarios={k: len(v) for k, v in scen.items()}, indicators={})
     # ABA max |z| über n Paare: Bonferroni-Schwelle; lo_dev: aus der Nullverteilung (Monitorrauschen)
@@ -105,6 +105,7 @@ def main():
                     if sc in d.get("sensitivity", {})), key=lambda t: t[1], default=None)
         if best:
             out["realtime_best"][sc] = dict(indicator=best[0], detection=best[1])
+    sys.stdout.reconfigure(encoding="utf-8")     # Ausgabe immer UTF-8 (Windows: sonst cp1252, „ΔP/P“ nicht darstellbar)
     print(json.dumps(out, indent=1, ensure_ascii=False))
 
 

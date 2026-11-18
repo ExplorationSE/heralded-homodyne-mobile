@@ -56,8 +56,8 @@ int HH500_GetErrorString(char *s, int c) { snprintf(s, 40, "%s", err_text(c)); r
 
 int HH500_OpenDevice(int d, char *serial) {
     DEV(d)
-    if (d != 0 || getenv("MOCK_HH500_NODEV")) return E_OPEN;
-    if (getenv("MOCK_HH500_BUSY")) return E_BUSY;
+    if (d != 0 || mock_getenv("MOCK_HH500_NODEV")) return E_OPEN;
+    if (mock_getenv("MOCK_HH500_BUSY")) return E_BUSY;
     memset(X, 0, sizeof(*X)); X->open = 1; X->sync_div = 1; X->sync_en = 1;
     for (int i = 0; i < NCH; i++) X->ch_en[i] = 1;
     strcpy(serial, "1050042");
@@ -66,7 +66,7 @@ int HH500_OpenDevice(int d, char *serial) {
 int HH500_CloseDevice(int d) { DEV(d) free(X->q); memset(X, 0, sizeof(*X)); return 0; }
 int HH500_Initialize(int d, int mode, int ref) {
     DEV(d) if (!X->open) return E_OPEN;
-    if (getenv("MOCK_HH500_SYSERROR")) return E_INIT;
+    if (mock_getenv("MOCK_HH500_SYSERROR")) return E_INIT;
     if (mode != 0 && mode != 2 && mode != 3 && mode != 8) return E_INVARG;
     if (ref < 0 || ref > 9) return E_INVARG;
     X->init = 1; X->mode = mode; X->ref = ref; return 0;

@@ -1,6 +1,6 @@
 # ExplorationSE Harp ADQ32 HHD Mobil
 
-Kurzname in der Web-App: **Harp ADQ32 HHD Mobil**. Repository `harp-adq32-hhd-mobil`, Python-Paket `hhd`.
+Name in der Web-App: **Heralded Homodyne Mobile**. Repository [`ExplorationSE/heralded-homodyne-mobile`](https://github.com/ExplorationSE/heralded-homodyne-mobile) (Ordner nach `git clone`: `heralded-homodyne-mobile`), Python-Paket `hhd`.
 
 Heralded-Homodyne-Detektion (HHD) mit einer PicoQuant **HydraHarp 500** (T2-Zeitmarken des Herald-Detektors) und
 einem Teledyne SP Devices **ADQ32-PCIe** (Wellenformen des Homodyndetektors). Ziel von Release 1.0: Rekonstruktion

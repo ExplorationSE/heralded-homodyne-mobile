@@ -1,4 +1,7 @@
-"""Übersetzt die Mock-Bibliotheken (``libhh500mock.so``, ``libadqmock.so``) mit gcc/cc.
+"""Übersetzt die Mock-Bibliotheken (``libhh500mock.so``, ``libadqmock.so``; unter Windows ``.dll``) mit gcc/cc.
+
+Unter Windows wird MinGW-w64-gcc verwendet und statisch gelinkt (``-static``), damit die DLL keine
+MinGW-Laufzeit-DLLs braucht: Python lädt Abhängigkeiten von DLLs seit 3.8 nicht mehr über ``PATH``.
 
     python -m hhd.drivers.mock.build [zielverzeichnis]
 
@@ -14,7 +17,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SOURCES = {"hh500": "hh500_mock.c", "adq": "adq_mock.c"}
-OUTPUT = {"hh500": "libhh500mock.so", "adq": "libadqmock.so"}
+WINDOWS = sys.platform.startswith("win")
+_EXT = ".dll" if WINDOWS else ".so"
+OUTPUT = {"hh500": f"libhh500mock{_EXT}", "adq": f"libadqmock{_EXT}"}
 
 
 def compiler() -> str | None:
@@ -34,8 +39,11 @@ def build(outdir: str | Path, which: tuple[str, ...] = ("hh500", "adq")) -> dict
     for w in which:
         src, dst = HERE / SOURCES[w], outdir / OUTPUT[w]
         if not dst.exists() or dst.stat().st_mtime < max(src.stat().st_mtime, (HERE / "common.h").stat().st_mtime):
-            subprocess.run([cc, "-O2", "-shared", "-fPIC", "-Wall", "-o", str(dst), str(src), "-lm"], check=True,
-                           capture_output=True, text=True)
+            flags = (["-O2", "-shared", "-Wall", "-static", "-static-libgcc", "-Wl,--export-all-symbols"] if WINDOWS
+                     else ["-O2", "-shared", "-fPIC", "-Wall"])
+            r = subprocess.run([cc, *flags, "-o", str(dst), str(src), "-lm"], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"Übersetzen von {src.name} fehlgeschlagen ({cc}):\n{r.stdout}{r.stderr}")
         out[w] = dst
     return out
 

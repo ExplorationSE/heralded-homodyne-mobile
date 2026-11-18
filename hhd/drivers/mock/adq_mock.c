@@ -84,7 +84,7 @@ static int getstr(const char *s, const char *key, int nth, char *out, size_t n) 
 }
 
 const char *ADQAPI_GetRevisionString(void) { return "MOCK-15.0"; }
-int ADQAPI_ValidateVersion(int major, int minor) { (void)minor; const char *v = getenv("MOCK_ADQ_VERSION"); if (v) return atoi(v); return major == 15 ? 0 : -1; }
+int ADQAPI_ValidateVersion(int major, int minor) { (void)minor; const char *v = mock_getenv("MOCK_ADQ_VERSION"); if (v) return atoi(v); return major == 15 ? 0 : -1; }
 void *CreateADQControlUnit(void) { cu_t *c = calloc(1, sizeof(cu_t)); for (int i = 0; i < NPID; i++) c->json[i] = defjson(i); return c; }
 void DeleteADQControlUnit(void *p) {
     cu_t *c = p; if (!c) return;
@@ -98,12 +98,12 @@ int ADQControlUnit_EnableErrorTrace(void *p, unsigned int lvl, const char *dir) 
 }
 int ADQControlUnit_ListDevices(void *p, struct ADQInfoListEntry **lst, unsigned int *n) {
     cu_t *c = p; if (!c || !lst || !n) return 0;
-    *n = getenv("MOCK_ADQ_NODEV") ? 0 : 1;
+    *n = mock_getenv("MOCK_ADQ_NODEV") ? 0 : 1;
     memset(c->list, 0, sizeof c->list); c->list[0].ProductID = 32; c->list[0].VendorID = 0x1b37; strcpy(c->list[0].DevFile, "/dev/adq_mock0");
     *lst = c->list; return 1;
 }
 int ADQControlUnit_SetupDevice(void *p, int idx) {
-    cu_t *c = p; if (!c || idx != 0 || getenv("MOCK_ADQ_NODEV") || getenv("MOCK_ADQ_BUSY")) return 0; c->setup = 1; c->list[0].DeviceSetupCompleted = 1; return 1;
+    cu_t *c = p; if (!c || idx != 0 || mock_getenv("MOCK_ADQ_NODEV") || mock_getenv("MOCK_ADQ_BUSY")) return 0; c->setup = 1; c->list[0].DeviceSetupCompleted = 1; return 1;
 }
 #define CU(p, num) cu_t *c = p; if (!c || !c->setup || (num) != 1) return ADQ_EINVAL;
 int ADQ_GetParametersString(void *p, int num, int id, char *const s, size_t len, int fmt) {
