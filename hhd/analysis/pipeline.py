@@ -490,10 +490,8 @@ def analyze_session(path, ap: AnalysisParams | None = None, out_dir=None, sync_p
                     pv = g[q] if q not in ("mean_n", "p1") else (g["mean_n"] if q == "mean_n" else g["p_n"][1])
                     s = _summ(boot[k][q], pv)
                     gg[f"{q}_err"] = s["err"]; gg[f"{q}_boot"] = s
-                for q in ("mandel_Q", "g2"):               # Mandel Q / g²(0) aus p_n je Ziehung (nan bei ⟨n⟩ ≈ 0)
-                    v = np.asarray(boot[k].get(q, []), float); v = v[np.isfinite(v)]
-                    gg[f"{q}_err"] = float(np.std(v, ddof=1)) if len(v) > 2 else float("nan")
-                    gg[f"{q}_n_boot"] = int(len(v))
+                from ..recon.core import photon_stat_errors   # Mandel Q / g²(0) aus p_n je Ziehung; g² nur bei ⟨n⟩ > 2σ
+                gg.update(photon_stat_errors(gg, boot[k]))
                 from ..recon.intervals import intervals
                 jk = jackknife_values(norm, k, g, ap, rng) if ap.jackknife_groups >= 3 else {}
                 cis = {}

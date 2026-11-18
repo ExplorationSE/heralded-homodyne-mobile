@@ -267,6 +267,31 @@ def fit_eta_fock1(x: np.ndarray, max_iter: int = 200) -> dict:
     return dict(eta=e, sigma_fisher=float(1 / np.sqrt(fisher)) if fisher > 0 else float("nan"))
 
 
+G2_MIN_SIGNIFICANCE = 2.0     # g²(0) nur, wenn ⟨n⟩ mindestens so viele Standardfehler über 0 liegt
+
+
+def photon_stat_errors(point: dict, boot: dict, k: float = G2_MIN_SIGNIFICANCE) -> dict:
+    """Bootstrap-Fehler für Mandel Q und g²(0) aus den Ziehungen (Werte je Ziehung aus p_n).
+
+    g²(0) = ⟨n(n−1)⟩/⟨n⟩² ist bei ⟨n⟩ → 0 nicht definiert: Ziehungen mit ⟨n⟩ ≈ 1e-6 ergeben Werte bis 1e10 und eine
+    sinnlose Standardabweichung (z. B. Lauf B ≈ Vakuum: ⟨n⟩ = 0,005 ± 0,010 → „g² = 0,01 ± 6·10⁹“). Ist ⟨n⟩ nicht
+    signifikant größer als 0 (⟨n⟩ ≤ k·σ(⟨n⟩), σ aus dem Bootstrap), werden g²(0) und sein Fehler als nicht definiert
+    (nan → ``null``) ausgegeben, mit Begründung in ``g2_note``.
+    """
+    out = {}
+    for q in ("mandel_Q", "g2"):
+        v = np.asarray(boot.get(q, []), float); v = v[np.isfinite(v)]
+        out[f"{q}_err"] = float(np.std(v, ddof=1)) if len(v) > 2 else float("nan")
+        out[f"{q}_n_boot"] = int(len(v))
+    mn = float(point.get("mean_n", float("nan")))
+    mb = np.asarray(boot.get("mean_n", []), float); mb = mb[np.isfinite(mb)]
+    se = float(np.std(mb, ddof=1)) if len(mb) > 2 else float("nan")
+    if not (np.isfinite(mn) and mn > 0 and np.isfinite(se) and mn > k * se):
+        out.update(g2=float("nan"), g2_err=float("nan"),
+                   g2_note=f"nicht definiert: ⟨n⟩ = {mn:.3g} ± {se:.2g} nicht signifikant > 0")
+    return out
+
+
 def photon_stats(p: np.ndarray) -> dict:
     p = np.asarray(p, float)
     n = np.arange(len(p))

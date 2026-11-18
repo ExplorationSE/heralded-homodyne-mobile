@@ -359,11 +359,12 @@ function renderResult(R) {
   $("resstate").innerHTML = `Zustand A: <b>${esc(st.label || st.preset)}</b>` + (st.mean_n_ideal != null ? ` · ⟨n⟩<sub>ideal</sub> = ${fmt(st.mean_n_ideal, 3)}` : "") +
     (ps ? ` · <span class="warn-t">phasenempfindlich – nur phasengemittelt dargestellt und ausgewertet (Sollwerte ebenso)</span>` : "") + srcLine;
   $("wiglbl").innerHTML = (ps ? "<b>phasengemittelt</b> (Phasenstruktur des Zustands nicht sichtbar)" : "phasengemittelt") + ", W(x,p) aus W(r); blau &lt; 0 (nichtklassisch)";
+  const G2 = (g, d) => (g.g2 == null && g.g2_note) ? `– <small class="mut" title="${esc(g.g2_note)}">(⟨n⟩ ≈ 0, nicht definiert)</small>` : fmtE(g.g2, g.g2_err, d);
   const En = (g) => g.eta_n != null ? fmtE(g.eta_n, g.eta_n_err) : "–";
   $("restbl").innerHTML = `<tr><th></th><th>A (herald-bedingt)</th><th>B (frei laufend)</th></tr>` +
     row("N", A.n ?? "–", B.n ?? "–") + row("Var x", fmtE(A.var_x, A.var_err), fmtE(B.var_x, B.var_err)) +
     row("W(0,0)", W(A), W(B)) + (f1 ? row("η (Fit)", E(A), E(B)) : row("η (⟨n⟩)", En(A), "–")) + row("⟨n⟩", fmt(A.mean_n), fmt(B.mean_n)) +
-    row("g²(0)", fmtE(A.g2, A.g2_err, 3), fmtE(B.g2, B.g2_err, 2)) + row("Mandel Q", fmtE(A.mandel_Q, A.mandel_Q_err, 3), fmtE(B.mandel_Q, B.mandel_Q_err, 3)) + (f1 ? row("F (verlustbeh. |1⟩)", fmt(A.fidelity_lossy_fock1, 4), fmt(B.fidelity_lossy_fock1, 4)) : "") +
+    row("g²(0)", G2(A, 3), G2(B, 2)) + row("Mandel Q", fmtE(A.mandel_Q, A.mandel_Q_err, 3), fmtE(B.mandel_Q, B.mandel_Q_err, 3)) + (f1 ? row("F (verlustbeh. |1⟩)", fmt(A.fidelity_lossy_fock1, 4), fmt(B.fidelity_lossy_fock1, 4)) : "") +
     row("A − B", `ΔVar = ${fmtE(C.diff_var_x?.value, C.diff_var_x?.err)}`, `ΔW(0,0) = ${fmtE(C.diff_W00?.value, C.diff_W00?.err)} (z = ${fmt(C.diff_W00?.z, 1)})`);
   const P = R.phase || {}, pk = !!P.available, PB = (P.B && P.B.available) ? P.B : null;
   const fA = pk ? (P.var_theta || {}).fit || {} : {}, fB = PB ? (PB.var_theta || {}).fit || {} : {};

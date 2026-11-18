@@ -1025,7 +1025,7 @@ GROUP_KEYS = ("n", "var_x", "var_err", "W00", "W00_ci68", "W00_ci95", "W00_err",
               "eta_fit_ci68", "eta_fit_ci95", "eta_var", "mean_n", "g2", "mandel_Q", "fidelity_fock1",
               "fidelity_lossy_fock1", "p_n", "wigner_r", "wigner_radial", "estimator", "W00_ci_method",
               "eta_fit_ci_method", "W00_moments", "W00_moments_err", "eta_n", "eta_n_err", "mandel_Q_err", "g2_err",
-              "mandel_Q_n_boot")
+              "mandel_Q_n_boot", "g2_note")
 
 
 def result_summary(r: dict) -> dict:

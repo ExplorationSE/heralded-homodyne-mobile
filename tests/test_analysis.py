@@ -46,6 +46,42 @@ def test_wigner_fidelity_stats():
     assert s["mean_n"] == pytest.approx(0.6) and s["g2"] == pytest.approx(0, abs=1e-12)
 
 
+def test_g2_undefined_when_mean_n_not_significant():
+    """Regression: Lauf B ≈ Vakuum (⟨n⟩ = 0,005 ± 0,010) ergab „g²(0) = 0,01 ± 6·10⁹“, weil einzelne
+    Bootstrap-Ziehungen ⟨n⟩ ≈ 1e-6 haben und g² = ⟨n(n−1)⟩/⟨n⟩² dort explodiert."""
+    rng = np.random.default_rng(5)
+
+    def draws(p1, s1, p2, n=100):
+        out = {"mean_n": [], "g2": [], "mandel_Q": []}
+        for _ in range(n):
+            a = max(rng.normal(p1, s1), 1e-7); b = max(rng.normal(p2, 0.3 * p2), 1e-9)
+            st = C.photon_stats(np.array([1 - a - b, a, b]))
+            for q in out:
+                out[q].append(st[q])
+        return out
+
+    pv = C.photon_stats(np.array([0.995, 0.004, 0.0005]))
+    bv = draws(0.004, 0.010, 0.0005)
+    assert np.std(np.asarray(bv["g2"])[np.isfinite(bv["g2"])], ddof=1) > 100     # naiver Fehler unbrauchbar
+    e = C.photon_stat_errors(pv, bv)
+    assert np.isnan(e["g2"]) and np.isnan(e["g2_err"]) and "nicht signifikant" in e["g2_note"]
+    assert np.isfinite(e["mandel_Q_err"]) and e["mandel_Q_n_boot"] == 100
+    pa = C.photon_stats(np.array([0.4, 0.6, 0.0]))                               # Einzelphoton: g² bleibt
+    ea = C.photon_stat_errors(pa, draws(0.6, 0.015, 0.002))
+    assert "g2" not in ea and "g2_note" not in ea and 0 < ea["g2_err"] < 0.1
+
+
+def test_g2_in_result_b_vacuum(ana_el):
+    """Ergebnisdatei: g²(0) von B (frei laufend, ≈ Vakuum) als nicht definiert, A mit endlichem Fehler."""
+    _, r = ana_el
+    A, B = r["reconstruction"]["A"], r["reconstruction"]["B"]
+    assert A["g2"] is not None and np.isfinite(A["g2_err"]) and A["g2_err"] < 1
+    if B.get("g2_note"):
+        assert B["g2"] is None or np.isnan(B["g2"])
+    else:                                                    # ⟨n⟩_B zufällig signifikant: Fehler muss klein sein
+        assert np.isfinite(B["g2_err"]) and B["g2_err"] < 1e3
+
+
 @pytest.mark.parametrize("est", C.ESTIMATORS)
 def test_reconstruct_estimators(est):
     rng = np.random.default_rng(3)
@@ -353,7 +389,8 @@ def test_drift_thresholds_tool(tmp_path):
     drift = dict(sessions=[sess("gross", 6) for _ in range(30)])
     (tmp_path / "n.json").write_text(json.dumps(null)); (tmp_path / "d.json").write_text(json.dumps(drift))
     out = subprocess.run([sys.executable, str(ROOT / "tools" / "drift_thresholds.py"), str(tmp_path / "n.json"),
-                          str(tmp_path / "d.json"), "0.0027", "4"], capture_output=True, text=True, check=True).stdout
+                          str(tmp_path / "d.json"), "0.0027", "4"], capture_output=True, text=True, encoding="utf-8",
+                         check=True).stdout
     o = json.loads(out)
     kv = o["indicators"]["kv_z"]
     assert kv["threshold"] == pytest.approx(3.0, abs=0.01) and kv["false_alarm"] < 0.03
