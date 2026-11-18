@@ -21,7 +21,7 @@ dynamisch geladen, gegen Mock-Bibliotheken getestet; **gemischter Betrieb** (je 
 Datei und in der App gekennzeichnet) und ein **speichersparender Datenstrom-Simulator** mit Drift-Überwachung.
 Ab 0.15 Laufpläne mit Phase (Piezo-Rampe, K-θ, MaxLik, 2D-Wigner), Laserbetrieb Puls/CW, Wigner-Funktion B,
 Geräteprüfung, Ratenbegrenzung der HydraHarp, Wiedergabe aus Ordner und eine Bedienungsanleitung als PDF
-(`docs/anleitung/`).
+([Bedienungsanleitung 0.15.0](docs/anleitung/Bedienungsanleitung_Harp_ADQ32_HHD_Mobil_v0.15.0.pdf), Ordner `docs/anleitung/`).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
 K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als
