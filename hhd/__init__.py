@@ -1,10 +1,10 @@
-"""ExplorationSE Harp ADQ32 HHD Mobil – Kernpaket ``hhd`` (HHD = Heralded Homodyne).
+"""Heralded Homodyne Mobile (für PicoQuant HydraHarp 500 und Teledyne SP Devices ADQ32) – Kernpaket ``hhd`` (HHD = Heralded Homodyne).
 
 Teilpakete: ``hhd.sim`` (Simulator, AP2), ``hhd.io`` (Dateiformate, Import), ``hhd.sync`` (Synchronisation und
 Zuordnung). Die weiteren Teilpakete laut Gesamtplan (calib, modes, recon, compare, devices, run, ...) folgen.
 """
 
-__version__ = "0.15.0"
+__version__ = "0.15.1"
 
 # BLAS-Threads (ab 0.15): OpenBLAS/MKL starten je Matrix-Vektor-Produkt sonst so viele Threads wie Kerne. Die Kerne der
 # Auswertung sind dafür zu klein; unter Last (Aufnahme, Live-Vorschau, parallele Prozesse) wird es 17–22× langsamer

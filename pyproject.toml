@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "harp-adq32-hhd-mobil"
+name = "heralded-homodyne-mobile"
 dynamic = ["version"]
-description = "ExplorationSE Harp ADQ32 HHD Mobil – Heralded Homodyne: Simulator, Auswertung, Mess-Server und Web-App"
+description = "Heralded Homodyne Mobile für PicoQuant HydraHarp 500 und Teledyne SP Devices ADQ32 – Simulator, Auswertung, Mess-Server und Web-App (unabhängige Software, nicht mit den Herstellern verbunden)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Stefan Eilers" }]

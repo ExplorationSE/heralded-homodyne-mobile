@@ -21,7 +21,7 @@ def main() -> None:
     if lokal:
         print(f"  Heralded Homodyne Mobile {__version__} läuft LOKAL (nur an diesem PC erreichbar)")
     else:
-        print(f"  ExplorationSE Harp ADQ32 HHD Mobil {__version__} ist ONLINE (Cloudflare Quick Tunnel)")
+        print(f"  Heralded Homodyne Mobile {__version__} ist ONLINE (Cloudflare Quick Tunnel)")
     print(line)
     print(f"  Adresse{' (am Handy öffnen)' if not lokal else ' (Browser hier)   '}:  {url}")
     print(f"  Zugangscode:                {pretty}")

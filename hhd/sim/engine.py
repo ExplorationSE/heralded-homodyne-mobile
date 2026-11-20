@@ -572,7 +572,7 @@ def write_run(res: RunResult, out_dir: str | Path) -> dict:
     hh = cfg.harp
     for br in res.blocks:
         name = br.attrs["ptu_file"]
-        P.write_ptu(out / name, br.harp_records, comment=f"SIMULATED ExplorationSE Harp ADQ32 HHD Mobil – Block {br.cfg.id} ({br.dataset_type})",
+        P.write_ptu(out / name, br.harp_records, comment=f"SIMULATED Heralded Homodyne Mobile – Block {br.cfg.id} ({br.dataset_type})",
                     hw_type=f"{hh.model} (SIMULATED)", acquisition_time_ms=int(round(br.duration * 1000)),
                     extra_tags={"UsrHHD_BlockId": (P.TY_ANSI, br.cfg.id),
                                 "UsrHHD_RunId": (P.TY_ANSI, br.run_id),

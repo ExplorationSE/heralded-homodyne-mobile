@@ -330,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] == ["check-devices"]:            # Optionen unverändert an hhd.server.check weiterreichen
         from .server.check import main as check_main
         return check_main(argv[1:])
-    ap = argparse.ArgumentParser(prog="hhd", description="ExplorationSE Harp ADQ32 HHD Mobil – Auswertung (Import, Synchronisation, Kalibrierung, Rekonstruktion, Vergleich)")
+    ap = argparse.ArgumentParser(prog="hhd", description="Heralded Homodyne Mobile – Auswertung (Import, Synchronisation, Kalibrierung, Rekonstruktion, Vergleich)")
     ap.add_argument("--version", action="version", version=f"hhd {__version__}")
     sp = ap.add_subparsers(dest="cmd", required=True)
 

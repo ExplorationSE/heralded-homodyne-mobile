@@ -1,5 +1,5 @@
 @echo off
-rem ExplorationSE Harp ADQ32 HHD Mobil - online ueber Cloudflare Quick Tunnel starten
+rem Heralded Homodyne Mobile - online ueber Cloudflare Quick Tunnel starten
 cd /d "%~dp0"
 rem Rechenzeit (0.15): je Prozess 1 BLAS-Thread, parallel wird ueber Prozesse gerechnet (hhd.parallel)
 if not defined OPENBLAS_NUM_THREADS set OPENBLAS_NUM_THREADS=1

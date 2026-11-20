@@ -1,4 +1,4 @@
-﻿# ExplorationSE Harp ADQ32 HHD Mobil - beendet Server und Cloudflare-Tunnel, die mit start_online gestartet wurden.
+﻿# Heralded Homodyne Mobile - beendet Server und Cloudflare-Tunnel, die mit start_online gestartet wurden.
 param([int]$Port = 8766, [switch]$Quiet)
 $ErrorActionPreference = 'SilentlyContinue'
 $root = $PSScriptRoot
@@ -34,6 +34,6 @@ foreach ($f in @($pidFile, $srvPidFile, (Join-Path $logDir 'online_info.txt'))) 
     if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force }
 }
 if (-not $Quiet) {
-    if ($n -gt 0) { Write-Host "Harp ADQ32 HHD Mobil beendet ($n Prozess(e))." -ForegroundColor Cyan }
+    if ($n -gt 0) { Write-Host "Heralded Homodyne Mobile beendet ($n Prozess(e))." -ForegroundColor Cyan }
     else { Write-Host 'Es lief kein Harp-Mobil-Online-Prozess.' -ForegroundColor Cyan }
 }

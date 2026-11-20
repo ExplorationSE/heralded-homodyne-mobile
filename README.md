@@ -1,14 +1,18 @@
-# ExplorationSE Harp ADQ32 HHD Mobil
+# Heralded Homodyne Mobile
 
-Name in der Web-App: **Heralded Homodyne Mobile**. Repository [`ExplorationSE/heralded-homodyne-mobile`](https://github.com/ExplorationSE/heralded-homodyne-mobile) (Ordner nach `git clone`: `heralded-homodyne-mobile`), Python-Paket `hhd`.
+**für PicoQuant HydraHarp 500 und Teledyne SP Devices ADQ32**
+
+> **Hinweis:** Unabhängige Software: nicht mit der PicoQuant GmbH oder Teledyne SP Devices verbunden und von diesen weder unterstützt noch geprüft oder empfohlen. PicoQuant, HydraHarp, Teledyne, Teledyne SP Devices und ADQ32 sind Marken ihrer jeweiligen Inhaber.
+
+Repository [`ExplorationSE/heralded-homodyne-mobile`](https://github.com/ExplorationSE/heralded-homodyne-mobile) (Ordner nach `git clone`: `heralded-homodyne-mobile`), Python-Paket `hhd`.
 
 Heralded-Homodyne-Detektion (HHD) mit einer PicoQuant **HydraHarp 500** (T2-Zeitmarken des Herald-Detektors) und
 einem Teledyne SP Devices **ADQ32-PCIe** (Wellenformen des Homodyndetektors). Ziel von Release 1.0: Rekonstruktion
 von Quadraturverteilung, Photonenzahlverteilung und Wigner-Funktion – phasengemittelt (Standard), mit bekannter
 Phase θ als Option
-(ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von ExplorationSE Harp GX Mobil.
+(ED-11, optional) – mit Anzeige auf dem Smartphone nach dem Muster von Harp GX Mobil.
 
-**Stand 0.15.0 (03.11.2026):** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
+**Stand 0.15.1 (20.11.2026):** Arbeitspaket AP2 **Simulator** (`hhd.sim`), die Dateiformate (`hhd.io`), **Import**
 (`hhd.io.session`), **Synchronisation/Zuordnung** (`hhd.sync`; `docs/SYNC.md`) sowie die **Auswertung**:
 Normierung/Kalibrierung, Modenextraktion (parametrisch und PCA), phasengemittelte Rekonstruktion mit Bootstrap
 und Vergleich A/B (`hhd.calib`, `hhd.modes`, `hhd.recon`, `hhd.analysis`; `docs/ANALYSE.md`), ab 0.8 mit
@@ -21,7 +25,7 @@ dynamisch geladen, gegen Mock-Bibliotheken getestet; **gemischter Betrieb** (je 
 Datei und in der App gekennzeichnet) und ein **speichersparender Datenstrom-Simulator** mit Drift-Überwachung.
 Ab 0.15 Laufpläne mit Phase (Piezo-Rampe, K-θ, MaxLik, 2D-Wigner), Laserbetrieb Puls/CW, Wigner-Funktion B,
 Geräteprüfung, Ratenbegrenzung der HydraHarp, Wiedergabe aus Ordner und eine Bedienungsanleitung als PDF
-([Bedienungsanleitung 0.15.0](docs/anleitung/Bedienungsanleitung_Harp_ADQ32_HHD_Mobil_v0.15.0.pdf), Ordner `docs/anleitung/`).
+([Bedienungsanleitung 0.15.1](docs/anleitung/Bedienungsanleitung_Heralded_Homodyne_Mobile_v0.15.1.pdf), Ordner `docs/anleitung/`).
 
 **Messablauf (ED-12):** getrennte Messläufe einer **Sitzung** mit gemeinsamer Kalibrierung, verschachtelt
 K-V → K-H → **A** (Herald-Trigger) → **B** (ohne Herald: freilaufender interner Trigger; Zufallstrigger als

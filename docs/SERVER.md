@@ -1,6 +1,6 @@
 # Mess-Server und Web-App (`hhd.server`)
 
-Stand 0.10.0.dev0 – Architektur nach dem Vorbild von ExplorationSE Harp GX Mobil (`harp/server.py`, `control.py`,
+Stand 0.10.0.dev0 – Architektur nach dem Vorbild von Harp GX Mobil (`harp/server.py`, `control.py`,
 `sources/base.py`, `auth.py`, Web-App; nur gelesen, nicht verändert), erweitert auf zwei Geräte und den
 HHD-Messablauf (Gesamtplan v1.7, ED-8b, ED-12).
 

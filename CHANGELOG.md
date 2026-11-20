@@ -1,4 +1,20 @@
-# Änderungsprotokoll – ExplorationSE Harp ADQ32 HHD Mobil
+# Änderungsprotokoll – Heralded Homodyne Mobile
+
+## 0.15.1 – 20.11.2026
+
+Namensänderung und Hinweis zur Unabhängigkeit (Freigabe Herr Eilers, 20.11.2026); Funktion unverändert gegenüber 0.15.0.
+
+- **Name:** „Heralded Homodyne Mobile“, Untertitel „für PicoQuant HydraHarp 500 und Teledyne SP Devices ADQ32“ – in
+  README, Bedienungsanleitung, Web-App (Kopfzeile-Tooltip, Hinweisbereich, Seitenbeschreibung, PWA-Manifest),
+  Kommandozeilenhilfe, Start-/Stopp-Skripten, PTU-Dateikommentar und `pyproject.toml` (Projektname
+  `heralded-homodyne-mobile`, Python-Paket weiterhin `hhd`).
+- **Hinweis zur Unabhängigkeit:** nicht mit der PicoQuant GmbH oder Teledyne SP Devices verbunden, von diesen weder
+  unterstützt noch geprüft; Marken gehören ihren Inhabern (README, Titelseite der Anleitung, Hinweisbereich der App).
+  Herstellernamen nur als Text, keine Logos oder Herstellerfarben.
+- Installationsordner auf dem Mess-PC (`C:\HarpADQ32HHDMobil`) und die Startskripte behalten ihre Namen.
+- Bedienungsanleitung jetzt `docs/anleitung/Bedienungsanleitung_Heralded_Homodyne_Mobile_v0.15.1.pdf`.
+- Fehlerbehebungen seit 0.15.0: g²(0) bei ⟨n⟩ ≈ 0 als „nicht definiert“ statt riesigem Bootstrap-Fehler; CI unter
+  Windows grün (Mock-Treiber als DLL, `tools/drift_thresholds.py` UTF-8).
 
 ## 0.15.0 – 03.11.2026
 
@@ -524,7 +540,7 @@ Entscheidungen von Herrn Eilers zu Gesamtplan v1.3 (ED-12, ED-11, ED-14, HydraHa
 
 Beginn AP2 Simulator (Vorarbeit vor Projektstart 20.10.2026), Weiterentwicklung des Prototyps `sync_sim`.
 
-- Paket `hhd` nach dem Muster von ExplorationSE Harp GX Mobil (MIT, CI-Workflow für Ubuntu/Windows, Python 3.11/3.13).
+- Paket `hhd` nach dem Muster von Harp GX Mobil (MIT, CI-Workflow für Ubuntu/Windows, Python 3.11/3.13).
 - `hhd.io`: PTU Generic T2 (HydraHarp 500), HDF5-Schema v1 für ADQ32-Records.
 - `hhd.sim`: Konfiguration mit Parametertabelle, Zustände (Vakuum, kohärent, thermisch, Fock |1⟩ mit η; Fock |n⟩,
   Katze als Erweiterung), Phase θ (zufällig, fest, Rampe, Stufen; ED-11), Uhrenmodell, Gerätemodelle HydraHarp 500

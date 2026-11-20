@@ -78,7 +78,7 @@ class SessionRecorder:
             tags["HW_SerialNo"] = (P.TY_ANSI, str(hw["serial"]))
         if hw.get("library_version"):
             tags["UsrHHD_HH500LibVersion"] = (P.TY_ANSI, str(hw["library_version"]))
-        self._ptu = PtuStreamWriter(self.out / a["ptu_file"], comment=f"ExplorationSE Harp ADQ32 HHD Mobil – Block {run.block_id} "
+        self._ptu = PtuStreamWriter(self.out / a["ptu_file"], comment=f"Heralded Homodyne Mobile – Block {run.block_id} "
                                     f"({a.get('dataset_type', '')}), Betriebsart Harp {self.modes['harp']}",
                                     hw_type=hw_type, acquisition_time_ms=int(round(run.duration_s * 1000)), extra_tags=tags)
         self.h5.begin_block(run.block_id, a)

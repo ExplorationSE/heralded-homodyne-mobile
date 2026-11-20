@@ -1,4 +1,4 @@
-﻿# ExplorationSE Harp ADQ32 HHD Mobil - Online-Start ueber einen Cloudflare Quick Tunnel (ohne Konto)
+﻿# Heralded Homodyne Mobile - Online-Start ueber einen Cloudflare Quick Tunnel (ohne Konto)
 # Start normalerweise per Doppelklick auf start_online.bat.
 # Optionen:  -Port 8765   -NoTunnel (nur lokal)   -NoWait (nicht auf Enter warten)
 # Umgebungsvariablen (optional):
@@ -52,7 +52,7 @@ function Get-Tail([string]$path) {
 $ver = '?'
 $vm = Select-String -Path (Join-Path $root 'hhd\__init__.py') -Pattern '__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
 if ($vm) { $ver = $vm.Matches[0].Groups[1].Value }
-Say "== ExplorationSE Harp ADQ32 HHD Mobil $ver - Online-Start =="
+Say "== Heralded Homodyne Mobile $ver - Online-Start =="
 
 # --- 1. Python-Umgebung --------------------------------------------------------------
 $py = $env:HHD_PYTHON
@@ -66,7 +66,7 @@ if (Test-Path -LiteralPath $pidFile) {
     $alive = @(Get-Content -LiteralPath $pidFile | Where-Object { $_ -match '^\d+$' } |
                Where-Object { Get-Process -Id ([int]$_) -ErrorAction SilentlyContinue })
     if ($alive.Count -gt 0) {
-        Fail 'Harp ADQ32 HHD Mobil laeuft bereits. Bitte zuerst stop_online.bat ausfuehren.'
+        Fail 'Heralded Homodyne Mobile laeuft bereits. Bitte zuerst stop_online.bat ausfuehren.'
     }
     Remove-Item -LiteralPath $pidFile -Force
 }
